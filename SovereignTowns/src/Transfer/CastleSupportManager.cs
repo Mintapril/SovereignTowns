@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
@@ -141,6 +142,89 @@ public sealed class CastleSupportManager
             Logger.Error("CastleSupportManager.EvaluateAll outer failure", ex);
             return Array.Empty<TransferTask>();
         }
+    }
+
+    /// <summary>
+    /// B1 #1.B: single-destination demand path. Runs the standard pair evaluation
+    /// but restricts <paramref name="destination"/> to the supplied town, then
+    /// dispatches the resulting tasks through <see cref="GarrisonTransferManager"/>
+    /// in the same tick (no waiting for the next DailyTick). Idempotent: if a
+    /// transfer is already in-flight to <paramref name="destination"/>, the underlying
+    /// <c>MaxTransfersPerTown=1</c> limit makes additional dispatches a no-op.
+    /// </summary>
+    /// <param name="destination">The deficit town whose intent triggered this call.</param>
+    /// <param name="requestedMagnitude">Suggested troop count; only used to cap the
+    /// number of tasks dispatched (one task per <see cref="MaxTroopsPerTask"/>).</param>
+    /// <param name="transferManager">Already-constructed GarrisonTransferManager; null
+    /// returns 0 + warning log.</param>
+    /// <returns>Number of TransferTasks that were actually dispatched (≥ 0).</returns>
+    public int TryDispatchForDemand(Town destination, int requestedMagnitude, GarrisonTransferManager? transferManager)
+    {
+        if (destination == null || destination.Settlement == null)
+        {
+            Logger.Warn("CastleSupportManager.TryDispatchForDemand: destination is null");
+            return 0;
+        }
+        if (transferManager == null)
+        {
+            Logger.Warn($"TryDispatchForDemand '{destination.Name}': transferManager is null — skipped");
+            return 0;
+        }
+        if (requestedMagnitude <= 0) return 0;
+
+        try
+        {
+            // Reuse the full evaluation; intent-triggered path stays consistent with
+            // DailyTick logic. PairAndBuildTasks already honors all filters (faction /
+            // siege / risk / distance) so we just filter the result by destination.
+            var allTasks = EvaluateAll();
+            if (allTasks.Count == 0) return 0;
+
+            int maxTasks = (int)Math.Ceiling((double)requestedMagnitude / MaxTroopsPerTask);
+            if (maxTasks < 1) maxTasks = 1;
+
+            int dispatched = 0;
+            foreach (var task in allTasks)
+            {
+                if (task.Destination != destination.Settlement) continue;
+                if (dispatched >= maxTasks) break;
+
+                bool ok;
+                try
+                {
+                    ok = transferManager.TryDispatchTransfer(task);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("TryDispatchForDemand: TryDispatchTransfer threw", ex);
+                    ok = false;
+                }
+
+                if (ok)
+                {
+                    dispatched++;
+                    DecisionAuditLogger.LogRule(
+                        decisionType: "TransferRequestedByIntent",
+                        inputSummary: $"dst={destination.Settlement.StringId} src={task.Source.StringId} requested={requestedMagnitude}",
+                        decisionJson: $"{{\"requested\":{requestedMagnitude},\"task_troops\":{task.RequestedTroops},\"reason\":\"{EscapeAudit(task.Reason)}\"}}",
+                        accepted: true);
+                }
+            }
+
+            Logger.Info($"TryDispatchForDemand '{destination.Name}': dispatched={dispatched} / candidates={allTasks.Count} (requested={requestedMagnitude})");
+            return dispatched;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CastleSupportManager.TryDispatchForDemand outer failure for '{destination.Name}'", ex);
+            return 0;
+        }
+    }
+
+    private static string EscapeAudit(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
     }
 
     // ---------------------------------------------------------------

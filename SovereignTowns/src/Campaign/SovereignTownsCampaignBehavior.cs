@@ -137,7 +137,12 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
             _recruitmentManager = new RecruitmentManager(_lifecycle, _capitalManager);
             _prisonerRecruitmentManager = new PrisonerRecruitmentManager();
-            _townGarrisonManager = new TownGarrisonManager(_recruitmentManager, _llmService, _capitalManager);
+            _townGarrisonManager = new TownGarrisonManager(
+                recruitmentManager: _recruitmentManager,
+                llmService: _llmService,
+                capitalManager: _capitalManager,
+                castleSupportManager: _castleSupportManager,
+                transferManager: _transferManager);
 
             Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (8 个, 含 Capital + SallyForth) ConfigVersion={ConfigurationManager.Current.ConfigVersion} MCM={MCMIntegration.GetDiagnosticInfo()} LLM=provider:{provider.Name} configured:{provider.IsConfigured}");
             Logger.Info($"  features: AutoGarrison={ConfigurationManager.Current.EnabledFeatures.AutoGarrison} " +

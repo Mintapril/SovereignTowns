@@ -23,12 +23,21 @@ public sealed class TownGarrisonManager
     private readonly RecruitmentManager? _recruitmentManager;
     private readonly LLMReasoningService? _llmService;
     private readonly CapitalManager? _capitalManager;
+    private readonly Transfer.CastleSupportManager? _castleSupportManager;
+    private readonly Transfer.GarrisonTransferManager? _transferManager;
 
-    public TownGarrisonManager(RecruitmentManager? recruitmentManager = null, LLMReasoningService? llmService = null, CapitalManager? capitalManager = null)
+    public TownGarrisonManager(
+        RecruitmentManager? recruitmentManager = null,
+        LLMReasoningService? llmService = null,
+        CapitalManager? capitalManager = null,
+        Transfer.CastleSupportManager? castleSupportManager = null,
+        Transfer.GarrisonTransferManager? transferManager = null)
     {
         _recruitmentManager = recruitmentManager;
         _llmService = llmService;
         _capitalManager = capitalManager;
+        _castleSupportManager = castleSupportManager;
+        _transferManager = transferManager;
     }
 
     /// <summary>
@@ -60,7 +69,7 @@ public sealed class TownGarrisonManager
             Logger.Info($"EvaluateAll: capital='{capital.Name}' (single-capital mode)");
             try
             {
-                EvaluateOne(capital, _recruitmentManager, _llmService);
+                EvaluateOne(capital);
             }
             catch (Exception ex)
             {
@@ -73,7 +82,7 @@ public sealed class TownGarrisonManager
         }
     }
 
-    private static void EvaluateOne(Town town, RecruitmentManager? recruitmentManager, LLMReasoningService? llmService)
+    private void EvaluateOne(Town town)
     {
         var rule = ConfigurationManager.GetRuleFor(town);
         var risk = RiskAssessmentService.Assess(town.Settlement);
@@ -134,9 +143,9 @@ public sealed class TownGarrisonManager
         var inputSummary = $"town={townId} risk={risk.Level} target={effectiveTarget} current={snap.Total} gap={totalGap}";
 
         // MVP 6: fire-and-forget 启动下一轮 LLM 推理（**绝不在当轮等待**）
-        if (llmService != null && town.Settlement != null)
+        if (_llmService != null && town.Settlement != null)
         {
-            LlmAutoExecuteBridge.TryStartReasoning(llmService, town.Settlement, inputSummary);
+            LlmAutoExecuteBridge.TryStartReasoning(_llmService, town.Settlement, inputSummary);
         }
 
         foreach (var d in decisions)
@@ -145,9 +154,9 @@ public sealed class TownGarrisonManager
 
             bool dispatched = false;
             string? rejectionReason = null;
-            if (d.Kind == GarrisonActionKind.RequestRecruitment && recruitmentManager != null)
+            if (d.Kind == GarrisonActionKind.RequestRecruitment && _recruitmentManager != null)
             {
-                dispatched = recruitmentManager.TryDispatchRecruiter(town, d);
+                dispatched = _recruitmentManager.TryDispatchRecruiter(town, d);
                 rejectionReason = dispatched ? null : "RecruitmentManager declined (limit / disabled / no candidate)";
             }
             else if (d.Kind == GarrisonActionKind.RequestUpgrade && rule.AllowAutoUpgrade)
@@ -165,9 +174,23 @@ public sealed class TownGarrisonManager
             {
                 rejectionReason = "AllowAutoUpgrade=false in rule";
             }
-            else if (recruitmentManager == null && d.Kind == GarrisonActionKind.RequestRecruitment)
+            else if (_recruitmentManager == null && d.Kind == GarrisonActionKind.RequestRecruitment)
             {
                 rejectionReason = "RecruitmentManager not yet wired (MVP 1 mode)";
+            }
+            else if (d.Kind == GarrisonActionKind.RequestTransferIn
+                     && _castleSupportManager != null
+                     && _transferManager != null
+                     && ConfigurationManager.Current.EnabledFeatures.CastleSupport)
+            {
+                int n = _castleSupportManager.TryDispatchForDemand(town, d.Magnitude, _transferManager);
+                dispatched = n > 0;
+                rejectionReason = dispatched ? null : "no feasible donor / already at transfer limit";
+            }
+            else if (d.Kind == GarrisonActionKind.RequestTransferIn
+                     && !ConfigurationManager.Current.EnabledFeatures.CastleSupport)
+            {
+                rejectionReason = "CastleSupport feature disabled";
             }
             else
             {
