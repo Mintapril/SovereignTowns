@@ -8,6 +8,7 @@ using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using Logger = SovereignTowns.Logging.Logger;
+using SovereignTowns.Configuration;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 
 namespace SovereignTowns.Recruitment;
@@ -47,6 +48,10 @@ public sealed class PrisonerRecruitmentManager
             if (town == null) return;
             var rule = ConfigurationManager.GetRuleFor(town);
             if (rule == null || !rule.AllowPrisonerConversion) return;
+
+            // B1 #7: pause when food trend below threshold
+            if (FoodGuard.IsRecruitmentPausedForFood(town, rule, "PrisonerRecruitment"))
+                return;
 
             var settlementParty = settlement.Party;
             if (settlementParty == null) return;

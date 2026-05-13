@@ -53,6 +53,9 @@ public static class CapitalInPlaceRecruiter
 
             var rule = ConfigurationManager.GetRuleFor(town);
             if (rule == null) return;
+            // B1 #7: pause when food trend below threshold
+            if (FoodGuard.IsRecruitmentPausedForFood(town, rule, "CapitalInPlaceRecruiter"))
+                return;
             if (currentMen >= rule.TargetTotalCount) return;
 
             var ownerHero = capital.OwnerClan?.Leader;

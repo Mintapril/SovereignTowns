@@ -120,6 +120,11 @@ public sealed class RecruitmentManager
             }
 
             var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
+
+            // B1 #7: pause when food trend below threshold
+            if (FoodGuard.IsRecruitmentPausedForFood(homeTown, rule, "RecruitmentManager"))
+                return false;
+
             var candidates = RecruitmentPlanner.RankCandidates(
                 homeTown,
                 maxDistance: PlanMaxDistance,
