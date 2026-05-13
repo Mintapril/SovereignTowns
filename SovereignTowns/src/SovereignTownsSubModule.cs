@@ -141,6 +141,14 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
                 if (_loggerInitialized) Logger.Error("Behavior registration failed", ex);
                 TrySafeDebugPrint($"{Tag} AddBehavior threw: {ex.Message}");
             }
+
+            // B7.1: dump troops.json for the web frontend's ExactTroop picker.
+            // OnGameStart fires after all SubModuleLoads, so other mods' troops are already registered.
+            try { SovereignTowns.WebConfig.TroopDumper.Dump(); }
+            catch (System.Exception ex)
+            {
+                if (_loggerInitialized) Logger.Error("TroopDumper.Dump failed (swallowed)", ex);
+            }
         }
         catch (System.Exception ex)
         {
