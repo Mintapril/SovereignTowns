@@ -12,58 +12,75 @@
   </VisualDefinitions>
 
   <Window>
-    <Widget DoNotAcceptEvents="true"
-            WidthSizePolicy="CoverChildren"
-            HeightSizePolicy="CoverChildren"
-            VerticalAlignment="Center"
-            HorizontalAlignment="Right"
+    <!-- Root: full-screen container so the left-side ExtendButton and the right-side
+         drawer container can sit side-by-side as independent siblings. -->
+    <Widget Id="Root"
+            DoNotAcceptEvents="true"
+            WidthSizePolicy="StretchToParent"
+            HeightSizePolicy="StretchToParent"
             Sprite="BlankWhiteSquare_9"
             Color="#999999FF"
             AlphaFactor="0.0">
       <Children>
+
+        <!-- ExtendButton lives on the LEFT edge of the screen, independent of the drawer.
+             The drawer still slides in/out from the RIGHT (Overlay.HorizontalAlignment="Right"
+             with the original VisualDefinition kept intact). Clicking this button asks
+             SovereignTownsFloatingPanelWidget to toggle that drawer's state. -->
+        <ButtonWidget Id="ExtendButton"
+                      WidthSizePolicy="Fixed"
+                      HeightSizePolicy="Fixed"
+                      SuggestedHeight="122"
+                      SuggestedWidth="52"
+                      Brush="GameMenu.Extend.Button"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Left"
+                      DoNotPassEventsToChildren="true"
+                      UpdateChildrenStates="true"
+                      MarginLeft="0"
+                      PositionXOffset="0"
+                      HintText="Sovereign Towns">
+          <Children>
+            <BrushWidget Id="ExtendButtonArrow"
+                         WidthSizePolicy="Fixed"
+                         HeightSizePolicy="Fixed"
+                         SuggestedWidth="30"
+                         SuggestedHeight="30"
+                         VerticalAlignment="Center"
+                         MarginBottom="15"
+                         MarginLeft="20"
+                         Brush="GameMenu.Extend.Button.Arrow" />
+          </Children>
+        </ButtonWidget>
+
+        <!-- Drawer container on the RIGHT, unchanged from original. The Overlay inside
+             slides on PositionXOffset 1070 → -32 to expose the panel from off-screen right. -->
         <Widget DoNotAcceptEvents="true"
-                Id="Overlay"
-                VisualDefinition="Menu"
-                WidthSizePolicy="Fixed"
-                HeightSizePolicy="Fixed"
-                SuggestedWidth="1120"
-                SuggestedHeight="820"
+                WidthSizePolicy="CoverChildren"
+                HeightSizePolicy="CoverChildren"
                 VerticalAlignment="Center"
                 HorizontalAlignment="Right"
                 Sprite="BlankWhiteSquare_9"
                 Color="#999999FF"
-                AlphaFactor="0.0"
-                PositionXOffset="1070"
-                PositionYOffset="0">
+                AlphaFactor="0.0">
           <Children>
-
-            <ButtonWidget Id="ExtendButton"
-                          WidthSizePolicy="Fixed"
-                          HeightSizePolicy="Fixed"
-                          SuggestedHeight="122"
-                          SuggestedWidth="52"
-                          Brush="GameMenu.Extend.Button"
-                          VerticalAlignment="Top"
-                          DoNotPassEventsToChildren="true"
-                          UpdateChildrenStates="true"
-                          MarginTop="80"
-                          MarginLeft="0"
-                          PositionXOffset="0"
-                          HintText="Sovereign Towns">
+            <Widget DoNotAcceptEvents="true"
+                    Id="Overlay"
+                    VisualDefinition="Menu"
+                    WidthSizePolicy="Fixed"
+                    HeightSizePolicy="Fixed"
+                    SuggestedWidth="1120"
+                    SuggestedHeight="820"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Right"
+                    Sprite="BlankWhiteSquare_9"
+                    Color="#999999FF"
+                    AlphaFactor="0.0"
+                    PositionXOffset="1070"
+                    PositionYOffset="0">
               <Children>
-                <BrushWidget Id="ExtendButtonArrow"
-                             WidthSizePolicy="Fixed"
-                             HeightSizePolicy="Fixed"
-                             SuggestedWidth="30"
-                             SuggestedHeight="30"
-                             VerticalAlignment="Center"
-                             MarginBottom="15"
-                             MarginLeft="20"
-                             Brush="GameMenu.Extend.Button.Arrow" />
-              </Children>
-            </ButtonWidget>
 
-            <BrushWidget WidthSizePolicy="StretchToParent"
+                <BrushWidget WidthSizePolicy="StretchToParent"
                          HeightSizePolicy="StretchToParent"
                          HorizontalAlignment="Right"
                          VerticalAlignment="Center"
@@ -112,8 +129,8 @@
                                                    Color="#999999FF"
                                                    AlphaFactor="0.0"
                                                    Overlay="..\..\..\Overlay"
-                                                   ExtendButtonWidget="..\..\ExtendButton"
-                                                   ExtendButtonArrowWidget="..\..\ExtendButton\ExtendButtonArrow">
+                                                   ExtendButtonWidget="..\..\..\..\ExtendButton"
+                                                   ExtendButtonArrowWidget="..\..\..\..\ExtendButton\ExtendButtonArrow">
                   <Children>
 
                     <!-- Top: subtitle bar with @Title (kept for visual continuity with vanilla style). -->
@@ -697,6 +714,8 @@
               </Children>
             </BrushWidget>
 
+              </Children>
+            </Widget>
           </Children>
         </Widget>
       </Children>
