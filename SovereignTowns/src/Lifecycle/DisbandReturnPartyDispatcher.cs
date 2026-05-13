@@ -121,6 +121,12 @@ public static class DisbandReturnPartyDispatcher
             if (actuallyMoved == 0)
             {
                 Logger.Warn($"DismissExcess '{town.Name}': created party but moved 0 troops — destroying party");
+                DecisionAuditLogger.LogRule(
+                    decisionType: "DisbandExcess",
+                    inputSummary: $"town={town.Settlement.StringId} mode=party_destroyed magnitude={magnitude}",
+                    decisionJson: $"{{\"dismissed\":0,\"mode\":\"party_destroyed\",\"reason\":\"all_troop_moves_failed\"}}",
+                    accepted: false,
+                    rejectionReason: "All troop move attempts failed; created party destroyed");
                 try { TaleWorlds.CampaignSystem.Actions.DestroyPartyAction.Apply(null, party); }
                 catch { /* swallow */ }
                 return 0;

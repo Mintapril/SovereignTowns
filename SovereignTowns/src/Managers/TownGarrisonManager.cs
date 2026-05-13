@@ -217,6 +217,12 @@ public sealed class TownGarrisonManager
                 dispatched = dismissed > 0;
                 rejectionReason = dismissed == 0 ? "no eligible troops / no home village / at limit" : null;
             }
+            else if (d.Kind == GarrisonActionKind.RequestDisbandExcess
+                     && rule.AutoDisbandExcess
+                     && _lifecycle == null)
+            {
+                rejectionReason = "lifecycle not injected";
+            }
             else if (d.Kind == GarrisonActionKind.RequestDisbandExcess && !rule.AutoDisbandExcess)
             {
                 rejectionReason = "AutoDisbandExcess=false in rule";
