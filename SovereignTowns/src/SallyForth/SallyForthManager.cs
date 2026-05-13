@@ -148,9 +148,16 @@ public sealed class SallyForthManager
                 return;
             }
 
-            // 4) 否则继续 engage（创建时已 SetMoveEngageParty + SetDoNotMakeNewDecisions）
-            //    如果当前目标已死亡/失效，让 vanilla AI 接管
+            // 4) B5 F2: target 进入 settlement → 追击队卡在外面（vanilla 已知 bug），立即回家
+            //    否则 target 已死亡/失效 → 释放 vanilla AI 接管
+            //    否则继续 engage（创建时已 SetMoveEngageParty + SetDoNotMakeNewDecisions）
             var target = sp.TargetParty;
+            if (target != null && target.IsActive && target.CurrentSettlement != null)
+            {
+                Logger.Info($"SallyForthManager: '{SafeName(party)}' target '{SafeName(target)}' entered '{target.CurrentSettlement.Name}', returning home '{home.Name}'");
+                ReleaseAiAndReturnHome(party, home);
+                return;
+            }
             if (target == null || !target.IsActive)
             {
                 Logger.Info($"SallyForthManager: '{SafeName(party)}' target lost, releasing AI for re-decision");
