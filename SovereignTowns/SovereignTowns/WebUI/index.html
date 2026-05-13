@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sovereign Towns · 控制面板</title>
 
+  <!-- Fonts: Cinzel for display caps, Cormorant for refined Latin body, Noto Serif SC for Chinese -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=Noto+Serif+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
   <!-- Tailwind CSS (CDN dev mode) -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -12,8 +17,17 @@
       darkMode: 'class',
       theme: {
         extend: {
+          fontFamily: {
+            display: ['Cinzel', 'Cormorant Garamond', 'Noto Serif SC', 'serif'],
+            body: ['"Noto Serif SC"', 'Cormorant Garamond', 'serif'],
+            mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+          },
           colors: {
-            panel: { DEFAULT: '#1a1a1d', soft: '#26262b', border: '#3a3a40' },
+            ink: { 950: '#08070a', 900: '#0e0c0b', 800: '#15110d', 700: '#1c1813', 600: '#262019' },
+            parchment: { 50: '#f4ead0', 100: '#e8dcb7', 200: '#d4c596', 300: '#bba879' },
+            gold: { 50: '#fff7e0', 100: '#f4e4bc', 200: '#e6c585', 300: '#d4ad5e', 400: '#c8a165', 500: '#a88547', 600: '#856836', 700: '#5a4724' },
+            danger: { 500: '#c34a4a', 600: '#9c3a3a' },
+            sage: { 400: '#9bbe88', 500: '#7ea16a' },
           },
         },
       },
@@ -25,372 +39,720 @@
 
   <style>
     :root { color-scheme: dark; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-                   "Microsoft YaHei", Roboto, sans-serif;
-    }
-    /* prevent CDN flash of unstyled content */
     [x-cloak] { display: none !important; }
-    /* slimmer scrollbar in dark theme */
-    ::-webkit-scrollbar { width: 10px; height: 10px; }
-    ::-webkit-scrollbar-track { background: #1a1a1d; }
-    ::-webkit-scrollbar-thumb { background: #3a3a40; border-radius: 5px; }
-    ::-webkit-scrollbar-thumb:hover { background: #555; }
-    /* range slider styling */
+
+    body {
+      font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(200, 161, 101, 0.06) 0%, transparent 35%),
+        radial-gradient(circle at 80% 100%, rgba(200, 161, 101, 0.04) 0%, transparent 40%),
+        #08070a;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* Subtle film grain over everything */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
+      pointer-events: none;
+      z-index: 100;
+      mix-blend-mode: overlay;
+      opacity: 0.5;
+    }
+
+    /* Display caps with refined tracking */
+    .font-display {
+      font-family: 'Cinzel', 'Noto Serif SC', serif;
+      letter-spacing: 0.08em;
+    }
+
+    /* Scrollbar gold trim */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, #5a4724 0%, #a88547 50%, #5a4724 100%);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #c8a165; }
+
+    /* Sliders */
     input[type=range] {
-      -webkit-appearance: none; appearance: none; height: 6px; background: #3a3a40;
-      border-radius: 3px; outline: none;
+      -webkit-appearance: none; appearance: none; height: 2px;
+      background: linear-gradient(90deg, #5a4724, #c8a165);
+      outline: none; border-radius: 1px;
     }
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
-      border-radius: 50%; background: #6b8aaf; cursor: pointer; border: 2px solid #1a1a1d;
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #f4e4bc, #c8a165 60%, #856836);
+      cursor: grab; border: 1px solid #5a4724;
+      box-shadow: 0 0 8px rgba(200, 161, 101, 0.4);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
-    input[type=number] {
-      -moz-appearance: textfield;
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); box-shadow: 0 0 12px rgba(200, 161, 101, 0.7); }
+    input[type=range]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.25); }
+
+    /* Number inputs */
+    input[type=number], input[type=text] {
+      font-family: 'JetBrains Mono', monospace;
     }
+    input[type=number] { -moz-appearance: textfield; }
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+    /* Custom checkbox: gold rim square */
+    input[type=checkbox].gold-check {
+      appearance: none; -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border: 1px solid #5a4724;
+      background: #08070a;
+      cursor: pointer; position: relative;
+      transition: all 0.15s ease;
+    }
+    input[type=checkbox].gold-check:hover { border-color: #c8a165; box-shadow: 0 0 6px rgba(200, 161, 101, 0.4); }
+    input[type=checkbox].gold-check:checked {
+      background: linear-gradient(135deg, #c8a165 0%, #856836 100%);
+      border-color: #e6c585;
+    }
+    input[type=checkbox].gold-check:checked::after {
+      content: ''; position: absolute; left: 5px; top: 1px;
+      width: 5px; height: 10px;
+      border: solid #0e0c0b; border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    /* Decorative diamond divider */
+    .diamond-divider {
+      position: relative; height: 1px;
+      background: linear-gradient(90deg, transparent, #5a4724 50%, transparent);
+    }
+    .diamond-divider::before {
+      content: '◆'; position: absolute; left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
+      color: #c8a165; font-size: 8px; background: #08070a; padding: 0 6px;
+    }
+
+    /* Tab pip on active vertical tab */
+    .tab-active {
+      background: linear-gradient(90deg, rgba(200, 161, 101, 0.18) 0%, transparent 100%);
+      border-left: 2px solid #c8a165;
+      color: #f4e4bc;
+    }
+    .tab-active::before {
+      content: '◆'; color: #c8a165; font-size: 7px; margin-right: 8px;
+    }
+
+    /* Hairline gold border with corner pips */
+    .ornate-frame {
+      position: relative;
+      border: 1px solid rgba(200, 161, 101, 0.25);
+      background:
+        linear-gradient(180deg, rgba(20, 18, 16, 0.6), rgba(8, 7, 10, 0.85));
+    }
+    .ornate-frame::before, .ornate-frame::after {
+      content: ''; position: absolute; width: 12px; height: 12px;
+      border: 1px solid #c8a165;
+      pointer-events: none;
+    }
+    .ornate-frame::before {
+      top: -1px; left: -1px;
+      border-right: none; border-bottom: none;
+    }
+    .ornate-frame::after {
+      bottom: -1px; right: -1px;
+      border-left: none; border-top: none;
+    }
+
+    /* Gold rule */
+    .gold-rule {
+      background: linear-gradient(90deg, transparent, #c8a165 20%, #c8a165 80%, transparent);
+      height: 1px;
+    }
+
+    /* Save button — embossed gold */
+    .btn-save {
+      background: linear-gradient(180deg, #d4ad5e 0%, #c8a165 50%, #a88547 100%);
+      color: #15110d;
+      border: 1px solid #856836;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+        0 2px 6px rgba(0, 0, 0, 0.5),
+        0 0 14px rgba(200, 161, 101, 0.2);
+      transition: all 0.2s ease;
+    }
+    .btn-save:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 22px rgba(200, 161, 101, 0.4); transform: translateY(-1px); }
+    .btn-save:active { transform: translateY(0); }
+    .btn-save:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      background: transparent;
+      color: #d4c596;
+      border: 1px solid #3a3530;
+      transition: all 0.15s ease;
+    }
+    .btn-ghost:hover { border-color: #c8a165; color: #f4e4bc; }
+
+    /* Stat pill */
+    .stat-pill {
+      padding: 4px 12px;
+      background: rgba(28, 24, 19, 0.6);
+      border: 1px solid rgba(200, 161, 101, 0.18);
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      color: #bba879;
+    }
+    .stat-pill strong {
+      color: #f4e4bc; font-weight: 500;
+    }
+
+    /* Card */
+    .card {
+      background: linear-gradient(180deg, #15110d 0%, #0e0c0b 100%);
+      border: 1px solid rgba(200, 161, 101, 0.15);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card:hover { border-color: rgba(200, 161, 101, 0.4); box-shadow: 0 0 16px rgba(200, 161, 101, 0.08); }
+
+    .card-clickable { cursor: pointer; }
+    .card-clickable:hover { background: linear-gradient(180deg, #1c1813 0%, #15110d 100%); }
+
+    /* Tier dot color */
+    .tier-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      margin-right: 6px;
+    }
+    .tier-1 { background: #6c5e4a; }
+    .tier-2 { background: #8a7448; }
+    .tier-3 { background: #a88547; }
+    .tier-4 { background: #c8a165; }
+    .tier-5 { background: #e6c585; }
+    .tier-6 { background: #f4e4bc; box-shadow: 0 0 4px #f4e4bc; }
+
+    /* Type icon */
+    .type-glyph {
+      display: inline-block; width: 18px; text-align: center;
+      color: #856836; font-family: 'Cinzel', serif; font-size: 10px;
+    }
+
+    /* Fade-in transitions */
+    .tab-content { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Toggle row */
+    .toggle-row {
+      transition: background 0.15s ease;
+    }
+    .toggle-row:hover { background: rgba(200, 161, 101, 0.04); }
+
+    /* Subtle culture badge */
+    .culture-badge {
+      font-family: 'Cinzel', serif;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #856836;
+      border: 1px solid #3a3530;
+      padding: 1px 6px;
+      border-radius: 1px;
+    }
+
+    /* Highlight match in search */
+    mark { background: rgba(200, 161, 101, 0.3); color: #f4e4bc; padding: 0 1px; }
+
+    /* Confirm / save toast */
+    .toast {
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
   </style>
 </head>
 
-<body class="bg-panel text-zinc-200 min-h-screen">
-  <div x-data="configApp()" x-init="init()" x-cloak class="max-w-6xl mx-auto p-6">
+<body class="text-parchment-100 font-body">
+  <div x-data="configApp()" x-init="init()" x-cloak class="min-h-screen">
 
-    <!-- ============ Header ============ -->
-    <header class="mb-4">
-      <h1 class="text-2xl font-bold">Sovereign Towns 控制面板</h1>
-      <p class="text-xs text-zinc-500 mt-1">浏览器编辑配置 · 保存后游戏内自动生效</p>
+    <!-- ============================================================
+         HEADER STRIP
+         ============================================================ -->
+    <header class="border-b border-gold-700/30 bg-ink-900/80 backdrop-blur-sm sticky top-0 z-50">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center gap-5">
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <div class="text-3xl text-gold-300 leading-none">⚜</div>
+          <div class="min-w-0">
+            <h1 class="font-display text-xl text-gold-100 truncate" style="letter-spacing: 0.15em;">
+              SOVEREIGN&nbsp;TOWNS
+            </h1>
+            <div class="text-[10px] tracking-[0.3em] uppercase text-gold-700 font-display">控 制 面 板</div>
+          </div>
+        </div>
+
+        <!-- Status pills row -->
+        <div class="hidden md:flex gap-2 items-center">
+          <span class="stat-pill">SERVER <strong x-text="status ? '在线' : '失联'"></strong></span>
+          <span class="stat-pill">城/堡 <strong x-text="settlements.length"></strong></span>
+          <span class="stat-pill">兵种库 <strong x-text="troops.length"></strong></span>
+          <span class="stat-pill">具体兵员 <strong x-text="Object.keys(config?.GlobalDefaults?.ExactTroopTemplate || {}).length"></strong></span>
+        </div>
+
+        <div class="flex gap-2">
+          <button @click="reloadAll()" class="btn-ghost px-3 py-1.5 text-xs font-mono uppercase tracking-wider rounded-sm">
+            ↻ 重读
+          </button>
+          <button @click="save()" :disabled="saving || !config"
+                  class="btn-save px-5 py-1.5 text-xs font-display tracking-widest uppercase rounded-sm">
+            <span x-text="saving ? '保存中' : '保存到游戏'"></span>
+          </button>
+        </div>
+      </div>
+      <div class="gold-rule"></div>
     </header>
 
-    <!-- ============ Status pills ============ -->
-    <div class="flex flex-wrap gap-2 items-center bg-panel-soft border border-panel-border rounded-lg p-3 mb-4">
-      <span class="px-3 py-1 rounded-full text-xs"
-            :class="status ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'">
-        server <span x-text="status ? '在线' : '失联'"></span>
-      </span>
-      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
-            x-text="`covers ${settlements.length} 城/堡`"></span>
-      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
-            x-text="`兵种 dump: ${troops.length}`"></span>
-      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
-            x-text="`上次保存: ${config?.LastModified || '?'}`"></span>
-      <span class="flex-1"></span>
-      <button @click="reloadAll()" class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">↻ 重读</button>
-      <button @click="save()" :disabled="saving || !config"
-              class="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 rounded font-medium"
-              x-text="saving ? '保存中…' : '保存到游戏'"></button>
+    <!-- Validation banner -->
+    <div x-show="warning" x-transition class="max-w-7xl mx-auto px-6 mt-3">
+      <div class="border border-danger-600/60 bg-danger-600/10 px-4 py-2.5 text-sm flex items-center gap-3">
+        <span class="text-danger-500 font-display text-lg leading-none">⚠</span>
+        <span class="text-parchment-100" x-text="warning"></span>
+        <button @click="warning = ''" class="ml-auto text-danger-500 hover:text-danger-600 text-xs">✕</button>
+      </div>
     </div>
 
-    <!-- ============ Validation warning footer (sticks at top of content) ============ -->
-    <div x-show="warning" class="mb-3 px-4 py-2 bg-red-900/60 border border-red-700 rounded text-sm text-red-200"
-         x-text="warning"></div>
+    <!-- ============================================================
+         BODY: vertical tabs + content
+         ============================================================ -->
+    <main class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-12 gap-6">
 
-    <!-- ============ Tab bar ============ -->
-    <nav class="flex gap-1 mb-4 border-b border-panel-border">
-      <template x-for="(tab, idx) in tabs" :key="idx">
-        <button @click="activeTab = idx"
-                :class="activeTab === idx
-                  ? 'bg-panel-soft text-zinc-100 border-t border-l border-r border-panel-border'
-                  : 'text-zinc-400 hover:text-zinc-200'"
-                class="px-4 py-2 text-sm font-medium rounded-t -mb-px"
-                x-text="tab"></button>
-      </template>
-    </nav>
+      <!-- LEFT VERTICAL TAB RAIL -->
+      <aside class="col-span-12 lg:col-span-3 xl:col-span-2">
+        <nav class="ornate-frame p-1">
+          <template x-for="(tab, idx) in tabs" :key="idx">
+            <button @click="activeTab = idx"
+                    :class="activeTab === idx ? 'tab-active' : 'text-parchment-200 hover:text-gold-100 hover:bg-ink-800'"
+                    class="w-full text-left px-4 py-3 text-sm font-display uppercase tracking-widest transition-colors flex items-center">
+              <span class="font-mono text-xs text-gold-700 mr-3" x-text="String(idx+1).padStart(2,'0')"></span>
+              <span x-text="tab.label" class="text-[11px]"></span>
+            </button>
+          </template>
+        </nav>
 
-    <!-- ============ Loading state ============ -->
-    <div x-show="!config" class="text-center text-zinc-500 py-16">配置加载中…</div>
-
-    <!-- ============ Tab content panels ============ -->
-    <main x-show="config" class="bg-panel-soft border border-panel-border rounded-lg p-6">
-
-      <!-- Tab 1: 功能开关 -->
-      <section x-show="activeTab === 0" class="space-y-2">
-        <h2 class="text-lg font-semibold mb-3">功能开关</h2>
-        <template x-for="t in toggleSpecs" :key="t.key">
-          <label class="flex items-center justify-between py-2 border-b border-panel-border/50">
-            <span class="text-sm">
-              <span class="font-medium" x-text="t.label"></span>
-              <span class="block text-xs text-zinc-500 mt-0.5" x-text="t.hint"></span>
-            </span>
-            <input type="checkbox" class="ml-4 w-5 h-5 accent-green-600"
-                   :checked="getToggleValue(t)" @change="setToggleValue(t, $event.target.checked)" />
-          </label>
-        </template>
-      </section>
-
-      <!-- Tab 2: 数量与预算 -->
-      <section x-show="activeTab === 1" class="space-y-4">
-        <h2 class="text-lg font-semibold mb-3">数量与预算（应用到 GlobalDefaults）</h2>
-        <template x-for="s in budgetSpecs" :key="s.key">
-          <div class="grid grid-cols-12 gap-3 items-center py-2 border-b border-panel-border/50">
-            <div class="col-span-4 text-sm">
-              <div class="font-medium" x-text="s.label"></div>
-              <div class="text-xs text-zinc-500" x-text="s.hint"></div>
-            </div>
-            <div class="col-span-6">
-              <input type="range" class="w-full"
-                     :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
-            </div>
-            <div class="col-span-2">
-              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
-                     :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
-            </div>
-          </div>
-        </template>
-      </section>
-
-      <!-- Tab 3: 兵种与 Tier 比例 -->
-      <section x-show="activeTab === 2" class="space-y-4">
-        <h2 class="text-lg font-semibold mb-3">兵种与 Tier 比例（应用到 GlobalDefaults）</h2>
-
-        <div class="bg-panel border border-panel-border rounded p-3 mb-4">
-          <div class="text-sm">
-            <span :class="ratioSumOk(troopSum) ? 'text-green-400' : 'text-red-400'"
-                  x-text="`兵种 Σ = ${troopSum.toFixed(2)}`"></span>
-            <span class="mx-3 text-zinc-600">·</span>
-            <span :class="ratioSumOk(tierSum) ? 'text-green-400' : 'text-red-400'"
-                  x-text="`Tier Σ = ${tierSum.toFixed(2)}`"></span>
-          </div>
-          <div x-show="!ratioSumOk(troopSum) || !ratioSumOk(tierSum)"
-               class="text-xs text-red-400 mt-1">
-            两个 Σ 都必须落在 [0.9, 1.1] 区间，否则保存会被拒。
-          </div>
-        </div>
-
-        <h3 class="text-sm font-semibold text-zinc-400 mt-4 mb-1">兵种占比</h3>
-        <template x-for="s in troopRatioSpecs" :key="s.key">
-          <div class="grid grid-cols-12 gap-3 items-center py-1">
-            <div class="col-span-3 text-sm font-medium" x-text="s.label"></div>
-            <div class="col-span-7">
-              <input type="range" class="w-full" min="0" max="1" step="0.01"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
-            </div>
-            <div class="col-span-2">
-              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
-                     min="0" max="1" step="0.01"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
-            </div>
-          </div>
-        </template>
-
-        <h3 class="text-sm font-semibold text-zinc-400 mt-4 mb-1">Tier 占比</h3>
-        <template x-for="s in tierRatioSpecs" :key="s.key">
-          <div class="grid grid-cols-12 gap-3 items-center py-1">
-            <div class="col-span-3 text-sm font-medium" x-text="s.label"></div>
-            <div class="col-span-7">
-              <input type="range" class="w-full" min="0" max="1" step="0.01"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
-            </div>
-            <div class="col-span-2">
-              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
-                     min="0" max="1" step="0.01"
-                     :value="config.GlobalDefaults[s.key]"
-                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
-            </div>
-          </div>
-        </template>
-      </section>
-
-      <!-- Tab 4: 模板与资源 -->
-      <section x-show="activeTab === 3" class="space-y-6">
-        <h2 class="text-lg font-semibold">模板与资源</h2>
-
-        <!-- TrainingTemplate Apply -->
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-400 mb-2">应用预设（覆盖数值/比例，保留具体兵员模板）</h3>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <template x-for="t in templates" :key="t.TemplateId">
-              <div class="bg-panel border border-panel-border rounded p-3 flex flex-col">
-                <div class="font-medium text-sm" x-text="t.DisplayName"></div>
-                <div class="text-xs text-zinc-500 mt-1 flex-1" x-text="t.Description"></div>
-                <button @click="applyTemplate(t)"
-                        class="mt-3 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-xs">应用</button>
+        <!-- Activity log mini panel -->
+        <div class="ornate-frame mt-4 p-3">
+          <div class="font-display text-[10px] tracking-[0.25em] uppercase text-gold-700 mb-2">活动日志</div>
+          <div class="space-y-1 max-h-60 overflow-y-auto font-mono text-[10.5px]">
+            <template x-for="(entry, idx) in logEntries" :key="idx">
+              <div :class="entry.cls" class="leading-relaxed">
+                <span class="text-gold-700" x-text="entry.ts"></span>
+                <span x-text="entry.msg"></span>
               </div>
             </template>
-            <div x-show="templates.length === 0" class="col-span-3 text-xs text-zinc-500">
-              预设加载失败/为空。
-            </div>
+            <div x-show="logEntries.length === 0" class="text-ink-600 italic text-[10px]">尚无活动</div>
           </div>
         </div>
+      </aside>
 
-        <!-- ExactTroopTemplate picker -->
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-400 mb-2">
-            具体兵员模板 <span class="text-zinc-600 font-normal"
-              x-text="`(${Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length} 兵种)`"></span>
-          </h3>
+      <!-- RIGHT CONTENT -->
+      <section class="col-span-12 lg:col-span-9 xl:col-span-10">
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div x-show="!config" class="text-center text-gold-700 py-24 font-display tracking-widest text-sm">
+          配 置 加 载 中
+        </div>
 
-            <!-- 左：已选 -->
-            <div class="bg-panel border border-panel-border rounded p-3">
-              <div class="text-xs text-zinc-500 mb-2">当前模板</div>
-              <div class="space-y-1 max-h-96 overflow-y-auto pr-2">
-                <template x-for="[id, count] in Object.entries(config.GlobalDefaults.ExactTroopTemplate || {})" :key="id">
-                  <div class="flex items-center gap-2 text-sm py-1 border-b border-panel-border/30">
-                    <span class="flex-1 truncate" x-text="troopLabel(id)"></span>
-                    <input type="number" class="w-16 bg-panel-soft border border-panel-border rounded px-1 py-0.5 text-right"
-                           min="0" :value="count"
-                           @input="updateTroopCount(id, $event.target.value)" />
-                    <button @click="removeTroop(id)" class="text-red-500 hover:text-red-400 px-1">✕</button>
+        <div x-show="config" class="ornate-frame">
+
+          <!-- =========== TAB 1: 功能开关 =========== -->
+          <div x-show="activeTab === 0" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-100 tracking-widest uppercase mb-1">功能 开关</h2>
+            <p class="text-parchment-300 text-xs mb-6">Master switches that enable or disable subsystems wholesale.</p>
+            <div class="diamond-divider mb-6"></div>
+
+            <div class="space-y-1">
+              <template x-for="t in toggleSpecs" :key="t.key">
+                <label class="toggle-row flex items-center gap-4 px-2 py-3 cursor-pointer">
+                  <input type="checkbox" class="gold-check shrink-0"
+                         :checked="getToggleValue(t)" @change="setToggleValue(t, $event.target.checked)" />
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm text-parchment-100" x-text="t.label"></div>
+                    <div class="text-xs text-ink-600 mt-0.5" x-text="t.hint"></div>
                   </div>
-                </template>
-                <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
-                     class="text-xs text-zinc-600 italic py-2">空。从右侧选择兵种添加。</div>
-              </div>
-            </div>
-
-            <!-- 右：候选 -->
-            <div class="bg-panel border border-panel-border rounded p-3">
-              <div class="flex flex-wrap gap-2 mb-2">
-                <input type="text" placeholder="搜索兵种…"
-                       class="flex-1 min-w-32 bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm"
-                       x-model="troopSearch" />
-                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm" x-model="troopCultureFilter">
-                  <option value="">所有文化</option>
-                  <template x-for="c in cultureList" :key="c">
-                    <option :value="c" x-text="c"></option>
-                  </template>
-                </select>
-                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm" x-model="troopTypeFilter">
-                  <option value="">所有兵种</option>
-                  <option value="cavalry">骑兵</option>
-                  <option value="infantry">步兵</option>
-                  <option value="archer">弓手</option>
-                  <option value="crossbow">弩手</option>
-                  <option value="thrower">投掷</option>
-                </select>
-                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm w-16" x-model.number="troopTierFilter">
-                  <option value="0">全 Tier</option>
-                  <template x-for="n in [1,2,3,4,5,6]" :key="n">
-                    <option :value="n" x-text="`T${n}`"></option>
-                  </template>
-                </select>
-              </div>
-              <div class="text-xs text-zinc-500 mb-1" x-text="`匹配 ${filteredTroops.length} / ${troops.length}`"></div>
-              <div class="space-y-0.5 max-h-80 overflow-y-auto pr-2">
-                <template x-for="tr in filteredTroops.slice(0, 200)" :key="tr.id">
-                  <div class="flex items-center gap-2 text-sm py-1 border-b border-panel-border/30 hover:bg-panel-soft cursor-pointer"
-                       @click="addTroop(tr.id)">
-                    <span class="w-6 text-xs text-zinc-600" x-text="`T${tr.tier}`"></span>
-                    <span class="flex-1 truncate" x-text="tr.name"></span>
-                    <span class="text-xs text-zinc-600" x-text="tr.culture"></span>
-                    <span class="text-xs text-zinc-600 w-12 text-right" x-text="tr.type"></span>
-                    <span class="text-blue-400">＋</span>
-                  </div>
-                </template>
-                <div x-show="filteredTroops.length > 200" class="text-xs text-zinc-600 italic py-1">
-                  仅显示前 200 条。继续输入收缩。
-                </div>
-              </div>
+                </label>
+              </template>
             </div>
           </div>
-        </div>
 
-        <!-- 资源类 numerics -->
-        <div>
-          <h3 class="text-sm font-semibold text-zinc-400 mb-2">资源与调度</h3>
-          <template x-for="s in resourceSpecs" :key="s.key">
-            <div class="grid grid-cols-12 gap-3 items-center py-2 border-b border-panel-border/50">
-              <div class="col-span-4 text-sm">
-                <div class="font-medium" x-text="s.label"></div>
-                <div class="text-xs text-zinc-500" x-text="s.hint"></div>
-              </div>
-              <div class="col-span-6">
-                <input type="range" class="w-full"
-                       :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                       :value="getResourceValue(s)"
-                       @input="setResourceValue(s, $event.target.value)" />
-              </div>
-              <div class="col-span-2">
-                <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
-                       :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                       :value="getResourceValue(s)"
-                       @input="setResourceValue(s, $event.target.value)" />
-              </div>
-            </div>
-          </template>
-        </div>
-      </section>
+          <!-- =========== TAB 2: 数量与预算 =========== -->
+          <div x-show="activeTab === 1" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-100 tracking-widest uppercase mb-1">数量 与 预算</h2>
+            <p class="text-parchment-300 text-xs mb-6">应用于 GlobalDefaults — 单城/堡可在下方覆盖。</p>
+            <div class="diamond-divider mb-6"></div>
 
-      <!-- Tab 5: 按城堡覆盖 -->
-      <section x-show="activeTab === 4" class="space-y-4">
-        <h2 class="text-lg font-semibold mb-3">按城/堡覆盖</h2>
-        <p class="text-xs text-zinc-500 mb-2">
-          打开覆盖后该城/堡使用独立规则，否则继承 GlobalDefaults。覆盖关闭时该 settlement 的规则字典条目会被删除。
-        </p>
-
-        <div x-show="settlements.length === 0" class="text-zinc-500 italic text-sm">
-          玩家暂无城/堡（或网页刚加载完，刷新一下试试）。
-        </div>
-
-        <template x-for="s in settlements" :key="s.stringId">
-          <div class="bg-panel border border-panel-border rounded">
-            <div class="flex items-center gap-3 p-3 border-b border-panel-border/50">
-              <span class="px-2 py-0.5 rounded text-xs"
-                    :class="s.isCastle ? 'bg-amber-900 text-amber-300' : 'bg-blue-900 text-blue-300'"
-                    x-text="s.isCastle ? '城堡' : '城镇'"></span>
-              <span class="font-medium" x-text="s.name"></span>
-              <span class="text-xs text-zinc-600" x-text="s.stringId"></span>
-              <span class="flex-1"></span>
-              <label class="flex items-center gap-2 text-sm">
-                <span class="text-zinc-500">覆盖</span>
-                <input type="checkbox" class="w-4 h-4 accent-green-600"
-                       :checked="!!config.PerSettlementOverrides[s.stringId]"
-                       @change="toggleOverride(s.stringId, $event.target.checked)" />
-              </label>
-            </div>
-
-            <div x-show="!!config.PerSettlementOverrides[s.stringId]" class="p-3 space-y-2">
-              <template x-for="spec in perSettlementNumericSpecs" :key="spec.key">
-                <div class="grid grid-cols-12 gap-3 items-center py-1">
-                  <div class="col-span-4 text-sm" x-text="spec.label"></div>
-                  <div class="col-span-6">
+            <div class="space-y-5">
+              <template x-for="s in budgetSpecs" :key="s.key">
+                <div class="grid grid-cols-12 gap-4 items-center">
+                  <div class="col-span-12 md:col-span-4">
+                    <div class="text-sm text-parchment-50 font-medium" x-text="s.label"></div>
+                    <div class="text-[11px] text-ink-600" x-text="s.hint"></div>
+                  </div>
+                  <div class="col-span-9 md:col-span-6">
                     <input type="range" class="w-full"
-                           :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
-                           :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
-                           @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                           :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                           :value="config.GlobalDefaults[s.key]"
+                           @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
                   </div>
-                  <div class="col-span-2">
-                    <input type="number" class="w-full bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm text-right"
-                           :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
-                           :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
-                           @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                  <div class="col-span-3 md:col-span-2">
+                    <input type="number"
+                           class="w-full bg-ink-900 border border-gold-700/30 text-gold-100 px-2 py-1 text-sm text-right focus:border-gold-400 focus:outline-none"
+                           :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                           :value="config.GlobalDefaults[s.key]"
+                           @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
                   </div>
                 </div>
               </template>
             </div>
           </div>
-        </template>
-      </section>
-    </main>
 
-    <!-- ============ Activity log ============ -->
-    <div class="mt-4 bg-panel-soft border border-panel-border rounded p-3">
-      <div class="text-xs text-zinc-500 mb-1">活动日志</div>
-      <div class="space-y-0.5 max-h-32 overflow-y-auto font-mono text-xs">
-        <template x-for="(entry, idx) in logEntries" :key="idx">
-          <div :class="entry.cls" x-text="`[${entry.ts}] ${entry.msg}`"></div>
-        </template>
-      </div>
-    </div>
+          <!-- =========== TAB 3: 兵种编制 =========== -->
+          <div x-show="activeTab === 2" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-100 tracking-widest uppercase mb-1">兵种 编制</h2>
+            <p class="text-parchment-300 text-xs mb-6">
+              <span class="font-mono">UseGenericMatching=true</span> 时以 5 类比例匹配（Tier 通过 Min/MaxTier 圈定）；
+              否则按具体兵员模板填充。
+            </p>
+
+            <!-- Mode selector -->
+            <div class="card p-4 mb-6">
+              <div class="flex flex-wrap gap-3 items-start">
+                <label class="flex items-start gap-3 cursor-pointer flex-1 min-w-64">
+                  <input type="checkbox" class="gold-check shrink-0 mt-0.5"
+                         :checked="config.GlobalDefaults.UseGenericMatching"
+                         @change="config.GlobalDefaults.UseGenericMatching = $event.target.checked" />
+                  <div>
+                    <div class="text-sm font-display tracking-wider uppercase text-gold-100">
+                      通用匹配模式 <span class="text-[10px] text-ink-600 normal-case" x-text="config.GlobalDefaults.UseGenericMatching ? '· 开启' : '· 关闭'"></span>
+                    </div>
+                    <div class="text-[11px] text-ink-600 mt-1">
+                      开启：按 5 个兵种比例 + Min/MaxTier 招募任意文化任意阵营的兵。<br/>
+                      关闭：完全按下方「具体兵员模板」中的兵种 stringId 招募。
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Role ratios -->
+            <div class="mb-8">
+              <div class="flex items-baseline justify-between mb-4">
+                <h3 class="font-display text-sm tracking-widest uppercase text-gold-300">兵 种 比 例</h3>
+                <div class="font-mono text-xs">
+                  <span class="text-ink-600">Σ = </span>
+                  <span :class="ratioSumOk(troopSum) ? 'text-sage-400' : 'text-danger-500'"
+                        x-text="troopSum.toFixed(2)"></span>
+                  <span class="text-ink-600 ml-2 text-[10px]">应落于 [0.90, 1.10]</span>
+                </div>
+              </div>
+              <div class="space-y-3">
+                <template x-for="s in troopRatioSpecs" :key="s.key">
+                  <div class="grid grid-cols-12 gap-4 items-center">
+                    <div class="col-span-3 text-sm font-display tracking-wider text-parchment-100" x-text="s.label"></div>
+                    <div class="col-span-7">
+                      <input type="range" class="w-full" min="0" max="1" step="0.01"
+                             :value="config.GlobalDefaults[s.key]"
+                             @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+                    </div>
+                    <div class="col-span-2">
+                      <input type="number"
+                             class="w-full bg-ink-900 border border-gold-700/30 text-gold-100 px-2 py-1 text-sm text-right focus:border-gold-400 focus:outline-none"
+                             min="0" max="1" step="0.01"
+                             :value="config.GlobalDefaults[s.key]"
+                             @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Tier band -->
+            <div class="mb-8">
+              <h3 class="font-display text-sm tracking-widest uppercase text-gold-300 mb-3">Tier 范 围</h3>
+              <div class="grid grid-cols-12 gap-4 items-center">
+                <div class="col-span-2 text-xs text-parchment-300">最低 Tier</div>
+                <div class="col-span-3 flex gap-1">
+                  <template x-for="n in [1,2,3,4,5,6]" :key="`min-${n}`">
+                    <button @click="config.GlobalDefaults.MinTier = n; if (config.GlobalDefaults.MaxTier < n) config.GlobalDefaults.MaxTier = n;"
+                            :class="config.GlobalDefaults.MinTier === n ? 'bg-gold-400 text-ink-900 border-gold-200' : 'text-parchment-200 border-gold-700 hover:border-gold-400'"
+                            class="w-8 h-8 border text-xs font-mono transition-colors"
+                            x-text="n"></button>
+                  </template>
+                </div>
+                <div class="col-span-2 text-xs text-parchment-300 ml-4">最高 Tier</div>
+                <div class="col-span-3 flex gap-1">
+                  <template x-for="n in [1,2,3,4,5,6]" :key="`max-${n}`">
+                    <button @click="config.GlobalDefaults.MaxTier = n; if (config.GlobalDefaults.MinTier > n) config.GlobalDefaults.MinTier = n;"
+                            :class="config.GlobalDefaults.MaxTier === n ? 'bg-gold-400 text-ink-900 border-gold-200' : (n < config.GlobalDefaults.MinTier ? 'text-ink-600 border-ink-700 opacity-40' : 'text-parchment-200 border-gold-700 hover:border-gold-400')"
+                            class="w-8 h-8 border text-xs font-mono transition-colors"
+                            x-text="n"></button>
+                  </template>
+                </div>
+              </div>
+              <div class="text-[11px] text-ink-600 mt-2">仅圈定可招募的 tier 区间；不再按 tier 分桶（详见 commit B7.10）。</div>
+            </div>
+
+            <div class="diamond-divider mb-6"></div>
+
+            <!-- Exact troop picker -->
+            <div>
+              <div class="flex items-baseline justify-between mb-4">
+                <h3 class="font-display text-sm tracking-widest uppercase text-gold-300">
+                  具 体 兵 员 模 板
+                  <span class="text-[10px] text-ink-600 normal-case ml-2"
+                        x-text="config.GlobalDefaults.UseGenericMatching ? '（当前关闭通用匹配后才会按此招募）' : '（生效中）'"></span>
+                </h3>
+                <div class="font-mono text-xs text-parchment-300"
+                     x-text="`${Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length} 兵种 · 共 ${exactTroopTotal} 人`"></div>
+              </div>
+
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                <!-- LEFT: selected -->
+                <div class="card p-4">
+                  <div class="font-display text-[10px] tracking-[0.3em] uppercase text-gold-700 mb-3">模板 成员</div>
+                  <div class="space-y-1 max-h-[28rem] overflow-y-auto pr-1">
+                    <template x-for="[id, count] in Object.entries(config.GlobalDefaults.ExactTroopTemplate || {})" :key="id">
+                      <div class="flex items-center gap-2 px-2 py-2 border-b border-ink-700/50 hover:bg-ink-800/50 transition-colors">
+                        <span class="tier-dot" :class="`tier-${(troopById[id]?.tier || 1)}`"></span>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-sm text-parchment-50 truncate" x-text="troopById[id]?.name || id"></div>
+                          <div class="text-[10px] text-ink-600 flex gap-2">
+                            <span class="culture-badge" x-text="troopById[id]?.culture || '?'"></span>
+                            <span x-text="`T${troopById[id]?.tier || '?'}`"></span>
+                            <span x-text="typeLabel(troopById[id]?.type)"></span>
+                          </div>
+                        </div>
+                        <input type="number" class="w-14 bg-ink-900 border border-gold-700/30 text-gold-100 px-1 py-0.5 text-xs text-right focus:border-gold-400 focus:outline-none"
+                               min="0" :value="count"
+                               @input="updateTroopCount(id, $event.target.value)" />
+                        <button @click="removeTroop(id)" class="text-danger-500 hover:text-danger-600 text-sm leading-none px-1">✕</button>
+                      </div>
+                    </template>
+                    <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
+                         class="text-[11px] text-ink-600 italic py-6 text-center">
+                      尚未选定任何兵种。从右栏挑选。
+                    </div>
+                  </div>
+                </div>
+
+                <!-- RIGHT: catalog -->
+                <div class="card p-4">
+                  <div class="font-display text-[10px] tracking-[0.3em] uppercase text-gold-700 mb-3">兵 种 名 录</div>
+
+                  <input type="text" placeholder="搜索（中文 / 英文 ID）"
+                         class="w-full bg-ink-900 border border-gold-700/30 text-parchment-100 px-3 py-2 text-sm focus:border-gold-400 focus:outline-none mb-2"
+                         x-model="troopSearch" />
+
+                  <!-- Culture chips -->
+                  <div class="flex flex-wrap gap-1 mb-2">
+                    <button @click="troopCultureFilter = ''"
+                            :class="troopCultureFilter === '' ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                            class="px-2 py-0.5 text-[10px] border font-display tracking-wider uppercase">
+                      全部文化
+                    </button>
+                    <template x-for="c in cultureList" :key="c">
+                      <button @click="troopCultureFilter = (troopCultureFilter === c ? '' : c)"
+                              :class="troopCultureFilter === c ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                              class="px-2 py-0.5 text-[10px] border font-display tracking-wider uppercase"
+                              x-text="c"></button>
+                    </template>
+                  </div>
+
+                  <!-- Type + tier chips -->
+                  <div class="flex flex-wrap gap-1 mb-2">
+                    <button @click="troopTypeFilter = ''"
+                            :class="troopTypeFilter === '' ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                            class="px-2 py-0.5 text-[10px] border font-display tracking-wider uppercase">全兵种</button>
+                    <template x-for="t in [['cavalry','骑'],['infantry','步'],['archer','弓'],['crossbow','弩'],['thrower','投']]" :key="t[0]">
+                      <button @click="troopTypeFilter = (troopTypeFilter === t[0] ? '' : t[0])"
+                              :class="troopTypeFilter === t[0] ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                              class="px-2 py-0.5 text-[10px] border font-display tracking-wider uppercase"
+                              x-text="t[1]"></button>
+                    </template>
+                    <span class="text-ink-600 mx-1">·</span>
+                    <button @click="troopTierFilter = 0"
+                            :class="troopTierFilter === 0 ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                            class="px-2 py-0.5 text-[10px] border font-mono">T*</button>
+                    <template x-for="n in [1,2,3,4,5,6]" :key="`tf-${n}`">
+                      <button @click="troopTierFilter = (troopTierFilter === n ? 0 : n)"
+                              :class="troopTierFilter === n ? 'bg-gold-400 text-ink-900' : 'text-parchment-300 border-gold-700 hover:border-gold-400'"
+                              class="px-2 py-0.5 text-[10px] border font-mono"
+                              x-text="`T${n}`"></button>
+                    </template>
+                  </div>
+
+                  <div class="text-[10px] text-ink-600 mb-1 font-mono"
+                       x-text="`匹配 ${filteredTroops.length} / ${troops.length}`"></div>
+
+                  <div class="space-y-0.5 max-h-[20rem] overflow-y-auto pr-1">
+                    <template x-for="tr in filteredTroops.slice(0, 200)" :key="tr.id">
+                      <div @click="addTroop(tr.id)"
+                           class="card-clickable flex items-center gap-2 px-2 py-1.5 border-b border-ink-700/40 hover:bg-ink-800/50 transition-colors">
+                        <span class="tier-dot" :class="`tier-${tr.tier}`"></span>
+                        <span class="font-mono text-[10px] text-gold-700" x-text="`T${tr.tier}`"></span>
+                        <span class="flex-1 truncate text-sm text-parchment-100" x-html="highlight(tr.name, troopSearch)"></span>
+                        <span class="culture-badge" x-text="tr.culture"></span>
+                        <span class="type-glyph" x-text="typeGlyph(tr.type)"></span>
+                        <span class="text-gold-400 text-sm w-4 text-right">＋</span>
+                      </div>
+                    </template>
+                    <div x-show="filteredTroops.length > 200" class="text-[10px] text-ink-600 italic py-2 text-center">
+                      仅显示前 200 条。继续输入收缩。
+                    </div>
+                    <div x-show="filteredTroops.length === 0" class="text-[11px] text-ink-600 italic py-6 text-center">
+                      无匹配兵种
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- =========== TAB 4: 模板与资源 =========== -->
+          <div x-show="activeTab === 3" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-100 tracking-widest uppercase mb-1">模板 与 资源</h2>
+            <p class="text-parchment-300 text-xs mb-6">一键预设 + 食物/经验/招募调度参数。</p>
+            <div class="diamond-divider mb-6"></div>
+
+            <!-- TrainingTemplate cards -->
+            <div class="mb-8">
+              <h3 class="font-display text-sm tracking-widest uppercase text-gold-300 mb-4">预 设 应 用</h3>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <template x-for="t in templates" :key="t.TemplateId">
+                  <div class="card p-4 flex flex-col">
+                    <div class="font-display text-base text-gold-100 tracking-wider" x-text="templateZhName(t)"></div>
+                    <div class="text-[11px] text-ink-600 mt-2 flex-1" x-text="t.Description"></div>
+                    <div class="gold-rule my-3"></div>
+                    <button @click="applyTemplate(t)"
+                            class="btn-ghost px-3 py-1.5 text-[11px] font-display tracking-widest uppercase">
+                      应用此预设
+                    </button>
+                  </div>
+                </template>
+                <div x-show="templates.length === 0" class="col-span-3 text-[11px] text-ink-600">无预设。</div>
+              </div>
+            </div>
+
+            <!-- Resource numerics -->
+            <div>
+              <h3 class="font-display text-sm tracking-widest uppercase text-gold-300 mb-4">资 源 与 调 度</h3>
+              <div class="space-y-4">
+                <template x-for="s in resourceSpecs" :key="s.key">
+                  <div class="grid grid-cols-12 gap-4 items-center">
+                    <div class="col-span-12 md:col-span-4">
+                      <div class="text-sm text-parchment-50" x-text="s.label"></div>
+                      <div class="text-[11px] text-ink-600" x-text="s.hint"></div>
+                    </div>
+                    <div class="col-span-9 md:col-span-6">
+                      <input type="range" class="w-full"
+                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                             :value="getResourceValue(s)"
+                             @input="setResourceValue(s, $event.target.value)" />
+                    </div>
+                    <div class="col-span-3 md:col-span-2">
+                      <input type="number"
+                             class="w-full bg-ink-900 border border-gold-700/30 text-gold-100 px-2 py-1 text-sm text-right focus:border-gold-400 focus:outline-none"
+                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                             :value="getResourceValue(s)"
+                             @input="setResourceValue(s, $event.target.value)" />
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+
+          <!-- =========== TAB 5: 按城/堡覆盖 =========== -->
+          <div x-show="activeTab === 4" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-100 tracking-widest uppercase mb-1">按 城堡 覆盖</h2>
+            <p class="text-parchment-300 text-xs mb-6">
+              每个领地可使用独立规则。取消勾选「覆盖」会从字典中删除该 entry，恢复 GlobalDefaults。
+            </p>
+            <div class="diamond-divider mb-6"></div>
+
+            <div x-show="settlements.length === 0" class="text-[11px] text-ink-600 italic">
+              玩家暂无城/堡（或网页刚加载，请稍候片刻）。
+            </div>
+
+            <div class="space-y-3">
+              <template x-for="s in settlements" :key="s.stringId">
+                <div class="card">
+                  <div class="flex items-center gap-3 p-4">
+                    <span class="font-display text-[9px] tracking-[0.2em] uppercase px-2 py-0.5 border"
+                          :class="s.isCastle ? 'border-gold-500 text-gold-300' : 'border-parchment-300 text-parchment-200'"
+                          x-text="s.isCastle ? '城堡' : '城镇'"></span>
+                    <span class="font-display text-base text-gold-100 tracking-wider" x-text="s.name"></span>
+                    <span class="font-mono text-[10px] text-ink-600" x-text="s.stringId"></span>
+                    <span class="flex-1"></span>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" class="gold-check"
+                             :checked="!!config.PerSettlementOverrides[s.stringId]"
+                             @change="toggleOverride(s.stringId, $event.target.checked)" />
+                      <span class="text-[11px] font-display tracking-widest uppercase text-parchment-300">覆盖</span>
+                    </label>
+                  </div>
+
+                  <div x-show="!!config.PerSettlementOverrides[s.stringId]" x-transition class="px-4 pb-4 pt-1 border-t border-gold-700/20 space-y-3">
+                    <template x-for="spec in perSettlementNumericSpecs" :key="spec.key">
+                      <div class="grid grid-cols-12 gap-3 items-center">
+                        <div class="col-span-4 text-xs text-parchment-200" x-text="spec.label"></div>
+                        <div class="col-span-6">
+                          <input type="range" class="w-full"
+                                 :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
+                                 :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
+                                 @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                        </div>
+                        <div class="col-span-2">
+                          <input type="number"
+                                 class="w-full bg-ink-900 border border-gold-700/30 text-gold-100 px-2 py-0.5 text-xs text-right focus:border-gold-400 focus:outline-none"
+                                 :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
+                                 :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
+                                 @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </div><!-- /ornate-frame -->
+
+      </section><!-- /right content -->
+
+    </main>
 
   </div>
 
+  <!-- ============================================================
+       Alpine app
+       ============================================================ -->
   <script>
     function configApp() {
       return {
-        // ============ State ============
         token: '',
         activeTab: 0,
-        tabs: ['功能开关', '数量与预算', '兵种与 Tier 比例', '模板与资源', '按城/堡覆盖'],
+        tabs: [
+          { label: '功能开关' },
+          { label: '数量预算' },
+          { label: '兵种编制' },
+          { label: '模板资源' },
+          { label: '按城堡覆盖' },
+        ],
         config: null,
         status: null,
         troops: [],
@@ -400,61 +762,45 @@
         saving: false,
         logEntries: [],
 
-        // ExactTroop picker filter state
         troopSearch: '',
         troopCultureFilter: '',
         troopTypeFilter: '',
         troopTierFilter: 0,
 
-        // ============ Spec tables (drive the slider rows) ============
         toggleSpecs: [
-          { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount。' },
-          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军。' },
-          { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地。' },
-          { key: 'CastleSupport', root: 'EnabledFeatures', label: '城堡支持', hint: '对玩家归属城堡同等启用上述功能。' },
-          { key: 'LlmReasoning', root: 'EnabledFeatures', label: 'LLM 推理建议', hint: '启用 LLM 提供决策建议（仅建议，不动手）。' },
-          { key: 'LlmAutoExecute', root: 'EnabledFeatures', label: 'LLM 自动执行', hint: '允许 LLM 直接执行决策（高风险）。' },
-          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '无巡逻队时附近有敌对势力则出城攻击。' },
-          { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军。' },
-          { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town。' },
-          { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town。' },
-          { key: 'UseGenericMatching', root: 'GlobalDefaults', label: '通用匹配（忽略文化）', hint: '开启=按 Tier+兵种类型匹配；关闭=按 ExactTroopTemplate 具体兵种匹配。' },
+          { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount' },
+          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军' },
+          { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地' },
+          { key: 'CastleSupport', root: 'EnabledFeatures', label: '城堡支持', hint: '对玩家归属城堡同等启用上述功能' },
+          { key: 'LlmReasoning', root: 'EnabledFeatures', label: 'LLM 推理建议', hint: '启用 LLM 提供决策建议（仅建议，不动手）' },
+          { key: 'LlmAutoExecute', root: 'EnabledFeatures', label: 'LLM 自动执行', hint: '允许 LLM 直接执行决策（高风险）' },
+          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '无巡逻队时附近有敌对势力则出城攻击' },
+          { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军' },
+          { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town' },
+          { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town' },
         ],
 
         budgetSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', hint: '50–500，驻军应维持的兵员数', min: 50, max: 500, discrete: true },
           { key: 'MinimumDefenders', label: '最少防守人数', hint: '0–300，至少保留的防守人数', min: 0, max: 300, discrete: true },
           { key: 'BudgetLimit', label: '招募预算上限', hint: '0–50000 denar/日', min: 0, max: 50000, discrete: true },
-          { key: 'MinTier', label: '最低 Tier', hint: '1–6', min: 1, max: 6, discrete: true },
-          { key: 'MaxTier', label: '最高 Tier', hint: '1–6', min: 1, max: 6, discrete: true },
-          { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '0.5–2.0', min: 0.5, max: 2.0, discrete: false },
-          { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '0.5–2.0', min: 0.5, max: 2.0, discrete: false },
+          { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '0.5–2.0，战争状态时目标人数倍数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '0.5–2.0，和平时期目标人数倍数', min: 0.5, max: 2.0, discrete: false },
         ],
 
         troopRatioSpecs: [
-          { key: 'CavalryRatio', label: '骑兵占比' },
-          { key: 'InfantryRatio', label: '步兵占比' },
-          { key: 'ArcherRatio', label: '弓手占比' },
-          { key: 'CrossbowRatio', label: '弩手占比' },
-          { key: 'ThrowerRatio', label: '投掷兵占比' },
+          { key: 'CavalryRatio', label: '骑兵' },
+          { key: 'InfantryRatio', label: '步兵' },
+          { key: 'ArcherRatio', label: '弓手' },
+          { key: 'CrossbowRatio', label: '弩手' },
+          { key: 'ThrowerRatio', label: '投掷' },
         ],
 
-        tierRatioSpecs: [
-          { key: 'Tier1Ratio', label: 'Tier 1' },
-          { key: 'Tier2Ratio', label: 'Tier 2' },
-          { key: 'Tier3Ratio', label: 'Tier 3' },
-          { key: 'Tier4Ratio', label: 'Tier 4' },
-          { key: 'Tier5Ratio', label: 'Tier 5' },
-          { key: 'Tier6Ratio', label: 'Tier 6' },
-        ],
-
-        // Resource specs: mix of GlobalDefaults + top-level GlobalConfig fields.
-        // root='GlobalDefaults' or '' (top-level).
         resourceSpecs: [
-          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募 (-50 ~ 50)', min: -50, max: 50, discrete: false, step: 0.5 },
+          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5 },
           { key: 'DailyTroopXpBonus', root: 'GlobalDefaults', label: '每日驻军 XP 奖励', hint: '每日给非 hero 兵员注入 XP (0–30)', min: 0, max: 30, discrete: true },
           { key: 'DailyPrisonerConformityAmount', root: '', label: '每日俘虏 Conformity', hint: '每日给驻军俘虏累加 conformity (0–30)', min: 0, max: 30, discrete: true },
-          { key: 'RecruiterEscortSize', root: '', label: '征兵护卫数', hint: '征兵队出发时从首府抽取的低 Tier 兵 (0–50)', min: 0, max: 50, discrete: true },
+          { key: 'RecruiterEscortSize', root: '', label: '征兵护卫数', hint: '征兵队从首府抽取的低 Tier 兵 (0–50)', min: 0, max: 50, discrete: true },
           { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
           { key: 'RecruiterReturnThreshold', root: '', label: '征兵队回首府阈值', hint: '征兵队总人数达此值立即回首府 (10–200)', min: 10, max: 200, discrete: true },
         ],
@@ -468,21 +814,25 @@
           { key: 'FoodSafetyThreshold', label: '食物安全阈值', min: -50, max: 50, discrete: false, step: 0.5 },
         ],
 
-        // ============ Computed ============
+        // ============ computed ============
         get troopSum() {
           if (!this.config) return 0;
           const g = this.config.GlobalDefaults;
-          return (g.CavalryRatio||0) + (g.InfantryRatio||0) + (g.ArcherRatio||0) + (g.CrossbowRatio||0) + (g.ThrowerRatio||0);
-        },
-        get tierSum() {
-          if (!this.config) return 0;
-          const g = this.config.GlobalDefaults;
-          return (g.Tier1Ratio||0) + (g.Tier2Ratio||0) + (g.Tier3Ratio||0) + (g.Tier4Ratio||0) + (g.Tier5Ratio||0) + (g.Tier6Ratio||0);
+          return (g.CavalryRatio||0)+(g.InfantryRatio||0)+(g.ArcherRatio||0)+(g.CrossbowRatio||0)+(g.ThrowerRatio||0);
         },
         get cultureList() {
           const set = new Set();
           for (const t of this.troops) if (t.culture) set.add(t.culture);
           return Array.from(set).sort();
+        },
+        get troopById() {
+          const map = {};
+          for (const t of this.troops) map[t.id] = t;
+          return map;
+        },
+        get exactTroopTotal() {
+          if (!this.config?.GlobalDefaults?.ExactTroopTemplate) return 0;
+          return Object.values(this.config.GlobalDefaults.ExactTroopTemplate).reduce((a, b) => a + (parseInt(b)||0), 0);
         },
         get filteredTroops() {
           const q = this.troopSearch.toLowerCase().trim();
@@ -495,9 +845,8 @@
           });
         },
 
-        // ============ Lifecycle ============
+        // ============ lifecycle ============
         async init() {
-          // Bootstrap token from ?t= or sessionStorage.
           const u = new URL(window.location.href);
           const fromQuery = u.searchParams.get('t');
           if (fromQuery) {
@@ -525,7 +874,6 @@
           ]);
         },
 
-        // ============ API ============
         async http(method, path, body = null) {
           const opt = { method, headers: { 'X-ST-Token': this.token } };
           if (body !== null) {
@@ -545,7 +893,6 @@
         async fetchConfig() {
           const r = await this.http('GET', '/api/config');
           if (r.ok) {
-            // Ensure ExactTroopTemplate is an object (Newtonsoft may serialize empty dict as missing).
             r.body.GlobalDefaults = r.body.GlobalDefaults || {};
             r.body.GlobalDefaults.ExactTroopTemplate = r.body.GlobalDefaults.ExactTroopTemplate || {};
             r.body.PerSettlementOverrides = r.body.PerSettlementOverrides || {};
@@ -553,25 +900,13 @@
             this.config = r.body;
             this.log('配置已读取', 'ok');
           } else {
-            this.log(`配置读取失败 ${r.status}: ${r.body?.message || '?'}`, 'err');
+            this.log(`读取失败 ${r.status}: ${r.body?.message || '?'}`, 'err');
           }
         },
-        async fetchStatus() {
-          const r = await this.http('GET', '/api/status');
-          this.status = r.ok ? r.body : null;
-        },
-        async fetchTroops() {
-          const r = await this.http('GET', '/api/troops');
-          this.troops = r.ok ? (r.body.troops || []) : [];
-        },
-        async fetchSettlements() {
-          const r = await this.http('GET', '/api/settlements');
-          this.settlements = r.ok ? (r.body.settlements || []) : [];
-        },
-        async fetchTemplates() {
-          const r = await this.http('GET', '/api/training-templates');
-          this.templates = r.ok ? (r.body.templates || []) : [];
-        },
+        async fetchStatus()      { const r = await this.http('GET', '/api/status');             this.status = r.ok ? r.body : null; },
+        async fetchTroops()      { const r = await this.http('GET', '/api/troops');             this.troops = r.ok ? (r.body.troops || []) : []; },
+        async fetchSettlements() { const r = await this.http('GET', '/api/settlements');        this.settlements = r.ok ? (r.body.settlements || []) : []; },
+        async fetchTemplates()   { const r = await this.http('GET', '/api/training-templates'); this.templates = r.ok ? (r.body.templates || []) : []; },
 
         async save() {
           if (!this.config) return;
@@ -588,16 +923,11 @@
           }
         },
 
-        // ============ Toggles ============
-        getToggleValue(t) {
-          if (!this.config) return false;
-          return !!this.config[t.root][t.key];
-        },
-        setToggleValue(t, v) {
-          this.config[t.root][t.key] = v;
-        },
+        // ============ toggles ============
+        getToggleValue(t) { return !!this.config?.[t.root]?.[t.key]; },
+        setToggleValue(t, v) { this.config[t.root][t.key] = v; },
 
-        // ============ Resource values (mixed root) ============
+        // ============ resource (mixed root) ============
         getResourceValue(s) {
           const root = s.root ? this.config[s.root] : this.config;
           return root?.[s.key];
@@ -609,44 +939,36 @@
         },
 
         // ============ ExactTroopTemplate ============
-        troopLabel(id) {
-          const t = this.troops.find(x => x.id === id);
-          return t ? `${t.name} · ${t.culture} T${t.tier}` : id;
-        },
         addTroop(id) {
           const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
           if (!(id in tmpl)) tmpl[id] = 10;
         },
         updateTroopCount(id, raw) {
           const n = parseInt(raw);
-          if (Number.isFinite(n) && n >= 0) {
-            this.config.GlobalDefaults.ExactTroopTemplate[id] = n;
-          }
+          if (Number.isFinite(n) && n >= 0) this.config.GlobalDefaults.ExactTroopTemplate[id] = n;
         },
-        removeTroop(id) {
-          delete this.config.GlobalDefaults.ExactTroopTemplate[id];
-        },
+        removeTroop(id) { delete this.config.GlobalDefaults.ExactTroopTemplate[id]; },
 
         // ============ TrainingTemplate Apply ============
+        templateZhName(t) {
+          const m = { 'frontier-defense': '边疆防御', 'trade-hub': '贸易枢纽', 'elite-noble': '精英贵族' };
+          return m[t.TemplateId] || t.DisplayName;
+        },
         applyTemplate(t) {
-          if (!confirm(`将「${t.DisplayName}」应用到 GlobalDefaults？\n这会覆盖目标人数 / 兵种比例 / Tier 比例 / 倍率 / 食物 / XP。\n你的功能开关、具体兵员模板和按城堡覆盖不变。`)) return;
+          if (!confirm(`将「${this.templateZhName(t)}」应用到 GlobalDefaults？\n\n会覆盖：目标人数 / 兵种比例 / Tier 范围 / 倍率 / 食物 / XP\n保留：功能开关 / 具体兵员模板 / 按城堡覆盖`)) return;
           const src = t.Rule;
           const fields = [
             'TargetTotalCount','MinimumDefenders','BudgetLimit','MinTier','MaxTier',
             'CavalryRatio','InfantryRatio','ArcherRatio','CrossbowRatio','ThrowerRatio',
-            'Tier1Ratio','Tier2Ratio','Tier3Ratio','Tier4Ratio','Tier5Ratio','Tier6Ratio',
             'WartimeMultiplier','PeacetimeMultiplier','FoodSafetyThreshold','DailyTroopXpBonus'
           ];
-          for (const k of fields) {
-            if (src[k] !== undefined) this.config.GlobalDefaults[k] = src[k];
-          }
-          this.log(`已应用预设：${t.DisplayName}（未保存，需要点「保存到游戏」）`, 'ok');
+          for (const k of fields) if (src[k] !== undefined) this.config.GlobalDefaults[k] = src[k];
+          this.log(`已应用预设：${this.templateZhName(t)}（未保存）`, 'ok');
         },
 
-        // ============ PerSettlementOverrides ============
+        // ============ Per-settlement ============
         toggleOverride(id, enabled) {
           if (enabled) {
-            // 深拷贝 GlobalDefaults 作为初值
             this.config.PerSettlementOverrides[id] = JSON.parse(JSON.stringify(this.config.GlobalDefaults));
           } else {
             delete this.config.PerSettlementOverrides[id];
@@ -658,16 +980,33 @@
           rule[spec.key] = spec.discrete ? parseInt(raw) : parseFloat(raw);
         },
 
-        // ============ UI helpers ============
+        // ============ helpers ============
         ratioSumOk(sum) { return sum >= 0.9 && sum <= 1.1; },
+        typeGlyph(type) {
+          return ({ cavalry: '♞', infantry: '⚔', archer: '⤧', crossbow: '✚', thrower: '◈' })[type] || '·';
+        },
+        typeLabel(type) {
+          return ({ cavalry: '骑兵', infantry: '步兵', archer: '弓手', crossbow: '弩手', thrower: '投掷' })[type] || type || '';
+        },
+        highlight(text, query) {
+          if (!query) return this.escape(text);
+          const q = query.toLowerCase();
+          const lower = text.toLowerCase();
+          const idx = lower.indexOf(q);
+          if (idx < 0) return this.escape(text);
+          return this.escape(text.slice(0, idx))
+               + '<mark>' + this.escape(text.slice(idx, idx + q.length)) + '</mark>'
+               + this.escape(text.slice(idx + q.length));
+        },
+        escape(s) { return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); },
 
         log(msg, cls = '') {
           this.logEntries.unshift({
-            ts: new Date().toLocaleTimeString(),
+            ts: new Date().toLocaleTimeString().slice(0,8) + ' ',
             msg,
-            cls: cls === 'err' ? 'text-red-400' : cls === 'ok' ? 'text-green-400' : 'text-zinc-400',
+            cls: cls === 'err' ? 'text-danger-500' : cls === 'ok' ? 'text-sage-400' : 'text-parchment-300',
           });
-          while (this.logEntries.length > 30) this.logEntries.pop();
+          while (this.logEntries.length > 20) this.logEntries.pop();
         },
       };
     }
