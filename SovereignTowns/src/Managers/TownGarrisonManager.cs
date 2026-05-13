@@ -103,12 +103,6 @@ public sealed class TownGarrisonManager
         var targetArchers  = (int)Math.Round(rule.ArcherRatio    * effectiveTarget);
         var targetCrossbow = (int)Math.Round(rule.CrossbowRatio  * effectiveTarget);
         var targetThrower  = (int)Math.Round(rule.ThrowerRatio   * effectiveTarget);
-        var targetTier1 = GenericTroopMatcher.TargetCount(rule.Tier1Ratio, effectiveTarget);
-        var targetTier2 = GenericTroopMatcher.TargetCount(rule.Tier2Ratio, effectiveTarget);
-        var targetTier3 = GenericTroopMatcher.TargetCount(rule.Tier3Ratio, effectiveTarget);
-        var targetTier4 = GenericTroopMatcher.TargetCount(rule.Tier4Ratio, effectiveTarget);
-        var targetTier5 = GenericTroopMatcher.TargetCount(rule.Tier5Ratio, effectiveTarget);
-        var targetTier6 = GenericTroopMatcher.TargetCount(rule.Tier6Ratio, effectiveTarget);
 
         Logger.Info(
             $"Town '{town.Name}' risk={risk.Level}({risk.Score:F2}, {risk.Reason}) " +
@@ -120,9 +114,9 @@ public sealed class TownGarrisonManager
             $"  per-type gap: cav={targetCavalry - snap.Cavalry} inf={targetInfantry - snap.Infantry} " +
             $"arc={targetArchers - snap.Archers} crb={targetCrossbow - snap.Crossbows} thr={targetThrower - snap.Throwers}");
         Logger.Info(
-            $"  per-tier gap: t1={targetTier1 - genericSnap.Tier1} t2={targetTier2 - genericSnap.Tier2} " +
-            $"t3={targetTier3 - genericSnap.Tier3} t4={targetTier4 - genericSnap.Tier4} " +
-            $"t5={targetTier5 - genericSnap.Tier5} t6={targetTier6 - genericSnap.Tier6}");
+            $"  tier band: [{rule.MinTier}..{rule.MaxTier}] " +
+            $"currentByTier=t1={genericSnap.Tier1} t2={genericSnap.Tier2} t3={genericSnap.Tier3} " +
+            $"t4={genericSnap.Tier4} t5={genericSnap.Tier5} t6={genericSnap.Tier6}");
 
         if (snap.Total < rule.MinimumDefenders)
         {

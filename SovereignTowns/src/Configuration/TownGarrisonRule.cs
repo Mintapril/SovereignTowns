@@ -38,28 +38,12 @@ public sealed class TownGarrisonRule
     /// <summary>投掷兵（标枪 / 飞斧）占比。</summary>
     public float ThrowerRatio { get; set; } = 0.05f;
 
-    /// <summary>Tier 1 目标比例。Tier1..Tier6 期望约等于 1.0。</summary>
-    public float Tier1Ratio { get; set; } = 0.00f;
-
-    /// <summary>Tier 2 目标比例。</summary>
-    public float Tier2Ratio { get; set; } = 0.20f;
-
-    /// <summary>Tier 3 目标比例。</summary>
-    public float Tier3Ratio { get; set; } = 0.30f;
-
-    /// <summary>Tier 4 目标比例。</summary>
-    public float Tier4Ratio { get; set; } = 0.30f;
-
-    /// <summary>Tier 5 目标比例。</summary>
-    public float Tier5Ratio { get; set; } = 0.20f;
-
-    /// <summary>Tier 6 目标比例。</summary>
-    public float Tier6Ratio { get; set; } = 0.00f;
-
-    /// <summary>允许招募的最低 Tier（含）。作为兼容/硬边界保留；通用匹配主要使用 Tier 比例。</summary>
+    /// <summary>允许招募的最低 Tier（含）。通用匹配模式下作为硬边界，与 MaxTier 一起圈定可招募范围。</summary>
+    /// <remarks>B7.10: 之前还有 Tier1..6Ratio 用于按 tier 分桶；用户决策简化为只看 5 个 role 比例，
+    /// tier 维度仅保留 MinTier/MaxTier 硬边界。</remarks>
     public int MinTier { get; set; } = 2;
 
-    /// <summary>允许招募的最高 Tier（含）。作为兼容/硬边界保留；通用匹配主要使用 Tier 比例。</summary>
+    /// <summary>允许招募的最高 Tier（含）。与 MinTier 配对使用。</summary>
     public int MaxTier { get; set; } = 5;
 
     /// <summary>true = 仅允许 Town 所属王国文化的兵种；false = 不做文化限制。通用匹配默认不限制文化/阵营。</summary>
@@ -127,12 +111,6 @@ public sealed class TownGarrisonRule
         ArcherRatio = this.ArcherRatio,
         CrossbowRatio = this.CrossbowRatio,
         ThrowerRatio = this.ThrowerRatio,
-        Tier1Ratio = this.Tier1Ratio,
-        Tier2Ratio = this.Tier2Ratio,
-        Tier3Ratio = this.Tier3Ratio,
-        Tier4Ratio = this.Tier4Ratio,
-        Tier5Ratio = this.Tier5Ratio,
-        Tier6Ratio = this.Tier6Ratio,
         MinTier = this.MinTier,
         MaxTier = this.MaxTier,
         RestrictToFactionCultures = this.RestrictToFactionCultures,

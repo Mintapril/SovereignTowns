@@ -150,7 +150,7 @@ public static class GenericTroopMatcher
 
             int tier = GetTierBucket(troop);
             if (tier < rule.MinTier || tier > rule.MaxTier) return false;
-            if (TierRatio(rule, tier) <= 0f) return false;
+            // B7.10: TierRatio bucket weighting removed — MinTier/MaxTier band is the only tier filter.
 
             var role = GetRole(troop);
             if (role == GenericTroopRole.Unknown) return false;
@@ -174,18 +174,15 @@ public static class GenericTroopMatcher
         if (targetTotal <= 0) targetTotal = Math.Max(rule.TargetTotalCount, snapshot.Total + 1);
 
         var role = GetRole(troop);
-        int tier = GetTierBucket(troop);
 
+        // B7.10: scoring now uses role gap only. Tier weighting was removed; MinTier/MaxTier
+        // already constrained the candidate pool in MatchesRule.
         int roleTarget = (int)Math.Round(RoleRatio(rule, role) * targetTotal);
-        int tierTarget = (int)Math.Round(TierRatio(rule, tier) * targetTotal);
         int roleDeficit = roleTarget - snapshot.CountOf(role);
-        int tierDeficit = tierTarget - snapshot.TierCount(tier);
 
         float score = 0f;
         if (roleDeficit > 0) score += roleDeficit * 2f;
-        if (tierDeficit > 0) score += tierDeficit * 1.5f;
-
-        score += RoleRatio(rule, role) + TierRatio(rule, tier);
+        score += RoleRatio(rule, role);
         if (IsListed(troop, rule.PriorityTroopIds)) score += 100f;
         return score;
     }
@@ -235,16 +232,6 @@ public static class GenericTroopMatcher
         GenericTroopRole.Crossbow => rule.CrossbowRatio,
         GenericTroopRole.Thrower => rule.ThrowerRatio,
         _ => 0f
-    };
-
-    public static float TierRatio(TownGarrisonRule rule, int tier) => tier switch
-    {
-        1 => rule.Tier1Ratio,
-        2 => rule.Tier2Ratio,
-        3 => rule.Tier3Ratio,
-        4 => rule.Tier4Ratio,
-        5 => rule.Tier5Ratio,
-        _ => rule.Tier6Ratio
     };
 
     public static int TargetCount(float ratio, int targetTotal)

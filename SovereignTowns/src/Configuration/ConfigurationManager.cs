@@ -22,7 +22,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。</summary>
-    public const int CurrentConfigVersion = 3;
+    public const int CurrentConfigVersion = 4;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -474,13 +474,7 @@ public static class ConfigurationManager
             || !ValidateRatio(rule.InfantryRatio, $"{ctx}.InfantryRatio", out reason)
             || !ValidateRatio(rule.ArcherRatio, $"{ctx}.ArcherRatio", out reason)
             || !ValidateRatio(rule.CrossbowRatio, $"{ctx}.CrossbowRatio", out reason)
-            || !ValidateRatio(rule.ThrowerRatio, $"{ctx}.ThrowerRatio", out reason)
-            || !ValidateRatio(rule.Tier1Ratio, $"{ctx}.Tier1Ratio", out reason)
-            || !ValidateRatio(rule.Tier2Ratio, $"{ctx}.Tier2Ratio", out reason)
-            || !ValidateRatio(rule.Tier3Ratio, $"{ctx}.Tier3Ratio", out reason)
-            || !ValidateRatio(rule.Tier4Ratio, $"{ctx}.Tier4Ratio", out reason)
-            || !ValidateRatio(rule.Tier5Ratio, $"{ctx}.Tier5Ratio", out reason)
-            || !ValidateRatio(rule.Tier6Ratio, $"{ctx}.Tier6Ratio", out reason))
+            || !ValidateRatio(rule.ThrowerRatio, $"{ctx}.ThrowerRatio", out reason))
         {
             return false;
         }
@@ -489,13 +483,6 @@ public static class ConfigurationManager
         if (troopSum < RatioSumMin || troopSum > RatioSumMax)
         {
             reason = $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
-            return false;
-        }
-
-        float tierSum = rule.Tier1Ratio + rule.Tier2Ratio + rule.Tier3Ratio + rule.Tier4Ratio + rule.Tier5Ratio + rule.Tier6Ratio;
-        if (tierSum < RatioSumMin || tierSum > RatioSumMax)
-        {
-            reason = $"{ctx} tier ratios sum={tierSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
             return false;
         }
 

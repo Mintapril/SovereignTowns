@@ -48,7 +48,7 @@ public static class ConfigMigrator
             // 深拷贝后在副本上执行迁移，避免修改调用方对象。
             var working = DeepClone(config);
 
-            // 迁移链 v0 -> v1 -> v2 -> v3。
+            // 迁移链 v0 -> v1 -> v2 -> v3 -> v4。
             // 占位框架：未来添加新版本时在此追加 case 并 goto case (下一版本)。
             switch (working.ConfigVersion)
             {
@@ -86,6 +86,14 @@ public static class ConfigMigrator
                     }
                     goto case 3;
                 case 3:
+                    // B7.10: v3 -> v4. Tier1..6Ratio fields removed from TownGarrisonRule
+                    // (Newtonsoft silently drops the keys on the next save). Migration is a no-op
+                    // beyond bumping the version stamp; tier bucket behavior now relies solely on
+                    // MinTier/MaxTier as a hard band, no per-tier ratio weighting.
+                    Logger.Info("ConfigMigrator: v3 -> v4 (drop Tier1..6Ratio fields, role ratios only)");
+                    working.ConfigVersion = 4;
+                    goto case 4;
+                case 4:
                     break;
                 default:
                     Logger.Warn($"ConfigMigrator: 未知 ConfigVersion={working.ConfigVersion}，回退默认");
@@ -197,12 +205,6 @@ public static class ConfigMigrator
             ArcherRatio = r.ArcherRatio,
             CrossbowRatio = r.CrossbowRatio,
             ThrowerRatio = r.ThrowerRatio,
-            Tier1Ratio = r.Tier1Ratio,
-            Tier2Ratio = r.Tier2Ratio,
-            Tier3Ratio = r.Tier3Ratio,
-            Tier4Ratio = r.Tier4Ratio,
-            Tier5Ratio = r.Tier5Ratio,
-            Tier6Ratio = r.Tier6Ratio,
             MinTier = r.MinTier,
             MaxTier = r.MaxTier,
             RestrictToFactionCultures = r.RestrictToFactionCultures,
