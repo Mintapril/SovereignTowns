@@ -39,6 +39,8 @@ public sealed class DismissPartyComponent : CustomPartyComponent
     [SaveableField(3)]
     private CampaignTime _departureTime;
 
+    // 已知限制：town 易名后此缓存不会刷新（与 RecruitingPartyComponent / TransferPartyComponent 一致）。
+    // vanilla 不主动通知 Settlement 改名，本 Mod 也未订阅；party 寿命短（小时级），可接受。
     [CachedData]
     private TextObject? _cachedName;
 
@@ -70,6 +72,16 @@ public sealed class DismissPartyComponent : CustomPartyComponent
         }
     }
 
+    /// <summary>
+    /// Resolved as <c>HomeVillage ?? DismissedFromSettlement</c>; both resolve through
+    /// <see cref="MBObjectManager"/> by stringId so they can briefly return null in the
+    /// narrow post-load window before <see cref="Lifecycle.PartyLifecycleManager.RebuildFromCampaign"/>
+    /// has had a chance to sweep stale parties. The non-null-forgiving operator is required
+    /// to satisfy the base class signature; if vanilla reads HomeSettlement in that window
+    /// and both sides are null an NRE will propagate — by design we prefer the immediate
+    /// crash over silently masking a save-corruption scenario, and the lifecycle sweeper
+    /// destroys such parties on the next OnGameLoadedEvent tick.
+    /// </summary>
     public override Settlement HomeSettlement => HomeVillage ?? DismissedFromSettlement!;
 
     public override bool AvoidHostileActions => true;
