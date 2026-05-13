@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sovereign Towns · 控制面板 (Phase 1)</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                   "Microsoft YaHei", Roboto, sans-serif;
+      background: #1a1a1d; color: #e4e4e7; margin: 0; padding: 24px;
+      max-width: 1280px; margin-inline: auto;
+    }
+    h1 { margin: 0 0 4px; font-size: 24px; }
+    .subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
+    .status-bar {
+      display: flex; gap: 16px; align-items: center; padding: 12px 16px;
+      background: #26262b; border: 1px solid #3a3a40; border-radius: 8px;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .status-pill {
+      padding: 4px 10px; border-radius: 12px; font-size: 12px;
+      background: #2a3f2a; color: #a0e0a0;
+    }
+    .status-pill.err { background: #4a2a2a; color: #e0a0a0; }
+    .status-pill.warn { background: #4a3f2a; color: #e0c0a0; }
+    .status-pill.info { background: #2a3a4a; color: #a0c0e0; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    button {
+      padding: 8px 16px; background: #3a3a40; color: #e4e4e7; border: 1px solid #555;
+      border-radius: 4px; cursor: pointer; font-size: 14px; font-family: inherit;
+    }
+    button:hover { background: #4a4a52; }
+    button.primary { background: #2a5f3a; border-color: #3a7050; }
+    button.primary:hover { background: #357040; }
+    button.danger { background: #5f2a2a; border-color: #703a3a; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    textarea {
+      width: 100%; min-height: 60vh; padding: 12px; background: #0f0f12;
+      color: #d4d4d8; border: 1px solid #3a3a40; border-radius: 4px;
+      font-family: "Consolas", "Cascadia Code", "Fira Code", monospace;
+      font-size: 13px; line-height: 1.5; resize: vertical;
+    }
+    textarea:focus { outline: 2px solid #5d8aa8; }
+    .log {
+      margin-top: 12px; padding: 12px; background: #0f0f12;
+      border: 1px solid #3a3a40; border-radius: 4px;
+      font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .log-entry { padding: 2px 0; }
+    .log-entry.err { color: #ff8080; }
+    .log-entry.warn { color: #ffc080; }
+    .log-entry.ok { color: #80e080; }
+    .hint {
+      margin-top: 8px; padding: 8px 12px; background: #2a3a4a;
+      border-radius: 4px; font-size: 12px; color: #a0c0e0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sovereign Towns · 控制面板</h1>
+  <div class="subtitle">Phase 1 简陋版 — 编辑 global.json 原始 JSON。Phase 2 会替换为完整 UI。</div>
+
+  <div class="status-bar">
+    <span class="status-pill" id="server-status">连接中…</span>
+    <span class="status-pill info" id="capital-status">capital: ?</span>
+    <span class="status-pill info" id="override-count">覆盖数: ?</span>
+    <span class="status-pill info" id="exact-troop-count">具体兵员: ?</span>
+    <span class="status-pill info" id="last-modified">last-modified: ?</span>
+  </div>
+
+  <div class="actions">
+    <button id="btn-fetch">从游戏读取当前配置</button>
+    <button id="btn-save" class="primary">保存到游戏</button>
+    <button id="btn-reload">让游戏重读磁盘</button>
+    <button id="btn-format">JSON 格式化</button>
+    <button id="btn-troops">查看兵种 dump</button>
+    <button id="btn-settlements">查看玩家城/堡</button>
+  </div>
+
+  <textarea id="cfg" spellcheck="false" placeholder="点「从游戏读取当前配置」开始..."></textarea>
+
+  <div class="log" id="log"></div>
+
+  <div class="hint">
+    提示：保存后游戏内的 Manager 下一次 hourly tick 自动用新配置。无需重启游戏 / 重载存档。
+    校验失败（如 ratio 之和不在 [0.9, 1.1]）会显示红字，磁盘上的配置不会被坏值覆盖。
+  </div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ====== Bootstrap: read token from ?t= and stash in sessionStorage. ======
+  function getToken() {
+    const u = new URL(window.location.href);
+    const fromQuery = u.searchParams.get("t");
+    if (fromQuery) {
+      sessionStorage.setItem("st-token", fromQuery);
+      // Strip query string for cleanliness (no F5 reuse needed since sessionStorage holds it).
+      window.history.replaceState(null, "", u.pathname);
+      return fromQuery;
+    }
+    return sessionStorage.getItem("st-token") || "";
+  }
+  const TOKEN = getToken();
+
+  if (!TOKEN) {
+    document.getElementById("log").innerHTML =
+      `<div class="log-entry err">[fatal] 缺少 token。请关闭此页面，从游戏内 MCM「打开网页配置」按钮重新进入。</div>`;
+    document.querySelectorAll("button").forEach(b => b.disabled = true);
+    return;
+  }
+
+  // ====== Logging helpers ======
+  const logEl = document.getElementById("log");
+  function log(msg, cls = "") {
+    const ts = new Date().toLocaleTimeString();
+    const entry = document.createElement("div");
+    entry.className = `log-entry ${cls}`;
+    entry.textContent = `[${ts}] ${msg}`;
+    logEl.prepend(entry);
+    while (logEl.childElementCount > 50) logEl.lastChild.remove();
+  }
+
+  // ====== HTTP wrapper ======
+  async function call(method, path, body = null) {
+    const opt = {
+      method,
+      headers: { "X-ST-Token": TOKEN },
+    };
+    if (body !== null) {
+      opt.headers["Content-Type"] = "application/json";
+      opt.body = typeof body === "string" ? body : JSON.stringify(body);
+    }
+    const res = await fetch(path, opt);
+    let parsed = null;
+    try { parsed = await res.json(); } catch { /* non-JSON response */ }
+    return { status: res.status, ok: res.ok, body: parsed };
+  }
+
+  // ====== Status pills ======
+  async function refreshStatus() {
+    try {
+      const r = await call("GET", "/api/status");
+      if (!r.ok) {
+        document.getElementById("server-status").textContent = `server: ${r.status}`;
+        document.getElementById("server-status").className = "status-pill err";
+        return;
+      }
+      const s = r.body;
+      document.getElementById("server-status").textContent = "server: 在线";
+      document.getElementById("server-status").className = "status-pill";
+      document.getElementById("override-count").textContent = `覆盖数: ${s.perSettlementOverrideCount}`;
+      document.getElementById("exact-troop-count").textContent = `具体兵员: ${s.exactTroopTemplateCount}`;
+      document.getElementById("last-modified").textContent = `last-modified: ${s.lastModified || "?"}`;
+      document.getElementById("capital-status").textContent =
+        `features: ${Object.entries(s.features || {}).filter(([,v]) => v === true).length} 项启用`;
+    } catch (e) {
+      document.getElementById("server-status").textContent = "server: 失联";
+      document.getElementById("server-status").className = "status-pill err";
+    }
+  }
+
+  // ====== Buttons ======
+  const cfgEl = document.getElementById("cfg");
+
+  document.getElementById("btn-fetch").addEventListener("click", async () => {
+    const r = await call("GET", "/api/config");
+    if (!r.ok) { log(`fetch failed: ${r.status} ${JSON.stringify(r.body)}`, "err"); return; }
+    cfgEl.value = JSON.stringify(r.body, null, 2);
+    log("已从游戏读取配置", "ok");
+  });
+
+  document.getElementById("btn-save").addEventListener("click", async () => {
+    let parsed;
+    try { parsed = JSON.parse(cfgEl.value); }
+    catch (e) { log(`JSON 解析失败：${e.message}`, "err"); return; }
+
+    const r = await call("PUT", "/api/config", parsed);
+    if (r.ok) {
+      log("保存成功", "ok");
+      refreshStatus();
+    } else {
+      log(`保存失败 ${r.status}：${r.body?.code || "?"} — ${r.body?.message || "(no message)"}`, "err");
+    }
+  });
+
+  document.getElementById("btn-reload").addEventListener("click", async () => {
+    const r = await call("POST", "/api/reload");
+    if (r.ok) log("游戏已重读磁盘配置", "ok");
+    else log(`reload failed ${r.status}: ${JSON.stringify(r.body)}`, "err");
+  });
+
+  document.getElementById("btn-format").addEventListener("click", () => {
+    try {
+      const obj = JSON.parse(cfgEl.value);
+      cfgEl.value = JSON.stringify(obj, null, 2);
+      log("已重新格式化", "ok");
+    } catch (e) { log(`JSON 解析失败：${e.message}`, "err"); }
+  });
+
+  document.getElementById("btn-troops").addEventListener("click", async () => {
+    const r = await call("GET", "/api/troops");
+    if (!r.ok) { log(`troops failed ${r.status}: ${JSON.stringify(r.body)}`, "err"); return; }
+    const w = window.open("", "_blank");
+    if (!w) { log("浏览器拦截了新窗口", "warn"); return; }
+    w.document.title = "Troops dump";
+    w.document.body.style.cssText = "background:#1a1a1d;color:#d4d4d8;font-family:monospace;padding:16px;white-space:pre;";
+    w.document.body.textContent = JSON.stringify(r.body, null, 2);
+  });
+
+  document.getElementById("btn-settlements").addEventListener("click", async () => {
+    const r = await call("GET", "/api/settlements");
+    if (!r.ok) { log(`settlements failed ${r.status}: ${JSON.stringify(r.body)}`, "err"); return; }
+    log("玩家城/堡: " + JSON.stringify(r.body.settlements), "ok");
+  });
+
+  // Boot
+  refreshStatus();
+  document.getElementById("btn-fetch").click();
+})();
+</script>
+</body>
+</html>

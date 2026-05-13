@@ -103,12 +103,15 @@
       <_ModDll      Include="$(OutputPath)$(AssemblyName).dll" />
       <_ModPdb      Include="$(OutputPath)$(AssemblyName).pdb" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
       <_PrefabXmls  Include="$(MSBuildProjectDirectory)\..\SovereignTowns\GUI\Prefabs\*.xml" />
+      <!-- B7.4: WebUI bundle (HTML / JS / CSS) served by WebConfigServer. Recursive glob keeps subdirs. -->
+      <_WebUIFiles  Include="$(MSBuildProjectDirectory)\..\SovereignTowns\WebUI\**\*.*" />
     </ItemGroup>
-    <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs" />
+    <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs;$(ModuleDeployPath)\WebUI" />
     <Copy SourceFiles="@(_SubModuleXml)" DestinationFolder="$(ModuleDeployPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ModDll);@(_ModPdb)" DestinationFolder="$(ModuleDeployPath)\bin\Win64_Shipping_Client" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_PrefabXmls)" DestinationFolder="$(ModuleDeployPath)\GUI\Prefabs" SkipUnchangedFiles="true" Condition="'@(_PrefabXmls)' != ''" />
-    <Message Importance="high" Text="[SovereignTowns] Deployed to $(ModuleDeployPath) (incl. @(_PrefabXmls->Count()) prefab(s))" />
+    <Copy SourceFiles="@(_WebUIFiles)" DestinationFolder="$(ModuleDeployPath)\WebUI\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(_WebUIFiles)' != ''" />
+    <Message Importance="high" Text="[SovereignTowns] Deployed to $(ModuleDeployPath) (prefab=@(_PrefabXmls->Count()), webui=@(_WebUIFiles->Count()))" />
   </Target>
 
 </Project>
