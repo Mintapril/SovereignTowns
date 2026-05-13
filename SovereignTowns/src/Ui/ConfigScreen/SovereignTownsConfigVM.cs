@@ -297,67 +297,67 @@ public sealed class SovereignTownsConfigVM : ViewModel
 
         // -- EnabledFeatures (6 toggles) --
         _toggleOptions.Add(new STToggleOptionVM(
-            "自动驻军 (AutoGarrison)",
+            "自动驻军",
             "自动维持驻军规模到 TargetTotalCount。",
             features.AutoGarrison,
             v => ConfigurationManager.Current.EnabledFeatures.AutoGarrison = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "自动招募 (AutoRecruitment)",
+            "自动招募",
             "在领地内自动招募新兵补充驻军。",
             features.AutoRecruitment,
             v => ConfigurationManager.Current.EnabledFeatures.AutoRecruitment = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "自动巡逻 (AutoPatrol)",
+            "自动巡逻",
             "自动派出巡逻队保护领地。",
             features.AutoPatrol,
             v => ConfigurationManager.Current.EnabledFeatures.AutoPatrol = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "城堡支持 (CastleSupport)",
+            "城堡支持",
             "对玩家归属城堡同等启用上述功能。",
             features.CastleSupport,
             v => ConfigurationManager.Current.EnabledFeatures.CastleSupport = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "LLM 推理建议 (LlmReasoning)",
+            "LLM 推理建议",
             "启用 LLM 提供决策建议（仅建议，不动手）。",
             features.LlmReasoning,
             v => ConfigurationManager.Current.EnabledFeatures.LlmReasoning = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "LLM 自动执行 (LlmAutoExecute)",
+            "LLM 自动执行",
             "允许 LLM 直接执行决策（高风险）。",
             features.LlmAutoExecute,
             v => ConfigurationManager.Current.EnabledFeatures.LlmAutoExecute = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "主动出击 (SallyForth)",
+            "主动出击",
             "无巡逻队时附近有敌对势力则出城攻击。",
             features.SallyForth,
             v => ConfigurationManager.Current.EnabledFeatures.SallyForth = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "战利品-招募匹配俘虏 (AutoRecruitMatchingPrisoners)",
+            "战利品：招募匹配俘虏",
             "巡逻/出击队战后俘虏若兵种匹配首府目标桶(非零 ratio)，直接进首府驻军。",
             features.AutoRecruitMatchingPrisoners,
             v => ConfigurationManager.Current.EnabledFeatures.AutoRecruitMatchingPrisoners = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "战利品-出售非匹配俘虏 (AutoSellNonMatchingPrisoners)",
+            "战利品：出售非匹配俘虏",
             "招募后剩余的非匹配俘虏自动卖到最近自家 town。",
             features.AutoSellNonMatchingPrisoners,
             v => ConfigurationManager.Current.EnabledFeatures.AutoSellNonMatchingPrisoners = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "战利品-出售物品装备 (AutoSellLoot)",
+            "战利品：出售装备物品",
             "战后缴获的装备/物品自动卖到最近自家 town，金钱回流玩家。",
             features.AutoSellLoot,
             v => ConfigurationManager.Current.EnabledFeatures.AutoSellLoot = v));
 
         _toggleOptions.Add(new STToggleOptionVM(
-            "通用匹配 (UseGenericMatching)",
+            "通用匹配（忽略文化）",
             "开启：忽略阵营，候选兵能升级到与模板目标同 Tier+同兵种类型的任意兵即匹配；关闭：完全 IG 风格，候选必须能升级到模板里的具体目标兵种。",
             globals.UseGenericMatching,
             v =>
@@ -384,19 +384,19 @@ public sealed class SovereignTownsConfigVM : ViewModel
 
         // -- GlobalDefaults (6 numeric sliders) --
         _numericOptions.Add(new STNumericOptionVM(
-            "目标驻军总数 (TargetTotalCount)",
+            "目标驻军总数",
             "驻军应维持的目标兵员数 (50–500)。",
             min: 50, max: 500, current: globals.TargetTotalCount, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.TargetTotalCount = (int)v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "最少防守人数 (MinimumDefenders)",
+            "最少防守人数",
             "无论目标人数为何，至少保留的防守人数 (0–300)。",
             min: 0, max: 300, current: globals.MinimumDefenders, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.MinimumDefenders = (int)v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "招募预算上限 (BudgetLimit)",
+            "招募预算上限",
             "单日招募预算上限 denar (0–50000)。",
             min: 0, max: 50000, current: globals.BudgetLimit, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.BudgetLimit = (int)v));
@@ -404,31 +404,31 @@ public sealed class SovereignTownsConfigVM : ViewModel
         // -- 通用兵种比例：任意一个 slider 变化时，其它兵种自动重分配，确保总和保持 1.0。 --
         var troopRatios = new STRatioOptionGroup(RecomputeRatioSum);
         _numericOptions.Add(troopRatios.Add(
-            "骑兵占比 (CavalryRatio)",
+            "骑兵占比",
             "通用匹配：所有文化/阵营的骑兵与骑射都按此比例计入。",
             globals.CavalryRatio,
             v => ConfigurationManager.Current.GlobalDefaults.CavalryRatio = v));
 
         _numericOptions.Add(troopRatios.Add(
-            "步兵占比 (InfantryRatio)",
+            "步兵占比",
             "通用匹配：盾兵、枪兵、双手步兵等步行近战兵。",
             globals.InfantryRatio,
             v => ConfigurationManager.Current.GlobalDefaults.InfantryRatio = v));
 
         _numericOptions.Add(troopRatios.Add(
-            "弓手占比 (ArcherRatio)",
+            "弓手占比",
             "通用匹配：步行弓手，不限制文化。",
             globals.ArcherRatio,
             v => ConfigurationManager.Current.GlobalDefaults.ArcherRatio = v));
 
         _numericOptions.Add(troopRatios.Add(
-            "弩手占比 (CrossbowRatio)",
+            "弩手占比",
             "通用匹配：装备弩的步行远程兵。",
             globals.CrossbowRatio,
             v => ConfigurationManager.Current.GlobalDefaults.CrossbowRatio = v));
 
         _numericOptions.Add(troopRatios.Add(
-            "投掷兵占比 (ThrowerRatio)",
+            "投掷兵占比",
             "通用匹配：标枪、飞斧、飞刀或 Skirmisher 编队兵种。",
             globals.ThrowerRatio,
             v => ConfigurationManager.Current.GlobalDefaults.ThrowerRatio = v));
@@ -437,37 +437,37 @@ public sealed class SovereignTownsConfigVM : ViewModel
         // -- 通用 Tier 比例：同样自动联动，总和保持 1.0。 --
         var tierRatios = new STRatioOptionGroup(RecomputeRatioSum);
         _numericOptions.Add(tierRatios.Add(
-            "Tier 1 占比 (Tier1Ratio)",
+            "Tier 1 占比",
             "通用匹配：目标驻军中 Tier 1 兵员比例。",
             globals.Tier1Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier1Ratio = v));
 
         _numericOptions.Add(tierRatios.Add(
-            "Tier 2 占比 (Tier2Ratio)",
+            "Tier 2 占比",
             "通用匹配：目标驻军中 Tier 2 兵员比例。",
             globals.Tier2Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier2Ratio = v));
 
         _numericOptions.Add(tierRatios.Add(
-            "Tier 3 占比 (Tier3Ratio)",
+            "Tier 3 占比",
             "通用匹配：目标驻军中 Tier 3 兵员比例。",
             globals.Tier3Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier3Ratio = v));
 
         _numericOptions.Add(tierRatios.Add(
-            "Tier 4 占比 (Tier4Ratio)",
+            "Tier 4 占比",
             "通用匹配：目标驻军中 Tier 4 兵员比例。",
             globals.Tier4Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier4Ratio = v));
 
         _numericOptions.Add(tierRatios.Add(
-            "Tier 5 占比 (Tier5Ratio)",
+            "Tier 5 占比",
             "通用匹配：目标驻军中 Tier 5 兵员比例。",
             globals.Tier5Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier5Ratio = v));
 
         _numericOptions.Add(tierRatios.Add(
-            "Tier 6 占比 (Tier6Ratio)",
+            "Tier 6 占比",
             "通用匹配：目标驻军中 Tier 6+ 兵员比例。",
             globals.Tier6Ratio,
             v => ConfigurationManager.Current.GlobalDefaults.Tier6Ratio = v));
@@ -475,46 +475,46 @@ public sealed class SovereignTownsConfigVM : ViewModel
 
         // -- Tier bounds --
         _numericOptions.Add(new STNumericOptionVM(
-            "最低 Tier (MinTier)",
+            "最低 Tier",
             "允许招募的最低兵种 Tier（含）；范围 1–6。",
             min: 1, max: 6, current: globals.MinTier, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.MinTier = (int)v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "最高 Tier (MaxTier)",
+            "最高 Tier",
             "允许招募的最高兵种 Tier（含）；范围 1–6。",
             min: 1, max: 6, current: globals.MaxTier, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.MaxTier = (int)v));
 
         // -- War / peace multipliers --
         _numericOptions.Add(new STNumericOptionVM(
-            "战时目标乘数 (WartimeMultiplier)",
+            "战时目标乘数",
             "处于战争状态时，TargetTotalCount 的乘数 (0.5–2.0)。",
             min: 0.5f, max: 2.0f, current: globals.WartimeMultiplier, isDiscrete: false,
             v => ConfigurationManager.Current.GlobalDefaults.WartimeMultiplier = v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "和平目标乘数 (PeacetimeMultiplier)",
+            "和平目标乘数",
             "和平时期 TargetTotalCount 的乘数 (0.5–2.0)。",
             min: 0.5f, max: 2.0f, current: globals.PeacetimeMultiplier, isDiscrete: false,
             v => ConfigurationManager.Current.GlobalDefaults.PeacetimeMultiplier = v));
 
         // -- Food / training / prisoner --
         _numericOptions.Add(new STNumericOptionVM(
-            "食物安全阈值 (FoodSafetyThreshold)",
+            "食物安全阈值",
             "Town.FoodChange 低于此值时暂停招募，避免饿城 (-50 ~ 50)。",
             min: -50, max: 50, current: globals.FoodSafetyThreshold, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.FoodSafetyThreshold = v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "每日驻军 XP 奖励 (DailyTroopXpBonus)",
+            "每日驻军 XP 奖励",
             "每日给驻军每个非 hero 兵员注入的固定 XP (0–30)。",
             min: 0, max: 30, current: globals.DailyTroopXpBonus, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.DailyTroopXpBonus = (int)v));
 
         // DailyPrisonerConformityAmount 在 GlobalConfig，不在 TownGarrisonRule
         _numericOptions.Add(new STNumericOptionVM(
-            "每日俘虏 Conformity (DailyPrisonerConformityAmount)",
+            "每日俘虏 Conformity",
             "每日为驻军中每名俘虏累加的 conformity XP (0–30)。",
             min: 0, max: 30, current: cfg.DailyPrisonerConformityAmount, isDiscrete: true,
             v => ConfigurationManager.Current.DailyPrisonerConformityAmount = (int)v));
@@ -522,19 +522,19 @@ public sealed class SovereignTownsConfigVM : ViewModel
         // -- P1 globals (位置 16/17/18，与上述 15 个 numeric 并列；全部 GlobalConfig 顶层字段，
         //    不放进 per-settlement override 页面) --
         _numericOptions.Add(new STNumericOptionVM(
-            "征兵护卫数 (RecruiterEscortSize)",
+            "征兵护卫数",
             "征兵队出发时从首府 GarrisonParty 抽取多少低 Tier 兵作为基础护卫 (0–50)。",
             min: 0, max: 50, current: cfg.RecruiterEscortSize, isDiscrete: true,
             v => ConfigurationManager.Current.RecruiterEscortSize = (int)v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "村庄招募冷却 (VillageCooldownHours)",
+            "村庄招募冷却",
             "同一 village 被招过后多少小时内不再列为候选 (12–240)。",
             min: 12, max: 240, current: cfg.VillageCooldownHours, isDiscrete: true,
             v => ConfigurationManager.Current.VillageCooldownHours = (int)v));
 
         _numericOptions.Add(new STNumericOptionVM(
-            "征兵队回首府阈值 (RecruiterReturnThreshold)",
+            "征兵队回首府阈值",
             "征兵队总人数达此值立即回首府 (10–200)。",
             min: 10, max: 200, current: cfg.RecruiterReturnThreshold, isDiscrete: true,
             v => ConfigurationManager.Current.RecruiterReturnThreshold = (int)v));

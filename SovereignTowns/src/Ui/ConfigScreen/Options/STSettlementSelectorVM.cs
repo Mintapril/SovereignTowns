@@ -133,7 +133,7 @@ public sealed class STSettlementSelectorVM : ViewModel
         _isCastle = isCastle;
         _cloneFromDefaults = cloneFromDefaults ?? (() => TownGarrisonRule.CreateDefault());
         _settlementName = displayName ?? _settlementStringId;
-        _settlementTypeBadge = isCastle ? "[Castle]" : "[Town]";
+        _settlementTypeBadge = isCastle ? "城堡" : "城镇";
 
         // Seed initial state from the live config.
         var dict = ConfigurationManager.Current?.PerSettlementOverrides;
@@ -187,7 +187,7 @@ public sealed class STSettlementSelectorVM : ViewModel
         STButtonOptionVM? exactTemplateButton = null;
 
         _ruleToggles.Add(new STToggleOptionVM(
-            "通用匹配 (UseGenericMatching)",
+            "通用匹配（忽略文化）",
             "开启：忽略阵营，候选兵能升级到与模板目标同 Tier+同兵种类型的任意兵即匹配；关闭：完全 IG 风格，候选必须能升级到模板里的具体目标兵种。",
             rule.UseGenericMatching,
             v =>
@@ -214,109 +214,109 @@ public sealed class STSettlementSelectorVM : ViewModel
         _ruleButtons.Add(exactTemplateButton);
 
         _overrides.Add(new STNumericOptionVM(
-            "目标驻军总数 (TargetTotalCount)",
+            "目标驻军总数",
             "驻军应维持的目标兵员数 (50–500)。",
             min: 50, max: 500, current: rule.TargetTotalCount, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.TargetTotalCount = (int)v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "最少防守人数 (MinimumDefenders)",
+            "最少防守人数",
             "至少保留的防守人数 (0–300)。",
             min: 0, max: 300, current: rule.MinimumDefenders, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.MinimumDefenders = (int)v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "招募预算上限 (BudgetLimit)",
+            "招募预算上限",
             "单日招募预算上限 denar (0–50000)。",
             min: 0, max: 50000, current: rule.BudgetLimit, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.BudgetLimit = (int)v; }));
 
         var troopRatios = new STRatioOptionGroup();
         _overrides.Add(troopRatios.Add(
-            "骑兵占比 (CavalryRatio)", "驻军骑兵目标占比。",
+            "骑兵占比", "驻军骑兵目标占比。",
             rule.CavalryRatio,
             v => { if (TryGetRule(id, out var r)) r!.CavalryRatio = v; }));
 
         _overrides.Add(troopRatios.Add(
-            "步兵占比 (InfantryRatio)", "驻军步兵目标占比。",
+            "步兵占比", "驻军步兵目标占比。",
             rule.InfantryRatio,
             v => { if (TryGetRule(id, out var r)) r!.InfantryRatio = v; }));
 
         _overrides.Add(troopRatios.Add(
-            "弓手占比 (ArcherRatio)", "驻军弓手目标占比。",
+            "弓手占比", "驻军弓手目标占比。",
             rule.ArcherRatio,
             v => { if (TryGetRule(id, out var r)) r!.ArcherRatio = v; }));
 
         _overrides.Add(troopRatios.Add(
-            "弩手占比 (CrossbowRatio)", "驻军弩手目标占比。",
+            "弩手占比", "驻军弩手目标占比。",
             rule.CrossbowRatio,
             v => { if (TryGetRule(id, out var r)) r!.CrossbowRatio = v; }));
 
         _overrides.Add(troopRatios.Add(
-            "投掷兵占比 (ThrowerRatio)", "驻军投掷兵目标占比。",
+            "投掷兵占比", "驻军投掷兵目标占比。",
             rule.ThrowerRatio,
             v => { if (TryGetRule(id, out var r)) r!.ThrowerRatio = v; }));
         troopRatios.NormalizeInitial();
 
         var tierRatios = new STRatioOptionGroup();
         _overrides.Add(tierRatios.Add(
-            "Tier 1 占比 (Tier1Ratio)", "目标驻军中 Tier 1 兵员比例。",
+            "Tier 1 占比", "目标驻军中 Tier 1 兵员比例。",
             rule.Tier1Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier1Ratio = v; }));
 
         _overrides.Add(tierRatios.Add(
-            "Tier 2 占比 (Tier2Ratio)", "目标驻军中 Tier 2 兵员比例。",
+            "Tier 2 占比", "目标驻军中 Tier 2 兵员比例。",
             rule.Tier2Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier2Ratio = v; }));
 
         _overrides.Add(tierRatios.Add(
-            "Tier 3 占比 (Tier3Ratio)", "目标驻军中 Tier 3 兵员比例。",
+            "Tier 3 占比", "目标驻军中 Tier 3 兵员比例。",
             rule.Tier3Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier3Ratio = v; }));
 
         _overrides.Add(tierRatios.Add(
-            "Tier 4 占比 (Tier4Ratio)", "目标驻军中 Tier 4 兵员比例。",
+            "Tier 4 占比", "目标驻军中 Tier 4 兵员比例。",
             rule.Tier4Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier4Ratio = v; }));
 
         _overrides.Add(tierRatios.Add(
-            "Tier 5 占比 (Tier5Ratio)", "目标驻军中 Tier 5 兵员比例。",
+            "Tier 5 占比", "目标驻军中 Tier 5 兵员比例。",
             rule.Tier5Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier5Ratio = v; }));
 
         _overrides.Add(tierRatios.Add(
-            "Tier 6 占比 (Tier6Ratio)", "目标驻军中 Tier 6+ 兵员比例。",
+            "Tier 6 占比", "目标驻军中 Tier 6+ 兵员比例。",
             rule.Tier6Ratio,
             v => { if (TryGetRule(id, out var r)) r!.Tier6Ratio = v; }));
         tierRatios.NormalizeInitial();
 
         _overrides.Add(new STNumericOptionVM(
-            "最低 Tier (MinTier)", "允许招募的最低兵种 Tier (1–6)。",
+            "最低 Tier", "允许招募的最低兵种 Tier (1–6)。",
             min: 1, max: 6, current: rule.MinTier, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.MinTier = (int)v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "最高 Tier (MaxTier)", "允许招募的最高兵种 Tier (1–6)。",
+            "最高 Tier", "允许招募的最高兵种 Tier (1–6)。",
             min: 1, max: 6, current: rule.MaxTier, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.MaxTier = (int)v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "战时目标乘数 (WartimeMultiplier)", "战争时 TargetTotalCount 乘数 (0.5–2.0)。",
+            "战时目标乘数", "战争时 TargetTotalCount 乘数 (0.5–2.0)。",
             min: 0.5f, max: 2.0f, current: rule.WartimeMultiplier, isDiscrete: false,
             v => { if (TryGetRule(id, out var r)) r!.WartimeMultiplier = v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "和平目标乘数 (PeacetimeMultiplier)", "和平时 TargetTotalCount 乘数 (0.5–2.0)。",
+            "和平目标乘数", "和平时 TargetTotalCount 乘数 (0.5–2.0)。",
             min: 0.5f, max: 2.0f, current: rule.PeacetimeMultiplier, isDiscrete: false,
             v => { if (TryGetRule(id, out var r)) r!.PeacetimeMultiplier = v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "食物安全阈值 (FoodSafetyThreshold)", "Town.FoodChange 低于此值暂停招募 (-50~50)。",
+            "食物安全阈值", "Town.FoodChange 低于此值暂停招募 (-50~50)。",
             min: -50, max: 50, current: rule.FoodSafetyThreshold, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.FoodSafetyThreshold = v; }));
 
         _overrides.Add(new STNumericOptionVM(
-            "每日驻军 XP 奖励 (DailyTroopXpBonus)", "每日给非 hero 兵员注入的固定 XP (0–30)。",
+            "每日驻军 XP 奖励", "每日给非 hero 兵员注入的固定 XP (0–30)。",
             min: 0, max: 30, current: rule.DailyTroopXpBonus, isDiscrete: true,
             v => { if (TryGetRule(id, out var r)) r!.DailyTroopXpBonus = (int)v; }));
 
