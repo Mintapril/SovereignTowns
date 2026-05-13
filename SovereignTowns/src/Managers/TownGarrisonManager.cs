@@ -154,7 +154,7 @@ public sealed class TownGarrisonManager
 
         // 规则引擎决策 + LLM 翻译 + 合并 + 审计 + 派发
         var ruleDecisions = RuleBasedFallbackDecisionMaker.Decide(town);
-        var decisions = MergeDedupSort(ruleDecisions, llmDecision);
+        var decisions = BuildMergedDecisions(ruleDecisions, llmDecision);
         var inputSummary = $"town={townId} risk={risk.Level} target={effectiveTarget} current={snap.Total} gap={totalGap}";
 
         // MVP 6: fire-and-forget 启动下一轮 LLM 推理（**绝不在当轮等待**）
@@ -163,9 +163,9 @@ public sealed class TownGarrisonManager
             LlmAutoExecuteBridge.TryStartReasoning(_llmService, town.Settlement, inputSummary);
         }
 
-        foreach (var d in decisions)
+        foreach (var (d, fromLlm) in decisions)
         {
-            Logger.Info($"  decision: {d.Kind} priority={d.Priority} magnitude={d.Magnitude} reason='{d.Reason}'");
+            Logger.Info($"  decision: {d.Kind} priority={d.Priority} magnitude={d.Magnitude} reason='{d.Reason}' source={(fromLlm ? "Llm" : "Rule")}");
 
             bool dispatched = false;
             string? rejectionReason = null;
@@ -210,11 +210,6 @@ public sealed class TownGarrisonManager
             {
                 rejectionReason = $"MVP 3: action '{d.Kind}' not yet implemented";
             }
-
-            bool fromLlm = llmDecision.HasValue
-                           && d.Kind == llmDecision.Value.Kind
-                           && d.Priority == llmDecision.Value.Priority
-                           && d.Magnitude == llmDecision.Value.Magnitude;
 
             DecisionAuditLogger.Log(new AuditEntry
             {
@@ -274,10 +269,11 @@ public sealed class TownGarrisonManager
 
     /// <summary>
     /// B1 #2: merge rule + LLM decisions. Dedup by Kind keeping the highest priority;
-    /// when priorities tie, LLM-sourced wins (assumed input via <paramref name="llmDecision"/>).
+    /// when priorities tie, LLM-sourced wins. Returned tuples preserve the LLM-origin
+    /// flag so callers can audit Source=Llm without re-deriving it via field comparison.
     /// Result is sorted priority-desc, ready to drive the dispatch loop.
     /// </summary>
-    private static List<GarrisonDecision> MergeDedupSort(
+    private static List<(GarrisonDecision Decision, bool FromLlm)> BuildMergedDecisions(
         IReadOnlyList<GarrisonDecision> ruleDecisions,
         GarrisonDecision? llmDecision)
     {
@@ -298,9 +294,9 @@ public sealed class TownGarrisonManager
                 by[l.Kind] = (l, true); // tie → LLM wins
             }
         }
-        var merged = new List<GarrisonDecision>(by.Count);
-        foreach (var kv in by.Values) merged.Add(kv.Dec);
-        merged.Sort(static (a, b) => b.Priority.CompareTo(a.Priority));
+        var merged = new List<(GarrisonDecision Decision, bool FromLlm)>(by.Count);
+        foreach (var kv in by.Values) merged.Add((kv.Dec, kv.FromLlm));
+        merged.Sort(static (a, b) => b.Decision.Priority.CompareTo(a.Decision.Priority));
         return merged;
     }
 
