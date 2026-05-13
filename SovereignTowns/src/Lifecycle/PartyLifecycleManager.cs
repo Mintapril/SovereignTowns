@@ -30,6 +30,7 @@ public sealed class PartyLifecycleManager
     public const int MaxRecruitersPerTown = 1;
     public const int MaxTransfersPerTown  = 1;
     public const int MaxSallyForthPerTown = 1;
+    public const int MaxDismissPerTown    = 1;
 
     // ────────── 空闲检测阈值（小时） ──────────
     public const int IdleHoursBeforeForceReturn = 24;
@@ -40,6 +41,7 @@ public sealed class PartyLifecycleManager
     public const string KindTransfer   = "transfer";
     public const string KindPatrol     = "patrol";
     public const string KindSallyForth = "sallyforth";
+    public const string KindDismiss    = "dismiss";
 
     private readonly Dictionary<MobileParty, TrackedPartyMeta> _tracked = new Dictionary<MobileParty, TrackedPartyMeta>();
     private bool _initialized;
@@ -150,7 +152,7 @@ public sealed class PartyLifecycleManager
         {
             _tracked.Clear();
 
-            int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
+            int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, dismisses = 0, skipped = 0;
             var now = CampaignTime.Now;
 
             // 1) RecruitingPartyComponent / TransferPartyComponent（均继承自 CustomPartyComponent）
@@ -185,6 +187,15 @@ public sealed class PartyLifecycleManager
                                 if (home == null) { skipped++; continue; }
                                 _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, SafeMemberCount(party));
                                 sallyforths++;
+                            }
+                            else if (comp is DismissPartyComponent dp)
+                            {
+                                // Home = source town (DismissedFromSettlement), so MigrateByHomeSettlement
+                                // can sweep in-flight dismiss parties when source town falls.
+                                var home = dp.DismissedFromSettlement;
+                                if (home == null) { skipped++; continue; }
+                                _tracked[party] = new TrackedPartyMeta(home, KindDismiss, now, party.TargetSettlement, SafeMemberCount(party));
+                                dismisses++;
                             }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略
                         }
@@ -231,7 +242,7 @@ public sealed class PartyLifecycleManager
                 Logger.Error("RebuildFromCampaign: AllPatrolParties enumeration failed", ex);
             }
 
-            Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} skipped={skipped} (total tracked={_tracked.Count})");
+            Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} dismisses={dismisses} skipped={skipped} (total tracked={_tracked.Count})");
         }
         catch (Exception ex)
         {
@@ -262,6 +273,22 @@ public sealed class PartyLifecycleManager
                 try
                 {
                     if (party == null) continue;
+
+                    // B1 #6.B: dismiss parties evaporate — do not migrate roster to new garrison
+                    if (_tracked.TryGetValue(party, out var meta) && meta.Kind == KindDismiss)
+                    {
+                        if (party.IsActive)
+                        {
+                            try { DestroyPartyAction.Apply(null, party); }
+                            catch (Exception destroyEx)
+                            {
+                                Logger.Error($"MigrateAllOrDisband: dismiss-party DestroyPartyAction failed for '{SafeName(party)}'", destroyEx);
+                            }
+                        }
+                        _tracked.Remove(party);
+                        continue;
+                    }
+
                     if (party.IsActive && newGarrison?.MemberRoster != null && party.MemberRoster != null)
                     {
                         var elements = party.MemberRoster.GetTroopRoster();
@@ -315,6 +342,22 @@ public sealed class PartyLifecycleManager
                     if (party == null) continue;
                     if (!_tracked.TryGetValue(party, out var rec)) continue;
                     if (rec.Home != lostSettlement) continue; // 仅清理该 settlement 的 in-flight
+
+                    // B1 #6.B: dismiss parties evaporate, do not migrate roster
+                    if (rec.Kind == KindDismiss)
+                    {
+                        if (party.IsActive)
+                        {
+                            try { DestroyPartyAction.Apply(null, party); }
+                            catch (Exception destroyEx)
+                            {
+                                Logger.Error($"MigrateByHomeSettlement: dismiss-party DestroyPartyAction failed for '{SafeName(party)}'", destroyEx);
+                            }
+                            disbanded++;
+                        }
+                        _tracked.Remove(party);
+                        continue;
+                    }
 
                     if (party.IsActive && fallbackGarrison?.MemberRoster != null && party.MemberRoster != null)
                     {
@@ -371,6 +414,20 @@ public sealed class PartyLifecycleManager
         // 首行过滤：非本 Mod 队伍立即返回
         if (party is null) return;
         if (!_tracked.TryGetValue(party, out var meta)) return;
+
+        // B1 #6.B: dismiss party reached its target village → evaporate
+        if (meta.Kind == KindDismiss && party.PartyComponent is DismissPartyComponent dp)
+        {
+            var homeVillage = dp.HomeVillage;
+            if (homeVillage != null && (party.CurrentSettlement == homeVillage || party.LastVisitedSettlement == homeVillage))
+            {
+                Logger.Info($"HourlyTick '{SafeName(party)}': dismiss arrived at '{homeVillage.Name}' → DestroyPartyAction.Apply");
+                try { DestroyPartyAction.Apply(null, party); }
+                catch (Exception destroyEx) { Logger.Error($"DestroyPartyAction failed for dismiss '{SafeName(party)}'", destroyEx); }
+                UntrackParty(party);
+                return;
+            }
+        }
 
         try
         {
@@ -463,6 +520,7 @@ public sealed class PartyLifecycleManager
         if (kind == KindRecruiter)  return MaxRecruitersPerTown;
         if (kind == KindTransfer)   return MaxTransfersPerTown;
         if (kind == KindSallyForth) return MaxSallyForthPerTown;
+        if (kind == KindDismiss)    return MaxDismissPerTown;
         // 未知 kind：保守上限 1，避免失控创建
         return 1;
     }
