@@ -149,6 +149,14 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
             {
                 if (_loggerInitialized) Logger.Error("TroopDumper.Dump failed (swallowed)", ex);
             }
+
+            // B7.3: start local HTTP server so the player can edit config in a browser.
+            // Idempotent — already-running call is a no-op.
+            try { SovereignTowns.WebConfig.WebConfigServer.Start(); }
+            catch (System.Exception ex)
+            {
+                if (_loggerInitialized) Logger.Error("WebConfigServer.Start failed (swallowed)", ex);
+            }
         }
         catch (System.Exception ex)
         {
@@ -166,6 +174,9 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
             if (_loggerInitialized) Logger.Info("OnSubModuleUnloaded");
         }
         catch { }
+
+        try { SovereignTowns.WebConfig.WebConfigServer.Stop(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} WebConfigServer.Stop threw: {ex.Message}"); }
 
         try { SovereignTowns.Ui.MapRibbon.SovereignTownsRibbonInjector.Unload(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} Ribbon.Unload threw: {ex.Message}"); }

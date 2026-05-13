@@ -191,6 +191,51 @@ public static class ConfigurationManager
         }
     }
 
+    /// <summary>
+    /// B7.3 引入：把 newConfig 完整替换到 Current 并写盘。原子操作：
+    /// Validate 失败 → in-memory 不动，返回 false + reason；
+    /// Validate 通过 → 替换 + 写盘；写盘 IO 失败 → 替换仍然生效（与 Save 行为一致），返回 false。
+    /// 用于网页 PUT /api/config 路径。
+    /// </summary>
+    public static bool ReplaceAndSave(GlobalConfig newConfig, out string reason)
+    {
+        if (newConfig is null)
+        {
+            reason = "newConfig is null";
+            return false;
+        }
+
+        try
+        {
+            lock (_gate)
+            {
+                if (!ValidateConfig(newConfig, out reason))
+                {
+                    _lastValidationError = reason;
+                    Logger.Warn($"ReplaceAndSave refused: {reason}");
+                    return false;
+                }
+
+                _current = newConfig;
+                _lastValidationError = "";
+
+                string configPath = GetConfigFilePath();
+                EnsureConfigDirectoryExists(configPath);
+                _current.LastModified = DateTime.UtcNow.ToString("O");
+                WriteToDiskUnlocked(configPath, _current);
+                Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}'");
+                reason = "";
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            reason = $"ReplaceAndSave threw: {ex.Message}";
+            Logger.Error("ReplaceAndSave failed", ex);
+            return false;
+        }
+    }
+
     /// <summary>从磁盘重新读取（用户手编 JSON 后可调用）。失败回退到上次成功的 Current。</summary>
     public static void Reload()
     {
