@@ -103,8 +103,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _capitalManager.Initialize();
             _pendingCapitalStringId = null; // 已回灌，清理暂存
 
-            _castleSupportManager = new CastleSupportManager(_capitalManager);
             _transferManager = new GarrisonTransferManager(_lifecycle);
+            _castleSupportManager = new CastleSupportManager(_capitalManager, _transferManager);
             _patrolManager = new PatrolManager(_lifecycle, _capitalManager);
             _sallyForthManager = new SallyForthManager(_lifecycle, _capitalManager);
 

@@ -24,6 +24,7 @@ public sealed class TownGarrisonManager
     private readonly LLMReasoningService? _llmService;
     private readonly CapitalManager? _capitalManager;
     private readonly Transfer.CastleSupportManager? _castleSupportManager;
+    // 当前 (B1) 未直接使用；保留以备未来 case (Disband/Upgrade 等) 需要直派 transfer 时复用。
     private readonly Transfer.GarrisonTransferManager? _transferManager;
 
     public TownGarrisonManager(
@@ -183,7 +184,7 @@ public sealed class TownGarrisonManager
                      && _transferManager != null
                      && ConfigurationManager.Current.EnabledFeatures.CastleSupport)
             {
-                int n = _castleSupportManager.TryDispatchForDemand(town, d.Magnitude, _transferManager);
+                int n = _castleSupportManager.TryDispatchForDemand(town, d.Magnitude);
                 dispatched = n > 0;
                 rejectionReason = dispatched ? null : "no feasible donor / already at transfer limit";
             }

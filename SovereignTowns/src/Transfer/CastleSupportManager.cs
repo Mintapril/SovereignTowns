@@ -66,14 +66,16 @@ public sealed class CastleSupportManager
 {
     // === 可选依赖：用于判定 surplus 候选是否为首府（首府享受优先调出 + 较低 surplus 阈值） ===
     private readonly CapitalManager? _capitalManager;
+    private readonly GarrisonTransferManager? _transferManager;
 
     /// <summary>
     /// 构造。<paramref name="capitalManager"/> 为 null 时退化为旧版"对等阈值 + 仅按距离匹配"逻辑，
     /// 用于系统关闭 / 单元测试场景。
     /// </summary>
-    public CastleSupportManager(CapitalManager? capitalManager = null)
+    public CastleSupportManager(CapitalManager? capitalManager = null, GarrisonTransferManager? transferManager = null)
     {
         _capitalManager = capitalManager;
+        _transferManager = transferManager;
     }
 
     // === 任务规则文档中明确的硬编码常量 ===
@@ -155,19 +157,18 @@ public sealed class CastleSupportManager
     /// <param name="destination">The deficit town whose intent triggered this call.</param>
     /// <param name="requestedMagnitude">Suggested troop count; only used to cap the
     /// number of tasks dispatched (one task per <see cref="MaxTroopsPerTask"/>).</param>
-    /// <param name="transferManager">Already-constructed GarrisonTransferManager; null
-    /// returns 0 + warning log.</param>
+    /// <remarks>Uses the <see cref="GarrisonTransferManager"/> injected via ctor.</remarks>
     /// <returns>Number of TransferTasks that were actually dispatched (≥ 0).</returns>
-    public int TryDispatchForDemand(Town destination, int requestedMagnitude, GarrisonTransferManager? transferManager)
+    public int TryDispatchForDemand(Town destination, int requestedMagnitude)
     {
         if (destination == null || destination.Settlement == null)
         {
             Logger.Warn("CastleSupportManager.TryDispatchForDemand: destination is null");
             return 0;
         }
-        if (transferManager == null)
+        if (_transferManager == null)
         {
-            Logger.Warn($"TryDispatchForDemand '{destination.Name}': transferManager is null — skipped");
+            Logger.Warn($"TryDispatchForDemand '{destination.Name}': _transferManager not injected — skipped");
             return 0;
         }
         if (requestedMagnitude <= 0) return 0;
@@ -192,7 +193,7 @@ public sealed class CastleSupportManager
                 bool ok;
                 try
                 {
-                    ok = transferManager.TryDispatchTransfer(task);
+                    ok = _transferManager.TryDispatchTransfer(task);
                 }
                 catch (Exception ex)
                 {
