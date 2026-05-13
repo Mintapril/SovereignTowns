@@ -55,8 +55,9 @@ public static class ConfigurationManager
         }
     }
 
-    /// <summary>启动期一次性初始化。从 Modules/SovereignTowns/Configs/global.json 加载；
-    /// 若文件不存在则用默认值创建。校验失败时回退到默认值并写日志。</summary>
+    /// <summary>启动期一次性初始化。从 Documents/Mount and Blade II Bannerlord/Configs/SovereignTowns/global.json
+    /// 加载（B7.2 迁出 Modules 路径以避开 Steam C:\ UAC）；若新路径不存在但旧 Modules 路径有文件，自动迁移过来；
+    /// 都不存在则创建默认值。校验失败时回退到默认值并写日志。</summary>
     public static void Initialize()
     {
         try
@@ -71,6 +72,7 @@ public static class ConfigurationManager
 
                 string configPath = GetConfigFilePath();
                 EnsureConfigDirectoryExists(configPath);
+                TryMigrateLegacyConfigPath(configPath);
 
                 if (!File.Exists(configPath))
                 {
@@ -222,10 +224,36 @@ public static class ConfigurationManager
 
     // -------- path / IO helpers --------
 
+    /// <summary>
+    /// B7.2: 主配置路径迁到玩家文档目录，避开 Steam C:\ 写盘 UAC 提示。
+    /// 与 TroopDumper.GetBaseDirectory() 保持同一根目录 SovereignTowns/。
+    /// </summary>
     private static string GetConfigFilePath()
     {
-        var modulePath = ModuleHelper.GetModuleFullPath(ModuleId);
-        return Path.Combine(modulePath, ConfigSubDir, ConfigFileName);
+        return Path.Combine(SovereignTowns.WebConfig.TroopDumper.GetBaseDirectory(), ConfigFileName);
+    }
+
+    /// <summary>
+    /// B7.2: 历史上 global.json 写在 Modules/SovereignTowns/Configs/。如果新文档路径无文件、
+    /// 旧 Modules 路径有文件，把旧文件拷过去做一次性迁移。原文件保留不删（玩家可手动清理）。
+    /// </summary>
+    private static void TryMigrateLegacyConfigPath(string newPath)
+    {
+        try
+        {
+            if (File.Exists(newPath)) return;
+
+            string modulePath = ModuleHelper.GetModuleFullPath(ModuleId);
+            string legacyPath = Path.Combine(modulePath, ConfigSubDir, ConfigFileName);
+            if (!File.Exists(legacyPath)) return;
+
+            File.Copy(legacyPath, newPath, overwrite: false);
+            Logger.Info($"Migrated legacy config from '{legacyPath}' to '{newPath}' (legacy file kept; player can delete manually)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("TryMigrateLegacyConfigPath failed (continuing with defaults)", ex);
+        }
     }
 
     private static void EnsureConfigDirectoryExists(string configPath)
