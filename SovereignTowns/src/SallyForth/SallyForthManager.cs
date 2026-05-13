@@ -335,6 +335,8 @@ public sealed class SallyForthManager
             {
                 sallyParty.Ai?.SetDoNotMakeNewDecisions(true);
                 sallyParty.SetMoveEngageParty(target, MobileParty.NavigationType.Default);
+                // B5 F1: 防止 sally party 被 vanilla 拉去加入玩家战斗（GDS 同等处置）
+                sallyParty.ShouldJoinPlayerBattles = false;
             }
             catch (Exception aiEx)
             {
