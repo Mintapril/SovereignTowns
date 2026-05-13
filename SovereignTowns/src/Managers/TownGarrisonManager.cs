@@ -146,12 +146,16 @@ public sealed class TownGarrisonManager
                 && (pendingLlmAdvice.Action == "advise_user" || pendingLlmAdvice.Action == "adjust_rule");
             if (llmDecision == null && !llmAdvisoryOnly)
             {
-                DecisionAuditLogger.LogRule(
-                    decisionType: "LLMAdviceRejectedAtTranslate",
-                    inputSummary: $"town={townId} action={pendingLlmAdvice.Action} mag={pendingLlmAdvice.MagnitudeSuggested}",
-                    decisionJson: $"{{\"action\":\"{AuditHelpers.EscapeJson(pendingLlmAdvice.Action)}\",\"reason\":\"untranslatable\"}}",
-                    accepted: false,
-                    rejectionReason: "Action not in translate map or magnitude < 0");
+                DecisionAuditLogger.Log(new AuditEntry
+                {
+                    Timestamp = DateTime.UtcNow,
+                    DecisionType = "LLMAdviceRejectedAtTranslate",
+                    Source = DecisionSource.Llm,
+                    InputSummary = $"town={townId} action={pendingLlmAdvice.Action} mag={pendingLlmAdvice.MagnitudeSuggested}",
+                    DecisionJson = $"{{\"action\":\"{AuditHelpers.EscapeJson(pendingLlmAdvice.Action)}\",\"reason\":\"untranslatable\"}}",
+                    Accepted = false,
+                    RejectionReason = "Action not in translate map or magnitude < 0"
+                });
             }
         }
 
