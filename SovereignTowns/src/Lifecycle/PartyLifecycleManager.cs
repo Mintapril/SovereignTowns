@@ -284,6 +284,7 @@ public sealed class PartyLifecycleManager
                             {
                                 Logger.Error($"MigrateAllOrDisband: dismiss-party DestroyPartyAction failed for '{SafeName(party)}'", destroyEx);
                             }
+                            partiesDisbanded++;
                         }
                         _tracked.Remove(party);
                         continue;
