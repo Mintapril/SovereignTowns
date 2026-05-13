@@ -113,17 +113,17 @@ public sealed class RecruitmentManager
                 Logger.Warn($"  RecruitmentManager: capitalManager == null，跳过首府校验（兼容模式）");
             }
 
+            var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
+
+            // B1 #7: pause when food trend below threshold (first-cause: before any limit check)
+            if (FoodGuard.IsRecruitmentPausedForFood(homeTown, rule, "RecruitmentManager"))
+                return false;
+
             if (!_lifecycle.CanCreateAnotherParty(homeTown.Settlement, PartyKind))
             {
                 Logger.Info($"  RecruitmentManager: '{homeTown.Name}' 已达征兵队上限，跳过");
                 return false;
             }
-
-            var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
-
-            // B1 #7: pause when food trend below threshold
-            if (FoodGuard.IsRecruitmentPausedForFood(homeTown, rule, "RecruitmentManager"))
-                return false;
 
             var candidates = RecruitmentPlanner.RankCandidates(
                 homeTown,
