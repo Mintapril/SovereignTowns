@@ -25,16 +25,21 @@ public sealed class SovereignTownsConfigVM : ViewModel
     private readonly Action<bool>? _finishCallback;
     private string _title = "Sovereign Towns 控制面板";
     private string _featuresHeader = "功能开关";
-    private string _globalsHeader = "全局默认规则";
+    private string _budgetHeader = "数量与预算";
+    private string _ratiosHeader = "兵种与 Tier 比例";
+    private string _templatesHeader = "模板与资源";
     private string _perSettlementHeader = "按城/堡覆盖（可选）";
     private string _closeText = "关闭";
     private string _saveText = "保存并关闭";
     private string _ratioSumText = "";
     private string _ratioSumWarning = "";
     private string _settlementSelectorsEmptyHint = "";
+    private int _selectedTabIndex; // 0..4 — drives the 5 IsXxxTab boolean properties below.
     private MBBindingList<STToggleOptionVM> _toggleOptions;
-    private MBBindingList<STNumericOptionVM> _numericOptions;
-    private MBBindingList<STButtonOptionVM> _buttonOptions;
+    private MBBindingList<STButtonOptionVM> _templateButtons;
+    private MBBindingList<STNumericOptionVM> _budgetNumerics;
+    private MBBindingList<STNumericOptionVM> _ratioNumerics;
+    private MBBindingList<STNumericOptionVM> _resourceNumerics;
     private MBBindingList<STSettlementSelectorVM> _settlementSelectors;
 
     // ratio sum 容忍区间（与 ConfigurationManager.ValidateRule 中常量保持一致）
@@ -63,11 +68,40 @@ public sealed class SovereignTownsConfigVM : ViewModel
     }
 
     [DataSourceProperty]
-    public string GlobalsHeader
+    public string BudgetHeader
     {
-        get => _globalsHeader;
-        set { if (value != _globalsHeader) { _globalsHeader = value ?? ""; OnPropertyChanged(nameof(GlobalsHeader)); } }
+        get => _budgetHeader;
+        set { if (value != _budgetHeader) { _budgetHeader = value ?? ""; OnPropertyChanged(nameof(BudgetHeader)); } }
     }
+
+    [DataSourceProperty]
+    public string RatiosHeader
+    {
+        get => _ratiosHeader;
+        set { if (value != _ratiosHeader) { _ratiosHeader = value ?? ""; OnPropertyChanged(nameof(RatiosHeader)); } }
+    }
+
+    [DataSourceProperty]
+    public string TemplatesHeader
+    {
+        get => _templatesHeader;
+        set { if (value != _templatesHeader) { _templatesHeader = value ?? ""; OnPropertyChanged(nameof(TemplatesHeader)); } }
+    }
+
+    // Static tab-bar labels. No setters / no OnPropertyChanged — constant once VM exists.
+    [DataSourceProperty] public string Tab1Title => "功能开关";
+    [DataSourceProperty] public string Tab2Title => "数量与预算";
+    [DataSourceProperty] public string Tab3Title => "兵种与 Tier 比例";
+    [DataSourceProperty] public string Tab4Title => "模板与资源";
+    [DataSourceProperty] public string Tab5Title => "按城/堡覆盖";
+
+    // Five derived booleans driven by _selectedTabIndex.
+    // XML: ListPanel IsVisible="@IsXxxTab"; tab button IsSelected="@IsXxxTab".
+    [DataSourceProperty] public bool IsFeaturesTab    => _selectedTabIndex == 0;
+    [DataSourceProperty] public bool IsBudgetTab      => _selectedTabIndex == 1;
+    [DataSourceProperty] public bool IsRatiosTab      => _selectedTabIndex == 2;
+    [DataSourceProperty] public bool IsTemplatesTab   => _selectedTabIndex == 3;
+    [DataSourceProperty] public bool IsSettlementsTab => _selectedTabIndex == 4;
 
     [DataSourceProperty]
     public string PerSettlementHeader
@@ -136,32 +170,65 @@ public sealed class SovereignTownsConfigVM : ViewModel
         }
     }
 
-    /// <summary>Numeric (slider) options. Bound from XML as <c>{NumericOptions}</c>.</summary>
+    /// <summary>Tab 2 numerics: 目标人数 / 最少防守 / 预算 / Min-MaxTier / 战时-和平倍率.
+    /// Bound from XML as <c>{BudgetNumerics}</c>.</summary>
     [DataSourceProperty]
-    public MBBindingList<STNumericOptionVM> NumericOptions
+    public MBBindingList<STNumericOptionVM> BudgetNumerics
     {
-        get => _numericOptions;
+        get => _budgetNumerics;
         set
         {
-            if (value != _numericOptions)
+            if (value != _budgetNumerics)
             {
-                _numericOptions = value;
-                OnPropertyChanged(nameof(NumericOptions));
+                _budgetNumerics = value;
+                OnPropertyChanged(nameof(BudgetNumerics));
             }
         }
     }
 
-    /// <summary>Command rows for global rule actions such as opening the exact troop template editor.</summary>
+    /// <summary>Tab 3 numerics: 5 兵种 + 6 Tier 占比. XML: <c>{RatioNumerics}</c>.</summary>
     [DataSourceProperty]
-    public MBBindingList<STButtonOptionVM> ButtonOptions
+    public MBBindingList<STNumericOptionVM> RatioNumerics
     {
-        get => _buttonOptions;
+        get => _ratioNumerics;
         set
         {
-            if (value != _buttonOptions)
+            if (value != _ratioNumerics)
             {
-                _buttonOptions = value;
-                OnPropertyChanged(nameof(ButtonOptions));
+                _ratioNumerics = value;
+                OnPropertyChanged(nameof(RatioNumerics));
+            }
+        }
+    }
+
+    /// <summary>Tab 4 (bottom) numerics: 食物 / XP / Conformity / 征兵护卫 / 村庄冷却 / 回首府阈值.
+    /// XML: <c>{ResourceNumerics}</c>.</summary>
+    [DataSourceProperty]
+    public MBBindingList<STNumericOptionVM> ResourceNumerics
+    {
+        get => _resourceNumerics;
+        set
+        {
+            if (value != _resourceNumerics)
+            {
+                _resourceNumerics = value;
+                OnPropertyChanged(nameof(ResourceNumerics));
+            }
+        }
+    }
+
+    /// <summary>Tab 4 (top) buttons: ExactTroopTemplate editor + 3 TrainingTemplate Apply.
+    /// XML: <c>{TemplateButtons}</c>.</summary>
+    [DataSourceProperty]
+    public MBBindingList<STButtonOptionVM> TemplateButtons
+    {
+        get => _templateButtons;
+        set
+        {
+            if (value != _templateButtons)
+            {
+                _templateButtons = value;
+                OnPropertyChanged(nameof(TemplateButtons));
             }
         }
     }
@@ -184,14 +251,46 @@ public sealed class SovereignTownsConfigVM : ViewModel
     public SovereignTownsConfigVM(Action<bool>? finishCallback = null)
     {
         _finishCallback = finishCallback;
-        _toggleOptions = new MBBindingList<STToggleOptionVM>();
-        _numericOptions = new MBBindingList<STNumericOptionVM>();
-        _buttonOptions = new MBBindingList<STButtonOptionVM>();
+        _toggleOptions     = new MBBindingList<STToggleOptionVM>();
+        _templateButtons   = new MBBindingList<STButtonOptionVM>();
+        _budgetNumerics    = new MBBindingList<STNumericOptionVM>();
+        _ratioNumerics     = new MBBindingList<STNumericOptionVM>();
+        _resourceNumerics  = new MBBindingList<STNumericOptionVM>();
         _settlementSelectors = new MBBindingList<STSettlementSelectorVM>();
-        BuildOptions();
+        BuildToggleOptions();
+        BuildBudgetNumerics();
+        BuildRatioNumerics();
+        BuildResourceNumerics();
+        BuildTemplateButtons();
         BuildSettlementSelectors();
         RecomputeRatioSum();
         RefreshValues();
+    }
+
+    /// <summary>
+    /// XML <c>Command.Click="SelectXxxTab"</c> targets. Toggling _selectedTabIndex and
+    /// pushing OnPropertyChanged for the 5 IsXxxTab booleans causes each section's
+    /// <c>IsVisible="@IsXxxTab"</c> to update, switching pages.
+    /// </summary>
+    public void SelectFeaturesTab()    => SetTab(0);
+    public void SelectBudgetTab()      => SetTab(1);
+    public void SelectRatiosTab()      => SetTab(2);
+    public void SelectTemplatesTab()   => SetTab(3);
+    public void SelectSettlementsTab() => SetTab(4);
+
+    private void SetTab(int idx)
+    {
+        try
+        {
+            if (_selectedTabIndex == idx) return;
+            _selectedTabIndex = idx;
+            OnPropertyChanged(nameof(IsFeaturesTab));
+            OnPropertyChanged(nameof(IsBudgetTab));
+            OnPropertyChanged(nameof(IsRatiosTab));
+            OnPropertyChanged(nameof(IsTemplatesTab));
+            OnPropertyChanged(nameof(IsSettlementsTab));
+        }
+        catch (Exception ex) { Logger.Error($"SetTab({idx}) failed", ex); }
     }
 
     /// <summary>
@@ -286,14 +385,12 @@ public sealed class SovereignTownsConfigVM : ViewModel
         catch { /* never crash UI from a setter callback */ }
     }
 
-    /// <summary>Construct one row per editable field. Each setter writes through to
-    /// <see cref="ConfigurationManager.Current"/>.</summary>
-    private void BuildOptions()
+    /// <summary>Tab 1 (功能开关): 11 boolean toggles for EnabledFeatures + UseGenericMatching.</summary>
+    private void BuildToggleOptions()
     {
         var cfg = ConfigurationManager.Current;
         var features = cfg.EnabledFeatures;
         var globals = cfg.GlobalDefaults;
-        STButtonOptionVM? exactTemplateButton = null;
 
         // -- EnabledFeatures (6 toggles) --
         _toggleOptions.Add(new STToggleOptionVM(
@@ -365,11 +462,145 @@ public sealed class SovereignTownsConfigVM : ViewModel
                 TroopTemplateModeService.SetUseGenericMatching(ConfigurationManager.Current.GlobalDefaults, v);
                 RecomputeRatioSum();
             }));
+    }
+
+    /// <summary>Tab 2 (数量与预算): TargetTotalCount, MinimumDefenders, BudgetLimit, Min/MaxTier,
+    /// Wartime/PeacetimeMultiplier — 7 sliders driving GlobalDefaults size & cost knobs.</summary>
+    private void BuildBudgetNumerics()
+    {
+        var globals = ConfigurationManager.Current.GlobalDefaults;
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "目标驻军总数",
+            "驻军应维持的目标兵员数 (50–500)。",
+            min: 50, max: 500, current: globals.TargetTotalCount, isDiscrete: true,
+            v => ConfigurationManager.Current.GlobalDefaults.TargetTotalCount = (int)v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "最少防守人数",
+            "无论目标人数为何，至少保留的防守人数 (0–300)。",
+            min: 0, max: 300, current: globals.MinimumDefenders, isDiscrete: true,
+            v => ConfigurationManager.Current.GlobalDefaults.MinimumDefenders = (int)v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "招募预算上限",
+            "单日招募预算上限 denar (0–50000)。",
+            min: 0, max: 50000, current: globals.BudgetLimit, isDiscrete: true,
+            v => ConfigurationManager.Current.GlobalDefaults.BudgetLimit = (int)v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "最低 Tier",
+            "允许招募的最低兵种 Tier（含）；范围 1–6。",
+            min: 1, max: 6, current: globals.MinTier, isDiscrete: true,
+            v => ConfigurationManager.Current.GlobalDefaults.MinTier = (int)v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "最高 Tier",
+            "允许招募的最高兵种 Tier（含）；范围 1–6。",
+            min: 1, max: 6, current: globals.MaxTier, isDiscrete: true,
+            v => ConfigurationManager.Current.GlobalDefaults.MaxTier = (int)v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "战时目标乘数",
+            "处于战争状态时，TargetTotalCount 的乘数 (0.5–2.0)。",
+            min: 0.5f, max: 2.0f, current: globals.WartimeMultiplier, isDiscrete: false,
+            v => ConfigurationManager.Current.GlobalDefaults.WartimeMultiplier = v));
+
+        _budgetNumerics.Add(new STNumericOptionVM(
+            "和平目标乘数",
+            "和平时期 TargetTotalCount 的乘数 (0.5–2.0)。",
+            min: 0.5f, max: 2.0f, current: globals.PeacetimeMultiplier, isDiscrete: false,
+            v => ConfigurationManager.Current.GlobalDefaults.PeacetimeMultiplier = v));
+    }
+
+    /// <summary>Tab 3 (兵种与 Tier 比例): 5 troop + 6 tier ratios in two RatioOptionGroup buckets
+    /// for auto-normalization. Σ readout shown via RatioSumText.</summary>
+    private void BuildRatioNumerics()
+    {
+        var globals = ConfigurationManager.Current.GlobalDefaults;
+
+        var troopRatios = new STRatioOptionGroup(RecomputeRatioSum);
+        _ratioNumerics.Add(troopRatios.Add(
+            "骑兵占比",
+            "通用匹配：所有文化/阵营的骑兵与骑射都按此比例计入。",
+            globals.CavalryRatio,
+            v => ConfigurationManager.Current.GlobalDefaults.CavalryRatio = v));
+
+        _ratioNumerics.Add(troopRatios.Add(
+            "步兵占比",
+            "通用匹配：盾兵、枪兵、双手步兵等步行近战兵。",
+            globals.InfantryRatio,
+            v => ConfigurationManager.Current.GlobalDefaults.InfantryRatio = v));
+
+        _ratioNumerics.Add(troopRatios.Add(
+            "弓手占比",
+            "通用匹配：步行弓手，不限制文化。",
+            globals.ArcherRatio,
+            v => ConfigurationManager.Current.GlobalDefaults.ArcherRatio = v));
+
+        _ratioNumerics.Add(troopRatios.Add(
+            "弩手占比",
+            "通用匹配：装备弩的步行远程兵。",
+            globals.CrossbowRatio,
+            v => ConfigurationManager.Current.GlobalDefaults.CrossbowRatio = v));
+
+        _ratioNumerics.Add(troopRatios.Add(
+            "投掷兵占比",
+            "通用匹配：标枪、飞斧、飞刀或 Skirmisher 编队兵种。",
+            globals.ThrowerRatio,
+            v => ConfigurationManager.Current.GlobalDefaults.ThrowerRatio = v));
+        troopRatios.NormalizeInitial();
+
+        var tierRatios = new STRatioOptionGroup(RecomputeRatioSum);
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 1 占比",
+            "通用匹配：目标驻军中 Tier 1 兵员比例。",
+            globals.Tier1Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier1Ratio = v));
+
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 2 占比",
+            "通用匹配：目标驻军中 Tier 2 兵员比例。",
+            globals.Tier2Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier2Ratio = v));
+
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 3 占比",
+            "通用匹配：目标驻军中 Tier 3 兵员比例。",
+            globals.Tier3Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier3Ratio = v));
+
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 4 占比",
+            "通用匹配：目标驻军中 Tier 4 兵员比例。",
+            globals.Tier4Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier4Ratio = v));
+
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 5 占比",
+            "通用匹配：目标驻军中 Tier 5 兵员比例。",
+            globals.Tier5Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier5Ratio = v));
+
+        _ratioNumerics.Add(tierRatios.Add(
+            "Tier 6 占比",
+            "通用匹配：目标驻军中 Tier 6+ 兵员比例。",
+            globals.Tier6Ratio,
+            v => ConfigurationManager.Current.GlobalDefaults.Tier6Ratio = v));
+        tierRatios.NormalizeInitial();
+    }
+
+    /// <summary>Tab 4 (模板与资源) top: ExactTroopTemplate edit button + 3 TrainingTemplate Apply
+    /// buttons (FrontierDefense / TradeHub / EliteNoble).</summary>
+    private void BuildTemplateButtons()
+    {
+        var globals = ConfigurationManager.Current.GlobalDefaults;
+        STButtonOptionVM? exactTemplateButton = null;
 
         exactTemplateButton = new STButtonOptionVM(
             "具体兵员模板",
             "打开原版部队管理页编辑 IG 风格的目标兵种和数量；左侧保存为模板，右侧为可选兵种。",
-            "编辑士兵定义",
+            $"编辑士兵定义 ({globals.ExactTroopTemplate.Count})",
             isVisible: true,
             () => ExactTroopTemplateEditor.OpenForRule(
                 ConfigurationManager.Current.GlobalDefaults,
@@ -379,161 +610,70 @@ public sealed class SovereignTownsConfigVM : ViewModel
                     exactTemplateButton!.ButtonText = $"编辑士兵定义 ({ConfigurationManager.Current.GlobalDefaults.ExactTroopTemplate.Count})";
                     RecomputeRatioSum();
                 }));
-        exactTemplateButton.ButtonText = $"编辑士兵定义 ({globals.ExactTroopTemplate.Count})";
-        _buttonOptions.Add(exactTemplateButton);
+        _templateButtons.Add(exactTemplateButton);
 
-        // -- GlobalDefaults (6 numeric sliders) --
-        _numericOptions.Add(new STNumericOptionVM(
-            "目标驻军总数",
-            "驻军应维持的目标兵员数 (50–500)。",
-            min: 50, max: 500, current: globals.TargetTotalCount, isDiscrete: true,
-            v => ConfigurationManager.Current.GlobalDefaults.TargetTotalCount = (int)v));
+        // 3 TrainingTemplate Apply buttons. Each click overwrites GlobalDefaults' numeric/ratio fields
+        // with the preset's rule, **preserving** ExactTroopTemplate + EnabledFeatures + PerSettlement.
+        _templateButtons.Add(new STButtonOptionVM(
+            "预设：边疆防御",
+            "高目标驻军、高战时倍率、防御兵种为主。覆盖目标人数 / 兵种比例 / Tier 比例 / 倍率；不动你的功能开关、具体兵员模板和按城堡覆盖。",
+            "应用预设",
+            isVisible: true,
+            () => ApplyTrainingTemplate(TrainingTemplate.FrontierDefense())));
 
-        _numericOptions.Add(new STNumericOptionVM(
-            "最少防守人数",
-            "无论目标人数为何，至少保留的防守人数 (0–300)。",
-            min: 0, max: 300, current: globals.MinimumDefenders, isDiscrete: true,
-            v => ConfigurationManager.Current.GlobalDefaults.MinimumDefenders = (int)v));
+        _templateButtons.Add(new STButtonOptionVM(
+            "预设：贸易枢纽",
+            "低驻军规模、低战时倍率、兵种平衡、预算紧缩。覆盖目标人数 / 兵种比例 / Tier 比例 / 倍率；不动你的功能开关、具体兵员模板和按城堡覆盖。",
+            "应用预设",
+            isVisible: true,
+            () => ApplyTrainingTemplate(TrainingTemplate.TradeHub())));
 
-        _numericOptions.Add(new STNumericOptionVM(
-            "招募预算上限",
-            "单日招募预算上限 denar (0–50000)。",
-            min: 0, max: 50000, current: globals.BudgetLimit, isDiscrete: true,
-            v => ConfigurationManager.Current.GlobalDefaults.BudgetLimit = (int)v));
+        _templateButtons.Add(new STButtonOptionVM(
+            "预设:精锐贵族",
+            "中等规模、高 Tier、高战时倍率、骑兵+弓手为主。覆盖目标人数 / 兵种比例 / Tier 比例 / 倍率；不动你的功能开关、具体兵员模板和按城堡覆盖。",
+            "应用预设",
+            isVisible: true,
+            () => ApplyTrainingTemplate(TrainingTemplate.EliteNobleGarrison())));
+    }
 
-        // -- 通用兵种比例：任意一个 slider 变化时，其它兵种自动重分配，确保总和保持 1.0。 --
-        var troopRatios = new STRatioOptionGroup(RecomputeRatioSum);
-        _numericOptions.Add(troopRatios.Add(
-            "骑兵占比",
-            "通用匹配：所有文化/阵营的骑兵与骑射都按此比例计入。",
-            globals.CavalryRatio,
-            v => ConfigurationManager.Current.GlobalDefaults.CavalryRatio = v));
+    /// <summary>Tab 4 (模板与资源) bottom: food / XP / conformity / escort / cooldown / return threshold.
+    /// Mix of GlobalDefaults numeric fields and GlobalConfig top-level fields.</summary>
+    private void BuildResourceNumerics()
+    {
+        var cfg = ConfigurationManager.Current;
+        var globals = cfg.GlobalDefaults;
 
-        _numericOptions.Add(troopRatios.Add(
-            "步兵占比",
-            "通用匹配：盾兵、枪兵、双手步兵等步行近战兵。",
-            globals.InfantryRatio,
-            v => ConfigurationManager.Current.GlobalDefaults.InfantryRatio = v));
-
-        _numericOptions.Add(troopRatios.Add(
-            "弓手占比",
-            "通用匹配：步行弓手，不限制文化。",
-            globals.ArcherRatio,
-            v => ConfigurationManager.Current.GlobalDefaults.ArcherRatio = v));
-
-        _numericOptions.Add(troopRatios.Add(
-            "弩手占比",
-            "通用匹配：装备弩的步行远程兵。",
-            globals.CrossbowRatio,
-            v => ConfigurationManager.Current.GlobalDefaults.CrossbowRatio = v));
-
-        _numericOptions.Add(troopRatios.Add(
-            "投掷兵占比",
-            "通用匹配：标枪、飞斧、飞刀或 Skirmisher 编队兵种。",
-            globals.ThrowerRatio,
-            v => ConfigurationManager.Current.GlobalDefaults.ThrowerRatio = v));
-        troopRatios.NormalizeInitial();
-
-        // -- 通用 Tier 比例：同样自动联动，总和保持 1.0。 --
-        var tierRatios = new STRatioOptionGroup(RecomputeRatioSum);
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 1 占比",
-            "通用匹配：目标驻军中 Tier 1 兵员比例。",
-            globals.Tier1Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier1Ratio = v));
-
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 2 占比",
-            "通用匹配：目标驻军中 Tier 2 兵员比例。",
-            globals.Tier2Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier2Ratio = v));
-
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 3 占比",
-            "通用匹配：目标驻军中 Tier 3 兵员比例。",
-            globals.Tier3Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier3Ratio = v));
-
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 4 占比",
-            "通用匹配：目标驻军中 Tier 4 兵员比例。",
-            globals.Tier4Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier4Ratio = v));
-
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 5 占比",
-            "通用匹配：目标驻军中 Tier 5 兵员比例。",
-            globals.Tier5Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier5Ratio = v));
-
-        _numericOptions.Add(tierRatios.Add(
-            "Tier 6 占比",
-            "通用匹配：目标驻军中 Tier 6+ 兵员比例。",
-            globals.Tier6Ratio,
-            v => ConfigurationManager.Current.GlobalDefaults.Tier6Ratio = v));
-        tierRatios.NormalizeInitial();
-
-        // -- Tier bounds --
-        _numericOptions.Add(new STNumericOptionVM(
-            "最低 Tier",
-            "允许招募的最低兵种 Tier（含）；范围 1–6。",
-            min: 1, max: 6, current: globals.MinTier, isDiscrete: true,
-            v => ConfigurationManager.Current.GlobalDefaults.MinTier = (int)v));
-
-        _numericOptions.Add(new STNumericOptionVM(
-            "最高 Tier",
-            "允许招募的最高兵种 Tier（含）；范围 1–6。",
-            min: 1, max: 6, current: globals.MaxTier, isDiscrete: true,
-            v => ConfigurationManager.Current.GlobalDefaults.MaxTier = (int)v));
-
-        // -- War / peace multipliers --
-        _numericOptions.Add(new STNumericOptionVM(
-            "战时目标乘数",
-            "处于战争状态时，TargetTotalCount 的乘数 (0.5–2.0)。",
-            min: 0.5f, max: 2.0f, current: globals.WartimeMultiplier, isDiscrete: false,
-            v => ConfigurationManager.Current.GlobalDefaults.WartimeMultiplier = v));
-
-        _numericOptions.Add(new STNumericOptionVM(
-            "和平目标乘数",
-            "和平时期 TargetTotalCount 的乘数 (0.5–2.0)。",
-            min: 0.5f, max: 2.0f, current: globals.PeacetimeMultiplier, isDiscrete: false,
-            v => ConfigurationManager.Current.GlobalDefaults.PeacetimeMultiplier = v));
-
-        // -- Food / training / prisoner --
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "食物安全阈值",
             "Town.FoodChange 低于此值时暂停招募，避免饿城 (-50 ~ 50)。",
             min: -50, max: 50, current: globals.FoodSafetyThreshold, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.FoodSafetyThreshold = v));
 
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "每日驻军 XP 奖励",
             "每日给驻军每个非 hero 兵员注入的固定 XP (0–30)。",
             min: 0, max: 30, current: globals.DailyTroopXpBonus, isDiscrete: true,
             v => ConfigurationManager.Current.GlobalDefaults.DailyTroopXpBonus = (int)v));
 
-        // DailyPrisonerConformityAmount 在 GlobalConfig，不在 TownGarrisonRule
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "每日俘虏 Conformity",
             "每日为驻军中每名俘虏累加的 conformity XP (0–30)。",
             min: 0, max: 30, current: cfg.DailyPrisonerConformityAmount, isDiscrete: true,
             v => ConfigurationManager.Current.DailyPrisonerConformityAmount = (int)v));
 
-        // -- P1 globals (位置 16/17/18，与上述 15 个 numeric 并列；全部 GlobalConfig 顶层字段，
-        //    不放进 per-settlement override 页面) --
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "征兵护卫数",
             "征兵队出发时从首府 GarrisonParty 抽取多少低 Tier 兵作为基础护卫 (0–50)。",
             min: 0, max: 50, current: cfg.RecruiterEscortSize, isDiscrete: true,
             v => ConfigurationManager.Current.RecruiterEscortSize = (int)v));
 
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "村庄招募冷却",
             "同一 village 被招过后多少小时内不再列为候选 (12–240)。",
             min: 12, max: 240, current: cfg.VillageCooldownHours, isDiscrete: true,
             v => ConfigurationManager.Current.VillageCooldownHours = (int)v));
 
-        _numericOptions.Add(new STNumericOptionVM(
+        _resourceNumerics.Add(new STNumericOptionVM(
             "征兵队回首府阈值",
             "征兵队总人数达此值立即回首府 (10–200)。",
             min: 10, max: 200, current: cfg.RecruiterReturnThreshold, isDiscrete: true,
@@ -542,6 +682,70 @@ public sealed class SovereignTownsConfigVM : ViewModel
         // 说明：IdleHoursBeforeDisband 当前是 PartyLifecycleManager.cs 中的 const，
         // 不属于 TownGarrisonRule POCO；按任务指引跳过并记录日志。
         Logger.Info("ConfigScreen: skipping IdleHoursBeforeDisband (currently a const in PartyLifecycleManager, not a config field)");
+    }
+
+    /// <summary>Apply a <see cref="TrainingTemplate"/> preset to GlobalDefaults.
+    /// Overwrites numeric / ratio fields. **Preserves** ExactTroopTemplate (user's custom troops),
+    /// UseGenericMatching (treated as a user-mode preference), EnabledFeatures (top-level config),
+    /// and PerSettlementOverrides. After overwrite, rebuilds the 3 numeric collections so the
+    /// slider rows reflect the new values; refreshes Σ readout.</summary>
+    private void ApplyTrainingTemplate(TrainingTemplate t)
+    {
+        try
+        {
+            if (t?.Rule is null)
+            {
+                Logger.Warn("ApplyTrainingTemplate called with null template");
+                return;
+            }
+
+            var current = ConfigurationManager.Current.GlobalDefaults;
+            var src = t.Rule;
+
+            current.TargetTotalCount    = src.TargetTotalCount;
+            current.MinimumDefenders    = src.MinimumDefenders;
+            current.BudgetLimit         = src.BudgetLimit;
+            current.MinTier             = src.MinTier;
+            current.MaxTier             = src.MaxTier;
+            current.CavalryRatio        = src.CavalryRatio;
+            current.InfantryRatio       = src.InfantryRatio;
+            current.ArcherRatio         = src.ArcherRatio;
+            current.CrossbowRatio       = src.CrossbowRatio;
+            current.ThrowerRatio        = src.ThrowerRatio;
+            current.Tier1Ratio          = src.Tier1Ratio;
+            current.Tier2Ratio          = src.Tier2Ratio;
+            current.Tier3Ratio          = src.Tier3Ratio;
+            current.Tier4Ratio          = src.Tier4Ratio;
+            current.Tier5Ratio          = src.Tier5Ratio;
+            current.Tier6Ratio          = src.Tier6Ratio;
+            current.WartimeMultiplier   = src.WartimeMultiplier;
+            current.PeacetimeMultiplier = src.PeacetimeMultiplier;
+            current.FoodSafetyThreshold = src.FoodSafetyThreshold;
+            current.DailyTroopXpBonus   = src.DailyTroopXpBonus;
+            // 不动：UseGenericMatching / ExactTroopTemplate / EnabledFeatures / PerSettlementOverrides
+
+            Logger.Info($"Applied TrainingTemplate '{t.TemplateId}' to GlobalDefaults");
+
+            // 重建 3 个 numeric 集合，让 slider rows 反映新值。Toggle / template button 集合不动
+            // （toggle 列表里的 UseGenericMatching 没改；template button 列表无 numeric 状态）。
+            _budgetNumerics.Clear();
+            _ratioNumerics.Clear();
+            _resourceNumerics.Clear();
+            BuildBudgetNumerics();
+            BuildRatioNumerics();
+            BuildResourceNumerics();
+            OnPropertyChanged(nameof(BudgetNumerics));
+            OnPropertyChanged(nameof(RatioNumerics));
+            OnPropertyChanged(nameof(ResourceNumerics));
+
+            RecomputeRatioSum();
+            RatioSumWarning = ""; // 清掉旧警告，新预设是合法的 (Σ=1.0)
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ApplyTrainingTemplate({t?.TemplateId}) failed", ex);
+            RatioSumWarning = $"应用预设失败：{ex.Message}";
+        }
     }
 
     /// <summary>XML <c>Command.Click="ExecuteClose"</c> target — close without persisting.</summary>

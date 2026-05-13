@@ -116,6 +116,7 @@
                                                    ExtendButtonArrowWidget="..\..\ExtendButton\ExtendButtonArrow">
                   <Children>
 
+                    <!-- Top: subtitle bar with @Title (kept for visual continuity with vanilla style). -->
                     <Widget WidthSizePolicy="StretchToParent"
                             HeightSizePolicy="Fixed"
                             VerticalAlignment="Top"
@@ -137,14 +138,96 @@
                       </Children>
                     </Widget>
 
+                    <!-- Tab bar: 5 toggle buttons. Each binds IsSelected=@IsXxxTab and
+                         Command.Click=SelectXxxTab. ButtonType="Toggle" + UpdateChildrenStates lets
+                         the button highlight track the IsSelected boolean. -->
+                    <ListPanel WidthSizePolicy="StretchToParent"
+                               HeightSizePolicy="Fixed"
+                               VerticalAlignment="Top"
+                               SuggestedHeight="44"
+                               MarginTop="80"
+                               MarginLeft="14"
+                               MarginRight="14"
+                               LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                      <Children>
+                        <ButtonWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                      ButtonType="Toggle" IsSelected="@IsFeaturesTab"
+                                      Command.Click="SelectFeaturesTab"
+                                      Brush="Recruitment.Popup.DoneButton"
+                                      UpdateChildrenStates="true"
+                                      MarginRight="6">
+                          <Children>
+                            <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Brush="Recruitment.Popup.Done.Text"
+                                            Text="@Tab1Title" />
+                          </Children>
+                        </ButtonWidget>
+                        <ButtonWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                      ButtonType="Toggle" IsSelected="@IsBudgetTab"
+                                      Command.Click="SelectBudgetTab"
+                                      Brush="Recruitment.Popup.DoneButton"
+                                      UpdateChildrenStates="true"
+                                      MarginRight="6">
+                          <Children>
+                            <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Brush="Recruitment.Popup.Done.Text"
+                                            Text="@Tab2Title" />
+                          </Children>
+                        </ButtonWidget>
+                        <ButtonWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                      ButtonType="Toggle" IsSelected="@IsRatiosTab"
+                                      Command.Click="SelectRatiosTab"
+                                      Brush="Recruitment.Popup.DoneButton"
+                                      UpdateChildrenStates="true"
+                                      MarginRight="6">
+                          <Children>
+                            <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Brush="Recruitment.Popup.Done.Text"
+                                            Text="@Tab3Title" />
+                          </Children>
+                        </ButtonWidget>
+                        <ButtonWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                      ButtonType="Toggle" IsSelected="@IsTemplatesTab"
+                                      Command.Click="SelectTemplatesTab"
+                                      Brush="Recruitment.Popup.DoneButton"
+                                      UpdateChildrenStates="true"
+                                      MarginRight="6">
+                          <Children>
+                            <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Brush="Recruitment.Popup.Done.Text"
+                                            Text="@Tab4Title" />
+                          </Children>
+                        </ButtonWidget>
+                        <ButtonWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                      ButtonType="Toggle" IsSelected="@IsSettlementsTab"
+                                      Command.Click="SelectSettlementsTab"
+                                      Brush="Recruitment.Popup.DoneButton"
+                                      UpdateChildrenStates="true">
+                          <Children>
+                            <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                            Brush="Recruitment.Popup.Done.Text"
+                                            Text="@Tab5Title" />
+                          </Children>
+                        </ButtonWidget>
+                      </Children>
+                    </ListPanel>
+
+                    <!-- Content area: same shadowed frame as vanilla, MarginTop shifted to make
+                         room for the title (74) + tab bar (44) + gaps. Each of the 5 inner ListPanels
+                         is IsVisible-bound to one tab boolean; only one is shown at a time. -->
                     <BrushWidget Id="ContentWidget"
                                  WidthSizePolicy="StretchToParent"
                                  HeightSizePolicy="StretchToParent"
                                  VerticalAlignment="Top"
                                  MarginLeft="10"
                                  MarginRight="10"
-                                 MarginTop="80"
-                                 MarginBottom="88"
+                                 MarginTop="138"
+                                 MarginBottom="120"
                                  Brush="InnerFrameShadow1Brush"
                                  ClipContents="true">
                       <Children>
@@ -184,68 +267,30 @@
                                            LayoutImp.LayoutMethod="VerticalBottomToTop">
                                   <Children>
 
-                                    <ListPanel WidthSizePolicy="StretchToParent"
+                                    <!-- ============ Tab 1: 功能开关 ============ -->
+                                    <ListPanel IsVisible="@IsFeaturesTab"
+                                               WidthSizePolicy="StretchToParent"
                                                HeightSizePolicy="CoverChildren"
                                                LayoutImp.LayoutMethod="VerticalBottomToTop">
                                       <Children>
-                                        <Widget WidthSizePolicy="StretchToParent"
-                                                HeightSizePolicy="CoverChildren"
-                                                MarginTop="4"
-                                                MarginBottom="10">
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="4" MarginBottom="10">
                                           <Children>
-                                            <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="CoverChildren"
-                                                            Brush="SPOptions.Description.Title.Text"
-                                                            Text="@FeaturesHeader" />
-                                            <ImageWidget WidthSizePolicy="StretchToParent"
-                                                         HeightSizePolicy="Fixed"
-                                                         SuggestedHeight="2"
-                                                         VerticalAlignment="Bottom"
-                                                         MarginTop="30"
-                                                         Brush="SPOptions.CollapserLine" />
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.Description.Title.Text" Text="@FeaturesHeader" />
+                                            <ImageWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="2" VerticalAlignment="Bottom" MarginTop="30" Brush="SPOptions.CollapserLine" />
                                           </Children>
                                         </Widget>
-
-                                        <ListPanel DataSource="{ToggleOptions}"
-                                                   WidthSizePolicy="StretchToParent"
-                                                   HeightSizePolicy="CoverChildren"
-                                                   LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                        <ListPanel DataSource="{ToggleOptions}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
                                           <ItemTemplate>
-                                            <Widget WidthSizePolicy="StretchToParent"
-                                                    HeightSizePolicy="Fixed"
-                                                    SuggestedHeight="50">
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="50">
                                               <Children>
-                                                <ListPanel WidthSizePolicy="StretchToParent"
-                                                           HeightSizePolicy="StretchToParent"
-                                                           LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                   <Children>
-                                                    <RichTextWidget WidthSizePolicy="Fixed"
-                                                                    HeightSizePolicy="CoverChildren"
-                                                                    SuggestedWidth="430"
-                                                                    HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Center"
-                                                                    Brush="SPOptions.OptionName.Text"
-                                                                    Text="@Name" />
-                                                    <Widget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="StretchToParent"
-                                                            MarginLeft="40">
+                                                    <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="430" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="40">
                                                       <Children>
-                                                        <ButtonWidget DoNotPassEventsToChildren="true"
-                                                                      WidthSizePolicy="Fixed"
-                                                                      HeightSizePolicy="Fixed"
-                                                                      SuggestedWidth="40"
-                                                                      SuggestedHeight="40"
-                                                                      VerticalAlignment="Center"
-                                                                      Brush="SPOptions.Checkbox.Empty.Button"
-                                                                      ButtonType="Toggle"
-                                                                      IsSelected="@OptionValueAsBoolean"
-                                                                      ToggleIndicator="ToggleIndicator"
-                                                                      UpdateChildrenStates="true">
+                                                        <ButtonWidget DoNotPassEventsToChildren="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="40" SuggestedHeight="40" VerticalAlignment="Center" Brush="SPOptions.Checkbox.Empty.Button" ButtonType="Toggle" IsSelected="@OptionValueAsBoolean" ToggleIndicator="ToggleIndicator" UpdateChildrenStates="true">
                                                           <Children>
-                                                            <ImageWidget Id="ToggleIndicator"
-                                                                         WidthSizePolicy="StretchToParent"
-                                                                         HeightSizePolicy="StretchToParent"
-                                                                         Brush="SPOptions.Checkbox.Full.Button" />
+                                                            <ImageWidget Id="ToggleIndicator" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Brush="SPOptions.Checkbox.Full.Button" />
                                                           </Children>
                                                         </ButtonWidget>
                                                       </Children>
@@ -259,84 +304,28 @@
                                       </Children>
                                     </ListPanel>
 
-                                    <ListPanel WidthSizePolicy="StretchToParent"
+                                    <!-- ============ Tab 2: 数量与预算 ============ -->
+                                    <ListPanel IsVisible="@IsBudgetTab"
+                                               WidthSizePolicy="StretchToParent"
                                                HeightSizePolicy="CoverChildren"
-                                               MarginTop="34"
                                                LayoutImp.LayoutMethod="VerticalBottomToTop">
                                       <Children>
-                                        <Widget WidthSizePolicy="StretchToParent"
-                                                HeightSizePolicy="CoverChildren"
-                                                MarginBottom="10">
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="4" MarginBottom="10">
                                           <Children>
-                                            <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="CoverChildren"
-                                                            Brush="SPOptions.Description.Title.Text"
-                                                            Text="@GlobalsHeader" />
-                                            <ImageWidget WidthSizePolicy="StretchToParent"
-                                                         HeightSizePolicy="Fixed"
-                                                         SuggestedHeight="2"
-                                                         VerticalAlignment="Bottom"
-                                                         MarginTop="30"
-                                                         Brush="SPOptions.CollapserLine" />
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.Description.Title.Text" Text="@BudgetHeader" />
+                                            <ImageWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="2" VerticalAlignment="Bottom" MarginTop="30" Brush="SPOptions.CollapserLine" />
                                           </Children>
                                         </Widget>
-
-                                        <ListPanel WidthSizePolicy="StretchToParent"
-                                                   HeightSizePolicy="CoverChildren"
-                                                   MarginTop="8"
-                                                   MarginBottom="10"
-                                                   LayoutImp.LayoutMethod="VerticalBottomToTop">
-                                          <Children>
-                                            <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="CoverChildren"
-                                                            Brush="SPOptions.OptionName.Text"
-                                                            Text="@RatioSumText" />
-                                            <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="CoverChildren"
-                                                            MarginTop="4"
-                                                            Brush="SPOptions.OptionName.Text"
-                                                            Color="#FF6060FF"
-                                                            Text="@RatioSumWarning" />
-                                          </Children>
-                                        </ListPanel>
-
-                                        <ListPanel DataSource="{NumericOptions}"
-                                                   WidthSizePolicy="StretchToParent"
-                                                   HeightSizePolicy="CoverChildren"
-                                                   LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                        <ListPanel DataSource="{BudgetNumerics}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
                                           <ItemTemplate>
-                                            <Widget WidthSizePolicy="StretchToParent"
-                                                    HeightSizePolicy="Fixed"
-                                                    SuggestedHeight="60">
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="60">
                                               <Children>
-                                                <ListPanel WidthSizePolicy="StretchToParent"
-                                                           HeightSizePolicy="StretchToParent"
-                                                           LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                   <Children>
-                                                    <RichTextWidget WidthSizePolicy="Fixed"
-                                                                    HeightSizePolicy="CoverChildren"
-                                                                    SuggestedWidth="430"
-                                                                    HorizontalAlignment="Right"
-                                                                    VerticalAlignment="Center"
-                                                                    Brush="SPOptions.OptionName.Text"
-                                                                    Text="@Name" />
-                                                    <ListPanel WidthSizePolicy="CoverChildren"
-                                                               HeightSizePolicy="StretchToParent"
-                                                               MarginLeft="40"
-                                                               LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                    <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="430" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                    <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent" MarginLeft="40" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                       <Children>
-                                                        <SliderWidget WidthSizePolicy="Fixed"
-                                                                      HeightSizePolicy="Fixed"
-                                                                      SuggestedWidth="338"
-                                                                      SuggestedHeight="42"
-                                                                      VerticalAlignment="Center"
-                                                                      DoNotUpdateHandleSize="true"
-                                                                      Filler="Filler"
-                                                                      Handle="SliderHandle"
-                                                                      IsDiscrete="@IsDiscrete"
-                                                                      MaxValueFloat="@Max"
-                                                                      MinValueFloat="@Min"
-                                                                      ValueFloat="@OptionValue">
+                                                        <SliderWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="338" SuggestedHeight="42" VerticalAlignment="Center" DoNotUpdateHandleSize="true" Filler="Filler" Handle="SliderHandle" IsDiscrete="@IsDiscrete" MaxValueFloat="@Max" MinValueFloat="@Min" ValueFloat="@OptionValue">
                                                           <Children>
                                                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="362" SuggestedHeight="38" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_canvas" IsEnabled="false" />
                                                             <Widget Id="Filler" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" ClipContents="true">
@@ -348,13 +337,7 @@
                                                             <ImageWidget Id="SliderHandle" DoNotAcceptEvents="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="14" SuggestedHeight="38" HorizontalAlignment="Left" VerticalAlignment="Center" Brush="SPOptions.Slider.Handle" />
                                                           </Children>
                                                         </SliderWidget>
-                                                        <RichTextWidget WidthSizePolicy="CoverChildren"
-                                                                        HeightSizePolicy="CoverChildren"
-                                                                        MarginLeft="20"
-                                                                        VerticalAlignment="Center"
-                                                                        Brush="SPOptions.Slider.Value.Text"
-                                                                        IsEnabled="false"
-                                                                        Text="@OptionValueAsString" />
+                                                        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" MarginLeft="20" VerticalAlignment="Center" Brush="SPOptions.Slider.Value.Text" IsEnabled="false" Text="@OptionValueAsString" />
                                                       </Children>
                                                     </ListPanel>
                                                   </Children>
@@ -366,91 +349,158 @@
                                       </Children>
                                     </ListPanel>
 
-                                    <ListPanel WidthSizePolicy="StretchToParent"
+                                    <!-- ============ Tab 3: 兵种与 Tier 比例 ============ -->
+                                    <ListPanel IsVisible="@IsRatiosTab"
+                                               WidthSizePolicy="StretchToParent"
                                                HeightSizePolicy="CoverChildren"
-                                               MarginTop="34"
                                                LayoutImp.LayoutMethod="VerticalBottomToTop">
                                       <Children>
-                                        <Widget WidthSizePolicy="StretchToParent"
-                                                HeightSizePolicy="CoverChildren"
-                                                MarginBottom="10">
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="4" MarginBottom="10">
                                           <Children>
-                                            <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="CoverChildren"
-                                                            Brush="SPOptions.Description.Title.Text"
-                                                            Text="@PerSettlementHeader" />
-                                            <ImageWidget WidthSizePolicy="StretchToParent"
-                                                         HeightSizePolicy="Fixed"
-                                                         SuggestedHeight="2"
-                                                         VerticalAlignment="Bottom"
-                                                         MarginTop="30"
-                                                         Brush="SPOptions.CollapserLine" />
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.Description.Title.Text" Text="@RatiosHeader" />
+                                            <ImageWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="2" VerticalAlignment="Bottom" MarginTop="30" Brush="SPOptions.CollapserLine" />
                                           </Children>
                                         </Widget>
 
-                                        <RichTextWidget WidthSizePolicy="StretchToParent"
-                                                        HeightSizePolicy="CoverChildren"
-                                                        MarginTop="10"
-                                                        MarginBottom="10"
-                                                        Brush="SPOptions.OptionName.Text"
-                                                        Text="@SettlementSelectorsEmptyHint" />
+                                        <!-- Σ readout. Σ-warning displayed at the panel footer (always visible) too. -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="8" MarginBottom="10" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                          <Children>
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.OptionName.Text" Text="@RatioSumText" />
+                                          </Children>
+                                        </ListPanel>
 
-                                        <ListPanel DataSource="{SettlementSelectors}"
-                                                   WidthSizePolicy="StretchToParent"
-                                                   HeightSizePolicy="CoverChildren"
-                                                   LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                        <ListPanel DataSource="{RatioNumerics}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
                                           <ItemTemplate>
-                                            <Widget WidthSizePolicy="StretchToParent"
-                                                    HeightSizePolicy="CoverChildren"
-                                                    MarginTop="10"
-                                                    MarginBottom="10">
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="60">
                                               <Children>
-                                                <ListPanel WidthSizePolicy="StretchToParent"
-                                                           HeightSizePolicy="CoverChildren"
-                                                           LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                   <Children>
-                                                    <Widget WidthSizePolicy="StretchToParent"
-                                                            HeightSizePolicy="Fixed"
-                                                            SuggestedHeight="50">
+                                                    <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="430" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                    <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent" MarginLeft="40" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                       <Children>
-                                                        <ListPanel WidthSizePolicy="StretchToParent"
-                                                                   HeightSizePolicy="StretchToParent"
-                                                                   LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                        <SliderWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="338" SuggestedHeight="42" VerticalAlignment="Center" DoNotUpdateHandleSize="true" Filler="Filler" Handle="SliderHandle" IsDiscrete="@IsDiscrete" MaxValueFloat="@Max" MinValueFloat="@Min" ValueFloat="@OptionValue">
                                                           <Children>
-                                                            <RichTextWidget WidthSizePolicy="Fixed"
-                                                                            HeightSizePolicy="CoverChildren"
-                                                                            SuggestedWidth="360"
-                                                                            HorizontalAlignment="Right"
-                                                                            VerticalAlignment="Center"
-                                                                            Brush="SPOptions.OptionName.Text"
-                                                                            Text="@SettlementName" />
-                                                            <RichTextWidget WidthSizePolicy="Fixed"
-                                                                            HeightSizePolicy="CoverChildren"
-                                                                            SuggestedWidth="110"
-                                                                            MarginLeft="10"
-                                                                            VerticalAlignment="Center"
-                                                                            Brush="SPOptions.OptionName.Text"
-                                                                            Text="@SettlementTypeBadge" />
-                                                            <Widget WidthSizePolicy="StretchToParent"
-                                                                    HeightSizePolicy="StretchToParent"
-                                                                    MarginLeft="28">
+                                                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="362" SuggestedHeight="38" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_canvas" IsEnabled="false" />
+                                                            <Widget Id="Filler" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" ClipContents="true">
                                                               <Children>
-                                                                <ButtonWidget DoNotPassEventsToChildren="true"
-                                                                              WidthSizePolicy="Fixed"
-                                                                              HeightSizePolicy="Fixed"
-                                                                              SuggestedWidth="40"
-                                                                              SuggestedHeight="40"
-                                                                              VerticalAlignment="Center"
-                                                                              Brush="SPOptions.Checkbox.Empty.Button"
-                                                                              ButtonType="Toggle"
-                                                                              IsSelected="@OverrideEnabled"
-                                                                              ToggleIndicator="ToggleIndicator"
-                                                                              UpdateChildrenStates="true">
+                                                                <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" HorizontalAlignment="Left" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" />
+                                                              </Children>
+                                                            </Widget>
+                                                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="400" SuggestedHeight="65" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_frame" IsEnabled="false" />
+                                                            <ImageWidget Id="SliderHandle" DoNotAcceptEvents="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="14" SuggestedHeight="38" HorizontalAlignment="Left" VerticalAlignment="Center" Brush="SPOptions.Slider.Handle" />
+                                                          </Children>
+                                                        </SliderWidget>
+                                                        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" MarginLeft="20" VerticalAlignment="Center" Brush="SPOptions.Slider.Value.Text" IsEnabled="false" Text="@OptionValueAsString" />
+                                                      </Children>
+                                                    </ListPanel>
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                          </ItemTemplate>
+                                        </ListPanel>
+                                      </Children>
+                                    </ListPanel>
+
+                                    <!-- ============ Tab 4: 模板与资源 ============ -->
+                                    <ListPanel IsVisible="@IsTemplatesTab"
+                                               WidthSizePolicy="StretchToParent"
+                                               HeightSizePolicy="CoverChildren"
+                                               LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                      <Children>
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="4" MarginBottom="10">
+                                          <Children>
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.Description.Title.Text" Text="@TemplatesHeader" />
+                                            <ImageWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="2" VerticalAlignment="Bottom" MarginTop="30" Brush="SPOptions.CollapserLine" />
+                                          </Children>
+                                        </Widget>
+
+                                        <!-- Template buttons row (ExactTroopTemplate edit + 3 TrainingTemplate Apply) -->
+                                        <ListPanel DataSource="{TemplateButtons}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                          <ItemTemplate>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="56" IsVisible="@IsVisible">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                  <Children>
+                                                    <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="430" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                    <ButtonWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="240" SuggestedHeight="44" MarginLeft="40" VerticalAlignment="Center" Brush="Recruitment.Popup.DoneButton" Command.Click="ExecuteAction">
+                                                      <Children>
+                                                        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="Recruitment.Popup.Done.Text" Text="@ButtonText" />
+                                                      </Children>
+                                                    </ButtonWidget>
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                          </ItemTemplate>
+                                        </ListPanel>
+
+                                        <!-- Resource numerics (food / XP / conformity / escort / cooldown / return threshold) -->
+                                        <ListPanel DataSource="{ResourceNumerics}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="20" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                          <ItemTemplate>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="60">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                  <Children>
+                                                    <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="430" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                    <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent" MarginLeft="40" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                      <Children>
+                                                        <SliderWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="338" SuggestedHeight="42" VerticalAlignment="Center" DoNotUpdateHandleSize="true" Filler="Filler" Handle="SliderHandle" IsDiscrete="@IsDiscrete" MaxValueFloat="@Max" MinValueFloat="@Min" ValueFloat="@OptionValue">
+                                                          <Children>
+                                                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="362" SuggestedHeight="38" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_canvas" IsEnabled="false" />
+                                                            <Widget Id="Filler" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" ClipContents="true">
+                                                              <Children>
+                                                                <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" HorizontalAlignment="Left" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" />
+                                                              </Children>
+                                                            </Widget>
+                                                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="400" SuggestedHeight="65" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_frame" IsEnabled="false" />
+                                                            <ImageWidget Id="SliderHandle" DoNotAcceptEvents="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="14" SuggestedHeight="38" HorizontalAlignment="Left" VerticalAlignment="Center" Brush="SPOptions.Slider.Handle" />
+                                                          </Children>
+                                                        </SliderWidget>
+                                                        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" MarginLeft="20" VerticalAlignment="Center" Brush="SPOptions.Slider.Value.Text" IsEnabled="false" Text="@OptionValueAsString" />
+                                                      </Children>
+                                                    </ListPanel>
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                          </ItemTemplate>
+                                        </ListPanel>
+                                      </Children>
+                                    </ListPanel>
+
+                                    <!-- ============ Tab 5: 按城/堡覆盖 ============ -->
+                                    <ListPanel IsVisible="@IsSettlementsTab"
+                                               WidthSizePolicy="StretchToParent"
+                                               HeightSizePolicy="CoverChildren"
+                                               LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                      <Children>
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="4" MarginBottom="10">
+                                          <Children>
+                                            <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" Brush="SPOptions.Description.Title.Text" Text="@PerSettlementHeader" />
+                                            <ImageWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="2" VerticalAlignment="Bottom" MarginTop="30" Brush="SPOptions.CollapserLine" />
+                                          </Children>
+                                        </Widget>
+
+                                        <RichTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="10" MarginBottom="10" Brush="SPOptions.OptionName.Text" Text="@SettlementSelectorsEmptyHint" />
+
+                                        <ListPanel DataSource="{SettlementSelectors}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                          <ItemTemplate>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginTop="10" MarginBottom="10">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                                  <Children>
+                                                    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="50">
+                                                      <Children>
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                          <Children>
+                                                            <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="360" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@SettlementName" />
+                                                            <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="110" MarginLeft="10" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@SettlementTypeBadge" />
+                                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="28">
+                                                              <Children>
+                                                                <ButtonWidget DoNotPassEventsToChildren="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="40" SuggestedHeight="40" VerticalAlignment="Center" Brush="SPOptions.Checkbox.Empty.Button" ButtonType="Toggle" IsSelected="@OverrideEnabled" ToggleIndicator="ToggleIndicator" UpdateChildrenStates="true">
                                                                   <Children>
-                                                                    <ImageWidget Id="ToggleIndicator"
-                                                                                 WidthSizePolicy="StretchToParent"
-                                                                                 HeightSizePolicy="StretchToParent"
-                                                                                 Brush="SPOptions.Checkbox.Full.Button" />
+                                                                    <ImageWidget Id="ToggleIndicator" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Brush="SPOptions.Checkbox.Full.Button" />
                                                                   </Children>
                                                                 </ButtonWidget>
                                                               </Children>
@@ -460,46 +510,58 @@
                                                       </Children>
                                                     </Widget>
 
-                                                    <ListPanel DataSource="{Overrides}"
-                                                               WidthSizePolicy="StretchToParent"
-                                                               HeightSizePolicy="CoverChildren"
-                                                               MarginLeft="40"
-                                                               MarginTop="6"
-                                                               IsVisible="@OverrideEnabled"
-                                                               LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                                    <ListPanel DataSource="{RuleToggles}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginLeft="40" MarginTop="6" IsVisible="@OverrideEnabled" LayoutImp.LayoutMethod="VerticalBottomToTop">
                                                       <ItemTemplate>
-                                                        <Widget WidthSizePolicy="StretchToParent"
-                                                                HeightSizePolicy="Fixed"
-                                                                SuggestedHeight="55">
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="50">
                                                           <Children>
-                                                            <ListPanel WidthSizePolicy="StretchToParent"
-                                                                       HeightSizePolicy="StretchToParent"
-                                                                       LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
                                                               <Children>
-                                                                <RichTextWidget WidthSizePolicy="Fixed"
-                                                                                HeightSizePolicy="CoverChildren"
-                                                                                SuggestedWidth="390"
-                                                                                HorizontalAlignment="Right"
-                                                                                VerticalAlignment="Center"
-                                                                                Brush="SPOptions.OptionName.Text"
-                                                                                Text="@Name" />
-                                                                <ListPanel WidthSizePolicy="CoverChildren"
-                                                                           HeightSizePolicy="StretchToParent"
-                                                                           MarginLeft="34"
-                                                                           LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                                <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="390" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="40">
                                                                   <Children>
-                                                                    <SliderWidget WidthSizePolicy="Fixed"
-                                                                                  HeightSizePolicy="Fixed"
-                                                                                  SuggestedWidth="338"
-                                                                                  SuggestedHeight="42"
-                                                                                  VerticalAlignment="Center"
-                                                                                  DoNotUpdateHandleSize="true"
-                                                                                  Filler="Filler"
-                                                                                  Handle="SliderHandle"
-                                                                                  IsDiscrete="@IsDiscrete"
-                                                                                  MaxValueFloat="@Max"
-                                                                                  MinValueFloat="@Min"
-                                                                                  ValueFloat="@OptionValue">
+                                                                    <ButtonWidget DoNotPassEventsToChildren="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="40" SuggestedHeight="40" VerticalAlignment="Center" Brush="SPOptions.Checkbox.Empty.Button" ButtonType="Toggle" IsSelected="@OptionValueAsBoolean" ToggleIndicator="ToggleIndicator" UpdateChildrenStates="true">
+                                                                      <Children>
+                                                                        <ImageWidget Id="ToggleIndicator" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Brush="SPOptions.Checkbox.Full.Button" />
+                                                                      </Children>
+                                                                    </ButtonWidget>
+                                                                  </Children>
+                                                                </Widget>
+                                                              </Children>
+                                                            </ListPanel>
+                                                          </Children>
+                                                        </Widget>
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+
+                                                    <ListPanel DataSource="{RuleButtons}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginLeft="40" MarginTop="6" IsVisible="@OverrideEnabled" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="56" IsVisible="@IsVisible">
+                                                          <Children>
+                                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                              <Children>
+                                                                <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="390" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                                <ButtonWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="240" SuggestedHeight="44" MarginLeft="40" VerticalAlignment="Center" Brush="Recruitment.Popup.DoneButton" Command.Click="ExecuteAction">
+                                                                  <Children>
+                                                                    <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" HorizontalAlignment="Center" VerticalAlignment="Center" Brush="Recruitment.Popup.Done.Text" Text="@ButtonText" />
+                                                                  </Children>
+                                                                </ButtonWidget>
+                                                              </Children>
+                                                            </ListPanel>
+                                                          </Children>
+                                                        </Widget>
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+
+                                                    <ListPanel DataSource="{Overrides}" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren" MarginLeft="40" MarginTop="6" IsVisible="@OverrideEnabled" LayoutImp.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="55">
+                                                          <Children>
+                                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                              <Children>
+                                                                <RichTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="390" HorizontalAlignment="Right" VerticalAlignment="Center" Brush="SPOptions.OptionName.Text" Text="@Name" />
+                                                                <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent" MarginLeft="34" LayoutImp.LayoutMethod="HorizontalLeftToRight">
+                                                                  <Children>
+                                                                    <SliderWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="338" SuggestedHeight="42" VerticalAlignment="Center" DoNotUpdateHandleSize="true" Filler="Filler" Handle="SliderHandle" IsDiscrete="@IsDiscrete" MaxValueFloat="@Max" MinValueFloat="@Min" ValueFloat="@OptionValue">
                                                                       <Children>
                                                                         <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="362" SuggestedHeight="38" HorizontalAlignment="Center" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_canvas" IsEnabled="false" />
                                                                         <Widget Id="Filler" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="345" SuggestedHeight="35" VerticalAlignment="Center" Sprite="SPGeneral\SPOptions\standart_slider_fill" ClipContents="true">
@@ -511,13 +573,7 @@
                                                                         <ImageWidget Id="SliderHandle" DoNotAcceptEvents="true" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="14" SuggestedHeight="38" HorizontalAlignment="Left" VerticalAlignment="Center" Brush="SPOptions.Slider.Handle" />
                                                                       </Children>
                                                                     </SliderWidget>
-                                                                    <RichTextWidget WidthSizePolicy="CoverChildren"
-                                                                                    HeightSizePolicy="CoverChildren"
-                                                                                    MarginLeft="20"
-                                                                                    VerticalAlignment="Center"
-                                                                                    Brush="SPOptions.Slider.Value.Text"
-                                                                                    IsEnabled="false"
-                                                                                    Text="@OptionValueAsString" />
+                                                                    <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" MarginLeft="20" VerticalAlignment="Center" Brush="SPOptions.Slider.Value.Text" IsEnabled="false" Text="@OptionValueAsString" />
                                                                   </Children>
                                                                 </ListPanel>
                                                               </Children>
@@ -572,6 +628,19 @@
                         </ScrollbarWidget>
                       </Children>
                     </BrushWidget>
+
+                    <!-- Validator warning row — always visible regardless of tab so save errors
+                         from any tab (e.g. ratio Σ out of range) reach the player. -->
+                    <RichTextWidget WidthSizePolicy="StretchToParent"
+                                    HeightSizePolicy="CoverChildren"
+                                    VerticalAlignment="Bottom"
+                                    HorizontalAlignment="Center"
+                                    MarginLeft="20"
+                                    MarginRight="20"
+                                    MarginBottom="78"
+                                    Brush="SPOptions.OptionName.Text"
+                                    Color="#FF6060FF"
+                                    Text="@RatioSumWarning" />
 
                     <BrushWidget HeightSizePolicy="Fixed"
                                  WidthSizePolicy="Fixed"
