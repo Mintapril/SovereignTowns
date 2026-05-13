@@ -1,0 +1,114 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>SovereignTowns</AssemblyName>
+    <RootNamespace>SovereignTowns</RootNamespace>
+    <OutputType>Library</OutputType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.0.1</Version>
+    <Description>Sovereign Towns - automated player-owned town garrison / recruitment / patrol management for Mount &amp; Blade II Bannerlord v1.3.15</Description>
+  </PropertyGroup>
+
+  <!-- net472 内置 GAC 程序集引用（不在 GameBinPath，由 .NET Framework 4.7.2 提供） -->
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>$(GameBinPath)\System.Numerics.Vectors.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- TaleWorlds 程序集引用 (Private=false 表示不复制到输出，避免与 Native 冲突) -->
+  <ItemGroup>
+    <Reference Include="TaleWorlds.MountAndBlade">
+      <HintPath>$(GameBinPath)\TaleWorlds.MountAndBlade.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Library">
+      <HintPath>$(GameBinPath)\TaleWorlds.Library.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.ModuleManager">
+      <HintPath>$(GameBinPath)\TaleWorlds.ModuleManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.CampaignSystem">
+      <HintPath>$(GameBinPath)\TaleWorlds.CampaignSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.ObjectSystem">
+      <HintPath>$(GameBinPath)\TaleWorlds.ObjectSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Core">
+      <HintPath>$(GameBinPath)\TaleWorlds.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Core.ViewModelCollection">
+      <HintPath>$(GameBinPath)\TaleWorlds.Core.ViewModelCollection.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Engine">
+      <HintPath>$(GameBinPath)\TaleWorlds.Engine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Localization">
+      <HintPath>$(GameBinPath)\TaleWorlds.Localization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.SaveSystem">
+      <HintPath>$(GameBinPath)\TaleWorlds.SaveSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.ScreenSystem">
+      <HintPath>$(GameBinPath)\TaleWorlds.ScreenSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Engine.GauntletUI">
+      <HintPath>$(GameBinPath)\TaleWorlds.Engine.GauntletUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.GauntletUI">
+      <HintPath>$(GameBinPath)\TaleWorlds.GauntletUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.InputSystem">
+      <HintPath>$(GameBinPath)\TaleWorlds.InputSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.TwoDimension">
+      <HintPath>$(GameBinPath)\TaleWorlds.TwoDimension.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(GameBinPath)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- 构建后自动部署到 Modules/SovereignTowns/ -->
+  <!--
+    路径说明：
+      - csproj 位于 $(MSBuildProjectDirectory) = .../SovereignTowns/src
+      - 工作目录根 = .../SovereignTowns
+      - GUI 源目录在工作目录根的 SovereignTowns/GUI/Prefabs（即 src 的兄弟目录 SovereignTowns）
+      - $(ModuleDeployPath) = $(BannerlordPath)\Modules\SovereignTowns (来自 Directory.Build.props)
+      - 因此 prefab 部署目标是 $(ModuleDeployPath)\GUI\Prefabs（ModuleDeployPath 已含 SovereignTowns 这一层）
+  -->
+  <Target Name="DeployToGame" AfterTargets="Build">
+    <ItemGroup>
+      <_SubModuleXml Include="$(MSBuildProjectDirectory)\..\SubModule.xml" />
+      <_ModDll      Include="$(OutputPath)$(AssemblyName).dll" />
+      <_ModPdb      Include="$(OutputPath)$(AssemblyName).pdb" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
+      <_PrefabXmls  Include="$(MSBuildProjectDirectory)\..\SovereignTowns\GUI\Prefabs\*.xml" />
+    </ItemGroup>
+    <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs" />
+    <Copy SourceFiles="@(_SubModuleXml)" DestinationFolder="$(ModuleDeployPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ModDll);@(_ModPdb)" DestinationFolder="$(ModuleDeployPath)\bin\Win64_Shipping_Client" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_PrefabXmls)" DestinationFolder="$(ModuleDeployPath)\GUI\Prefabs" SkipUnchangedFiles="true" Condition="'@(_PrefabXmls)' != ''" />
+    <Message Importance="high" Text="[SovereignTowns] Deployed to $(ModuleDeployPath) (incl. @(_PrefabXmls->Count()) prefab(s))" />
+  </Target>
+
+</Project>

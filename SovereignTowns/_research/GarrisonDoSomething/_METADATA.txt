@@ -1,0 +1,225 @@
+GarrisonDoSomething v1.6.6 — Metadata Dump
+============================================
+Source: D:\SteamLibrary\steamapps\common\Mount & Blade II Bannerlord\Modules\GarrisonDoSomething\bin\Win64_Shipping_Client\GarrisonDoSomething.dll
+Size: 172032 bytes (168 KB)
+Obfuscation: ConfuserEx-class (anti-tamper + method-body encryption + string encryption + invisible-Unicode renaming).
+Custom marker attribute: ConfusedByAttribute (extends System.Attribute).
+ilspycmd (8.1, 9.1) FAILS to decompile method bodies ("BadImageFormatException: Invalid method header: 0xC7 0x73").
+Maximum information retrievable WITHOUT de4dot = metadata (types/methods/fields/attributes/external refs).
+
+============================================
+TYPE INVENTORY (33 types)
+============================================
+VISIBLE (non-obfuscated names):
+- GarrisonDoSomething.CheyronSubModule          : MBSubModuleBase           [17 methods, 0 fields]
+- GarrisonDoSomething.GrifterAISlopException    : System.Exception
+- GarrisonDoSomething.MySettings                : AttributeGlobalSettings`1 [61 methods, 27 fields] — MCMv5
+- GarrisonDoSomething.MySaveDefiner             : SaveableTypeDefiner       [3 methods]
+- GarrisonDoSomething.DefaultClanTierModelPatch         (Harmony Postfix)
+- GarrisonDoSomething.LordPartyComponent_InitializationArgsPatch (Harmony Prefix)
+- GarrisonDoSomething.PatrolPartiesCampaignBehaviorPatch         (Harmony Prefix)
+- GarrisonDoSomething.DisbandPartyCampaignBehaviorPatch          (Harmony Prefix)
+- GarrisonDoSomething.DefaultPartySizeLimitModelPatch            (Harmony Prefix)
+- GarrisonDoSomething.WarPartyComponentPatch                     (Harmony Prefix)
+- GarrisonDoSomething.MobilePartyPatch                           (Harmony Prefix x2)
+- GarrisonDoSomething.ConfusedByAttribute                        (obfuscator marker)
+
+OBFUSCATED (name = invisible Unicode):
+- 1 class extending CampaignBehaviorBase  [129 methods, 17 [SaveableField] fields] ← THE CORE BEHAVIOR
+- 1 class extending System.Object  [132 methods, 5 fields]                          ← likely helper / static utility
+- ~9 helper classes (smaller, mostly value types / static helpers / private accessors)
+
+============================================
+HARMONY PATCH TARGETS (deduced from class/method names — patch attributes stripped by obfuscator, but Harmony.Patch() call survives the binary)
+============================================
+0Harmony assembly is referenced. Methods used:  HarmonyLib.Harmony..ctor, HarmonyLib.Harmony.Patch, HarmonyLib.HarmonyMethod..ctor
+
+1. DefaultClanTierModelPatch.GetPartyLimitForTierPostfix
+     Target  : DefaultClanTierModel.GetPartyLimitForTier
+     Purpose : raise max party slots so a clan can field extra sortie parties
+
+2. LordPartyComponent_InitializationArgsPatch.InitializeLordPartyPropertiesPrefix
+     Target  : LordPartyComponent.InitializationArgs.InitializeLordPartyProperties (the action delegate fed to MobileParty.CreateParty)
+     Purpose : intercept lord-party init so the GDS sortie party uses LordPartyComponent (no custom component required)
+
+3. PatrolPartiesCampaignBehaviorPatch.CanSettlementSpawnNewPartyCurrentlyPrefix
+     Target  : PatrolPartiesCampaignBehavior.CanSettlementSpawnNewPartyCurrently
+     Purpose : gate or replace the vanilla patrol-spawn condition (force/forbid vanilla patrols based on MySettings.VanillaPatrolsEnabled)
+
+4. DisbandPartyCampaignBehaviorPatch.disbanding_leaderless_party_start_on_conditionPrefix
+     Target  : DisbandPartyCampaignBehavior.disbanding_leaderless_party_start_on_condition
+     Purpose : block vanilla "leaderless party should disband" logic from disbanding GDS sortie parties
+
+5. DefaultPartySizeLimitModelPatch.CalculateMobilePartyMemberSizeLimitPrefix
+     Target  : DefaultPartySizeLimitModel.CalculateMobilePartyMemberSizeLimit
+     Purpose : impose hard cap on a sortie party member limit (MySettings.MaxPartySizeGuerillaAttack)
+
+6. WarPartyComponentPatch.OnFinalizePrefix
+     Target  : WarPartyComponent.OnFinalize  (called when a party is destroyed/finalized)
+     Purpose : when a sortie party finalizes, run cleanup (return troops to garrison? destroy?)
+
+7. MobilePartyPatch.get_TotalWagePrefix
+     Target  : MobileParty.TotalWage  (getter)
+     Purpose : zero wages for sortie parties (no upkeep)
+   MobilePartyPatch.set_ActualClanPrefix
+     Target  : MobileParty.ActualClan (setter)
+     Purpose : block reassignment of clan ownership for sortie parties
+
+============================================
+EXTERNAL ASSEMBLY REFERENCES
+============================================
+mscorlib, TaleWorlds.MountAndBlade, TaleWorlds.Core, 0Harmony, TaleWorlds.CampaignSystem,
+TaleWorlds.Library, TaleWorlds.ObjectSystem, TaleWorlds.Localization, MCMv5,
+TaleWorlds.SaveSystem, System.Core, TaleWorlds.Engine.
+
+============================================
+CAMPAIGN EVENTS HOOKED (from CampaignEvents.* property references)
+============================================
+- get_OnSessionLaunchedEvent  (setup at session start)
+- get_TickEvent                ← !!! continuous frame-time tick, NOT HourlyTick / DailyTick
+GDS self-paces using MySettings.AttackInterval (HOURS).
+Time checks use: CampaignTime.Now, CampaignTime.CurrentHourInDay.
+
+============================================
+KEY VANILLA API CALLS (member refs grouped by parent type)
+============================================
+MobileParty:
+  FindNextLocatable, StartFindingLocatablesAroundPosition  ← spatial search for enemy targets
+  InitializeMobilePartyAtPosition                          ← spawn party at coords
+  SetMoveEngageParty(target)                               ← order to attack a party
+  SetMoveGoToSettlement(home)                              ← return to home
+  SetCustomHomeSettlement
+  set_Aggressiveness, set_ShouldJoinPlayerBattles, set_IsDisbanding, set_RecentEventsMorale
+  get_DefaultBehavior, get_Speed, get_HasNavalNavigationCapability, get_HomeSettlement, get_TargetParty, get_TargetSettlement
+  get_All, get_MainParty, get_PartyComponent, get_ActualClan, get_Army, get_IsCaravan, get_IsVillager, get_IsGarrison
+  GetTotalLandStrengthWithFollowers
+
+MobilePartyAi:
+  set_RethinkAtNextHourlyTick
+  SetDoNotMakeNewDecisions
+  SetInitiative
+
+LordPartyComponent:
+  ConvertPartyToLordParty   ← turns a stock MobileParty into a Lord party
+
+PartyComponent (base):
+  get_MobileParty
+
+Settlement:
+  AddGarrisonParty, FindFirst, get_GatePosition, get_Position, get_IsUnderRaid, get_OwnerClan, get_Party, get_SettlementHitPoints, Town, Village
+
+Town:
+  Buildings, get_IsUnderSiege, get_Security, get_Governor, get_Culture, get_OwnerClan, get_AllFiefs
+
+Fief:
+  get_FoodStocks, set_FoodStocks, get_GarrisonParty
+Village:
+  get_Bound
+
+Building / DefaultBuildingTypes:
+  get_BuildingType, get_CurrentLevel, get_SettlementGuardHouse   ← gate sortie on guardhouse presence
+
+TroopRoster:
+  Add, AddToCounts, Clear, RemoveTroop, RemoveZeroCounts, UpdateVersion, GetTroopRoster
+  get_Count, get_TotalHealthyCount, get_TotalManCount, get_TotalWounded, GetCharacterAtIndex
+
+Hero:
+  get_IsPrisoner, get_IsWounded, get_MainHero, get_MapFaction, get_Name, GetSkillValue, MakeWounded
+
+Clan:
+  get_Kingdom, get_Leader, get_PlayerClan, get_WarPartyComponents, get_IsRebelClan, get_Name
+
+Actions (used):
+  EnterSettlementAction.ApplyForPrisoner
+  LeaveSettlementAction.ApplyForParty
+  DestroyPartyAction.Apply        ← cleanup uses Destroy, NOT Disband
+  BeHostileAction.ApplyEncounterHostileAction
+  TakePrisonerAction.Apply
+
+Encounters:
+  PlayerEncounter.Update, get_EncounteredMobileParty, get_EncounteredParty,
+  get_PlayerIsAttacker, get_PlayerIsDefender,
+  set_LeaveEncounter, set_PlayerSurrender
+  (Used to handle the case the PLAYER bumps into a GDS sortie party — defensive code)
+
+CampaignTime:
+  get_Now, get_CurrentHourInDay
+
+Helpers:
+  SettlementHelper.FindNearestFortificationToMobileParty
+
+MBObjectManager:
+  get_Instance, CreateObject
+
+============================================
+SAVE SYSTEM
+============================================
+- MySaveDefiner : SaveableTypeDefiner — only this single type definer.
+- Behavior class has 17 [SaveableField] attributed fields (encrypted bodies, names obfuscated).
+- saveBaseId numeric value is encrypted (in method body) — not extractable from metadata.
+  Public Nexus convention for GDS: assumed unique (the binary uses .ctor(int) passing one int constant).
+  No collision risk with our planned 100_000_000 since we are NOT shipping GDS alongside (replacement).
+
+============================================
+MCM SETTINGS (full property/group inventory)
+============================================
+Group 0  "Vanilla Patrols":
+  VanillaPatrolsEnabled (bool)
+
+Group 1  "Patrols and Guerrilla Attacks":
+  GuerillaAttacks (bool)                  GDS_SETTINGS_DESC_2b
+  Patrols (bool)                          parties <= 30
+  RequireGuardhouse (bool)
+  PatrolsOKDuringWar (bool)
+  SmallPartyAttackMovingProbability       parties <= 40
+  SmallPartyAttackHoldProbability
+  AttackMovingProbability                 parties 40-300
+  AttackHoldProbability
+  LargePartyAttackMovingProbability       parties >= 300
+  LargePartyAttackHoldProbability
+  AttackInterval                          (hours; default observed 1)
+  AttackDistance                          (map units; default observed ~50)
+  GarrisonTroops                          (min troops in garrison)
+  ScoutSkillForBonus
+  ScoutProbailityBonus                    (negative for victim — reduces chance)
+  CarryWeightLimit                        (% capacity)
+  CarryWeightPenalty                      (+probability)
+  SpeedPenalty                            (+probability if wounded/herd/no-mounts)
+  BattaniaAttackBonus
+  KhuzaitAttackBonus
+  TownSecurityBonus                       (security > 75)
+  WarningMessages (bool)
+  MaxPartySizeGuerillaAttack              (default ~100)
+  NightOnly (bool)
+  SecurityPerPatrol                       (security needed per concurrent patrol; default 20 — "100 security -> 5 patrols")
+
+Group 2  "Village Defense":
+  TroopsNeededAtGarrisonRatio              (ratio; default 0.3? — "raid 50 -> need 100 patrol + 15 left -> 115 garrison")
+
+============================================
+KEY OBSERVATIONS
+============================================
+A. NO HourlyTickSettlement / DailyTickSettlement usage. GDS subscribes ONLY to TickEvent
+   and gates with `CampaignTime.Now` delta >= AttackInterval. This is a continuous-time
+   self-paced check, much finer-grained than the IG approach.
+
+B. NO custom PartyComponent — uses stock LordPartyComponent + a Harmony PREFIX patch on
+   LordPartyComponent_InitializationArgs.InitializeLordPartyProperties to inject custom
+   roster/owner/home. (IG by contrast subclasses WarPartyComponent — cleaner.)
+
+C. Cleanup uses DestroyPartyAction.Apply (immediate object teardown), NOT
+   DisbandPartyAction.StartDisband (which would walk the party home with disbanding behavior).
+   This is paired with the WarPartyComponentPatch.OnFinalizePrefix to handle the moment of destruction.
+
+D. Combat is AI-driven: SetMoveEngageParty + SetInitiative + SetDoNotMakeNewDecisions.
+   No manual EncounterManager.StartPartyEncounter calls — the vanilla map-collision system runs the fight.
+
+E. Spatial enemy search uses MobileParty.StartFindingLocatablesAroundPosition + FindNextLocatable
+   (radius = MySettings.AttackDistance). NOT iteration of MobileParty.All.
+
+F. No Mission / MissionBehavior / MissionLogic types referenced. Campaign-map only.
+   FULLY ORTHOGONAL to RBM.
+
+G. Wage zeroing (MobilePartyPatch.get_TotalWagePrefix) and clan-lock
+   (MobilePartyPatch.set_ActualClanPrefix) are quality-of-life patches we can SKIP if we
+   accept short-lived sortie parties (life ~AttackInterval hours, never a payroll tick).

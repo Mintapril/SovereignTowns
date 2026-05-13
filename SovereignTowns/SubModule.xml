@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Module>
+  <Id value="SovereignTowns" />
+  <Name value="Sovereign Towns" />
+  <Version value="v0.0.1" />
+  <DefaultModule value="false" />
+  <ModuleCategory value="Singleplayer" />
+  <ModuleType value="Community" />
+
+  <DependedModules>
+    <DependedModule Id="Native"      DependentVersion="v1.3.15" Optional="false" />
+    <DependedModule Id="SandBoxCore" DependentVersion="v1.3.15" Optional="false" />
+    <DependedModule Id="Sandbox"     DependentVersion="v1.3.15" Optional="false" />
+  </DependedModules>
+
+  <!--
+    ModulesToLoadAfterThis = "这些 mod 必须在 SovereignTowns 之后加载"。
+    2026-05-13 修复：之前把 Native/SandBoxCore/Sandbox 同时放进 DependedModules + ModulesToLoadAfterThis,
+    造成环形约束（既要它们先加载又要它们后加载），启动器无解 → 位置锁死无法调整。
+    现仅保留 BUTR 推荐的两个 vanilla 故事模块（让我们的 CampaignBehavior 先注册）；
+    RBM / Harmony 不再列出（我们不依赖它们，强制顺序也会连带锁死其它玩家的启动器）。
+  -->
+  <ModulesToLoadAfterThis>
+    <Module Id="StoryMode" />
+    <Module Id="CustomBattle" />
+  </ModulesToLoadAfterThis>
+
+  <IncompatibleModules>
+    <Module Id="ImprovedGarrisons" />
+    <Module Id="GarrisonDoSomething" />
+  </IncompatibleModules>
+
+  <SubModules>
+    <SubModule>
+      <Name value="Sovereign Towns" />
+      <DLLName value="SovereignTowns.dll" />
+      <SubModuleClassType value="SovereignTowns.SovereignTownsSubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="none" />
+        <Tag key="IsNoRenderModeElement" value="false" />
+      </Tags>
+    </SubModule>
+  </SubModules>
+
+  <Xmls />
+</Module>

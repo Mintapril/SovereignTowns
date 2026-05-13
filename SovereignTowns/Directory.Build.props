@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <!-- Bannerlord 安装路径（决定引用程序集来源 + 部署目标） -->
+    <BannerlordPath Condition="'$(BannerlordPath)' == ''">D:\SteamLibrary\steamapps\common\Mount &amp; Blade II Bannerlord</BannerlordPath>
+    <GameBinPath>$(BannerlordPath)\bin\Win64_Shipping_Client</GameBinPath>
+
+    <!-- 模块标识 -->
+    <ModuleId>SovereignTowns</ModuleId>
+    <ModuleDeployPath>$(BannerlordPath)\Modules\$(ModuleId)</ModuleDeployPath>
+
+    <!-- 公共编译选项
+         2026-05-13 启动崩溃修复 (rgl_log_errors_58444):
+         之前 netstandard2.1 → Bannerlord 运行时 CLR 无法解析 'netstandard v2.1.0.0'
+         → 加载我们 DLL 失败 → MonoMod/Harmony 连锁崩溃。
+         BUTR Module.Template 标准是 net472，与 Bannerlord v1.3.15 运行时兼容。 -->
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <Configurations>Debug;Release</Configurations>
+  </PropertyGroup>
+</Project>

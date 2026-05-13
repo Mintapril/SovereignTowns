@@ -1,0 +1,9 @@
+# C# / .NET build outputs
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+
+# Decompiled vanilla & 3rd-party mod sources are evidence (read-only reference).
+# They are large but useful — track them. Override here if local copy gets too noisy.

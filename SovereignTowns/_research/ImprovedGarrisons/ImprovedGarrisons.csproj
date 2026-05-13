@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ImprovedGarrisons</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net472</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>11.0</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemGroup />
+  <ItemGroup>
+    <Reference Include="TaleWorlds.MountAndBlade" />
+    <Reference Include="TaleWorlds.Core" />
+    <Reference Include="TaleWorlds.CampaignSystem" />
+    <Reference Include="TaleWorlds.InputSystem" />
+    <Reference Include="TaleWorlds.Library" />
+    <Reference Include="SandBox.View" />
+    <Reference Include="TaleWorlds.Engine.GauntletUI" />
+    <Reference Include="TaleWorlds.SaveSystem" />
+    <Reference Include="TaleWorlds.MountAndBlade.View" />
+    <Reference Include="TaleWorlds.ScreenSystem" />
+    <Reference Include="TaleWorlds.Localization" />
+    <Reference Include="TaleWorlds.Core.ViewModelCollection" />
+    <Reference Include="TaleWorlds.GauntletUI" />
+    <Reference Include="TaleWorlds.TwoDimension" />
+    <Reference Include="TaleWorlds.Engine" />
+    <Reference Include="TaleWorlds.MountAndBlade.GauntletUI.Widgets" />
+    <Reference Include="StoryMode" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="SandBox.ViewModelCollection" />
+    <Reference Include="SandBox.GauntletUI" />
+    <Reference Include="TaleWorlds.ObjectSystem" />
+    <Reference Include="TaleWorlds.CampaignSystem.ViewModelCollection" />
+    <Reference Include="System.Numerics.Vectors" />
+  </ItemGroup>
+</Project>

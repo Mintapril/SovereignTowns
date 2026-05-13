@@ -1,0 +1,182 @@
+using SovereignTowns.Campaign;
+using TaleWorlds.CampaignSystem;
+using TaleWorlds.Core;
+using TaleWorlds.Library;
+using TaleWorlds.ModuleManager;
+using TaleWorlds.MountAndBlade;
+using Logger = SovereignTowns.Logging.Logger;
+
+namespace SovereignTowns;
+
+/// <summary>
+/// Mod 入口。所有覆盖方法都用最外层 try-catch 包，绝不让我们的异常逃逸到 vanilla。
+/// 2026-05-13 启动崩溃应急修复 — 早期阶段任何异常都吞掉，并用 Debug.Print 落地（Logger 可能还没初始化）。
+/// </summary>
+public sealed class SovereignTownsSubModule : MBSubModuleBase
+{
+    public const string ModuleId = "SovereignTowns";
+    private const string Tag = "[SovereignTowns]";
+
+    private bool _skipBehaviorRegistration;
+    private bool _loggerInitialized;
+
+    private static readonly string[] IncompatibleModuleIds =
+    {
+        "ImprovedGarrisons",
+        "GarrisonDoSomething"
+    };
+
+    protected override void OnSubModuleLoad()
+    {
+        try { base.OnSubModuleLoad(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnSubModuleLoad threw: {ex}"); }
+
+        try { TrySafeDebugPrint($"{Tag} OnSubModuleLoad enter"); } catch { }
+
+        try
+        {
+            Logger.Initialize(ModuleId);
+            _loggerInitialized = true;
+            Logger.Info($"OnSubModuleLoad — SovereignTowns v0.0.1 booting");
+        }
+        catch (System.Exception ex)
+        {
+            TrySafeDebugPrint($"{Tag} Logger.Initialize threw: {ex.Message}");
+        }
+
+        try
+        {
+            foreach (var modId in IncompatibleModuleIds)
+            {
+                try
+                {
+                    if (ModuleHelper.IsModuleActive(modId))
+                    {
+                        _skipBehaviorRegistration = true;
+                        if (_loggerInitialized) Logger.Error($"CRITICAL: 互斥模块 '{modId}' 已激活。SovereignTowns 进入退化模式（不注册任何 CampaignBehavior）。");
+                        TrySafeDebugPrint($"{Tag} CRITICAL: 互斥模块 '{modId}' 已激活。退化模式。");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    TrySafeDebugPrint($"{Tag} IsModuleActive('{modId}') threw: {ex.Message}");
+                }
+            }
+
+            if (!_skipBehaviorRegistration && _loggerInitialized)
+            {
+                Logger.Info("互斥检测通过：未发现 ImprovedGarrisons / GarrisonDoSomething");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            TrySafeDebugPrint($"{Tag} OnSubModuleLoad outer body threw: {ex.Message}");
+        }
+    }
+
+    protected override void OnBeforeInitialModuleScreenSetAsRoot()
+    {
+        try { base.OnBeforeInitialModuleScreenSetAsRoot(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnBeforeInitialModuleScreenSetAsRoot threw: {ex}"); }
+
+        try
+        {
+            if (_skipBehaviorRegistration)
+            {
+                var msg = $"Sovereign Towns: 检测到互斥模块（{string.Join(", ", IncompatibleModuleIds)}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。";
+                try { InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Red)); } catch { }
+                if (_loggerInitialized) Logger.Warn("Displayed incompatibility warning to user");
+                // 不再 throw — 应急修复期间，宁可让 mod 在退化模式下静默，也不让游戏崩。
+                // 玩家可以在主菜单看到红字警告。
+            }
+        }
+        catch (System.Exception ex)
+        {
+            TrySafeDebugPrint($"{Tag} OnBeforeInitialModuleScreenSetAsRoot body threw: {ex.Message}");
+        }
+    }
+
+    protected override void OnGameStart(Game game, IGameStarter gameStarterObject)
+    {
+        try { base.OnGameStart(game, gameStarterObject); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnGameStart threw: {ex}"); }
+
+        try
+        {
+            if (_loggerInitialized) Logger.Info($"OnGameStart — game.GameType={game?.GameType?.GetType().Name ?? "<null>"}");
+
+            if (_skipBehaviorRegistration)
+            {
+                if (_loggerInitialized) Logger.Warn("Skipping CampaignBehavior registration due to incompatibility flag");
+                return;
+            }
+
+            if (gameStarterObject is not CampaignGameStarter campaignStarter)
+            {
+                if (_loggerInitialized) Logger.Info("Non-Campaign mode (e.g., CustomBattle). Skipping CampaignBehavior registration.");
+                return;
+            }
+
+            // 注册 3 个自定义 GameModel — 必须在 OnGameStart 内。
+            try
+            {
+                campaignStarter.AddModel(new SovereignTowns.Models.STPartySizeLimitModel());
+                campaignStarter.AddModel(new SovereignTowns.Models.STPartySpeedModel());
+                campaignStarter.AddModel(new SovereignTowns.Models.STPartyWageModel());
+                if (_loggerInitialized) Logger.Info("Registered 3 ST GameModels (PartySize/Speed/Wage)");
+            }
+            catch (System.Exception ex)
+            {
+                if (_loggerInitialized) Logger.Error("AddModel failed in OnGameStart", ex);
+                TrySafeDebugPrint($"{Tag} AddModel threw: {ex.Message}");
+            }
+
+            try
+            {
+                campaignStarter.AddBehavior(new SovereignTownsCampaignBehavior());
+                if (_loggerInitialized) Logger.Info("SovereignTownsCampaignBehavior registered");
+            }
+            catch (System.Exception ex)
+            {
+                if (_loggerInitialized) Logger.Error("Behavior registration failed", ex);
+                TrySafeDebugPrint($"{Tag} AddBehavior threw: {ex.Message}");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            TrySafeDebugPrint($"{Tag} OnGameStart body threw: {ex.Message}");
+        }
+    }
+
+    protected override void OnSubModuleUnloaded()
+    {
+        try { base.OnSubModuleUnloaded(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnSubModuleUnloaded threw: {ex.Message}"); }
+
+        try
+        {
+            if (_loggerInitialized) Logger.Info("OnSubModuleUnloaded");
+        }
+        catch { }
+
+        try { SovereignTowns.Ui.MapRibbon.SovereignTownsRibbonInjector.Unload(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} Ribbon.Unload threw: {ex.Message}"); }
+
+        try { SovereignTowns.Audit.DecisionAuditLogger.Shutdown(); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} AuditLogger.Shutdown threw: {ex.Message}"); }
+
+        try { if (_loggerInitialized) Logger.Shutdown(); }
+        catch { }
+
+        try { TrySafeDebugPrint($"{Tag} OnSubModuleUnloaded done"); } catch { }
+    }
+
+    /// <summary>
+    /// 不依赖 Logger 的紧急打印。即使 vanilla Debug 类失效也不抛。
+    /// </summary>
+    private static void TrySafeDebugPrint(string s)
+    {
+        try { Debug.Print(s); }
+        catch { /* 无能为力 */ }
+    }
+}

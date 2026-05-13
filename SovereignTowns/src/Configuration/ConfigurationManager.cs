@@ -1,0 +1,447 @@
+using System;
+using System.IO;
+using Newtonsoft.Json;
+using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.ModuleManager;
+using Logger = SovereignTowns.Logging.Logger;
+
+namespace SovereignTowns.Configuration;
+
+/// <summary>
+/// 静态配置管理器。负责加载 / 校验 / 保存 Modules/SovereignTowns/Configs/global.json，
+/// 并为各 Manager 提供 GetRuleFor(town) 查询入口。
+/// 所有公开方法都做异常隔离，任何失败回退到 GlobalConfig.CreateDefault() 而不向调用方抛异常。
+/// </summary>
+/// <remarks>
+/// 序列化实现说明：
+/// 复用游戏 bin 目录自带的 Newtonsoft.Json.dll（与 ButterLib 等 mod 同一做法），通过 GameBinPath 引用，
+/// Private=false 不进发布产物。
+/// GlobalConfig 等 POCO 字段均为 public get/set，可直接 SerializeObject / DeserializeObject<T>，无需自定义 converter。
+/// 反序列化后仍走 <see cref="ValidateConfig"/>，失败时回退到 <see cref="GlobalConfig.CreateDefault"/>。
+/// </remarks>
+public static class ConfigurationManager
+{
+    /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。</summary>
+    public const int CurrentConfigVersion = 3;
+
+    private const string ModuleId = "SovereignTowns";
+    private const string ConfigSubDir = "Configs";
+    private const string ConfigFileName = "global.json";
+
+    // ratios sum 容忍区间（包含浮点累计误差与玩家手工填值）
+    private const float RatioSumMin = 0.9f;
+    private const float RatioSumMax = 1.1f;
+
+    private static readonly object _gate = new object();
+    private static GlobalConfig _current = GlobalConfig.CreateDefault();
+    private static bool _initialized;
+    private static string _lastValidationError = "";
+
+    /// <summary>当前已加载的全局配置。Initialize 之前调用返回默认配置。</summary>
+    public static GlobalConfig Current
+    {
+        get
+        {
+            lock (_gate) return _current;
+        }
+    }
+
+    /// <summary>最近一次 Save / ValidateCurrent 失败的原因。校验通过时为空字符串。</summary>
+    public static string LastValidationError
+    {
+        get
+        {
+            lock (_gate) return _lastValidationError;
+        }
+    }
+
+    /// <summary>启动期一次性初始化。从 Modules/SovereignTowns/Configs/global.json 加载；
+    /// 若文件不存在则用默认值创建。校验失败时回退到默认值并写日志。</summary>
+    public static void Initialize()
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (_initialized)
+                {
+                    Logger.Warn("ConfigurationManager.Initialize called more than once; ignored");
+                    return;
+                }
+
+                string configPath = GetConfigFilePath();
+                EnsureConfigDirectoryExists(configPath);
+
+                if (!File.Exists(configPath))
+                {
+                    Logger.Info($"Config file not found at '{configPath}', creating defaults");
+                    _current = GlobalConfig.CreateDefault();
+                    WriteToDiskUnlocked(configPath, _current);
+                }
+                else
+                {
+                    var loaded = TryLoadFromDisk(configPath);
+                    if (loaded is null)
+                    {
+                        Logger.Warn("Falling back to default GlobalConfig because load/validation failed");
+                        _current = GlobalConfig.CreateDefault();
+                    }
+                    else
+                    {
+                        _current = loaded;
+                        Logger.Info($"Config loaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count}");
+                    }
+                }
+
+                _initialized = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ConfigurationManager.Initialize failed", ex);
+            lock (_gate)
+            {
+                _current = GlobalConfig.CreateDefault();
+                _initialized = true;
+            }
+        }
+    }
+
+    /// <summary>为某 Town 取最终生效规则：先查 PerSettlementOverrides[town.Settlement.StringId]，否则返回 GlobalDefaults。</summary>
+    public static TownGarrisonRule GetRuleFor(Town town)
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (town?.Settlement?.StringId is { } id
+                    && _current.PerSettlementOverrides.TryGetValue(id, out var rule)
+                    && rule is not null)
+                {
+                    return rule;
+                }
+                return _current.GlobalDefaults;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetRuleFor failed; returning a fresh default rule", ex);
+            return TownGarrisonRule.CreateDefault();
+        }
+    }
+
+    /// <summary>
+    /// 在写盘前对当前内存配置做一次校验。校验通过返回 true，并清空 <see cref="LastValidationError"/>；
+    /// 否则返回 false 并填写错误原因。给 UI 在保存前实时回显警告用。
+    /// </summary>
+    public static bool TryValidateCurrent(out string reason)
+    {
+        try
+        {
+            lock (_gate)
+            {
+                bool ok = ValidateConfig(_current, out reason);
+                _lastValidationError = ok ? "" : reason;
+                return ok;
+            }
+        }
+        catch (Exception ex)
+        {
+            reason = $"validation threw: {ex.Message}";
+            lock (_gate) _lastValidationError = reason;
+            Logger.Error("TryValidateCurrent failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 将 Current 序列化到 global.json。覆盖式写入。
+    /// 写盘前先做 <see cref="ValidateConfig"/>；若失败则拒绝写盘，记录原因并返回 false，
+    /// 保证磁盘上的 last-known-good 配置永远不被坏值覆盖（防止"我的设置丢了"）。
+    /// </summary>
+    /// <returns>true = 写盘成功；false = 校验失败 / IO 异常，磁盘保持旧值。</returns>
+    public static bool Save()
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (!ValidateConfig(_current, out var reason))
+                {
+                    _lastValidationError = reason;
+                    Logger.Warn($"ConfigurationManager.Save refused: config invalid ({reason}); on-disk file left untouched");
+                    return false;
+                }
+                _lastValidationError = "";
+
+                string configPath = GetConfigFilePath();
+                EnsureConfigDirectoryExists(configPath);
+                _current.LastModified = DateTime.UtcNow.ToString("O");
+                WriteToDiskUnlocked(configPath, _current);
+                Logger.Info($"Config saved to '{configPath}'");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ConfigurationManager.Save failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>从磁盘重新读取（用户手编 JSON 后可调用）。失败回退到上次成功的 Current。</summary>
+    public static void Reload()
+    {
+        try
+        {
+            lock (_gate)
+            {
+                string configPath = GetConfigFilePath();
+                if (!File.Exists(configPath))
+                {
+                    Logger.Warn($"Reload requested but '{configPath}' does not exist; keeping current in-memory config");
+                    return;
+                }
+
+                var loaded = TryLoadFromDisk(configPath);
+                if (loaded is null)
+                {
+                    Logger.Warn("Reload failed; keeping previous in-memory config");
+                    return;
+                }
+
+                _current = loaded;
+                Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ConfigurationManager.Reload failed", ex);
+        }
+    }
+
+    // -------- path / IO helpers --------
+
+    private static string GetConfigFilePath()
+    {
+        var modulePath = ModuleHelper.GetModuleFullPath(ModuleId);
+        return Path.Combine(modulePath, ConfigSubDir, ConfigFileName);
+    }
+
+    private static void EnsureConfigDirectoryExists(string configPath)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(configPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to ensure config directory for '{configPath}'", ex);
+        }
+    }
+
+    /// <summary>读 + 反序列化 + 校验。任一步骤失败返回 null。</summary>
+    private static GlobalConfig? TryLoadFromDisk(string configPath)
+    {
+        try
+        {
+            string text = File.ReadAllText(configPath);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                Logger.Error($"Config file '{configPath}' is empty");
+                return null;
+            }
+
+            GlobalConfig? parsed;
+            try
+            {
+                parsed = JsonConvert.DeserializeObject<GlobalConfig>(text, _jsonSettings);
+            }
+            catch (JsonException jex)
+            {
+                Logger.Error($"Config JSON parse error in '{configPath}': {jex.Message}", jex);
+                return null;
+            }
+
+            if (parsed is null)
+            {
+                Logger.Error($"Config root in '{configPath}' deserialized to null");
+                return null;
+            }
+
+            // Newtonsoft 不会自动调用 POCO 的字段默认初始化器去填 null 嵌套对象，
+            // 这里兜底确保后续校验/调用不会 NRE。
+            parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
+            parsed.PerSettlementOverrides ??= new System.Collections.Generic.Dictionary<string, TownGarrisonRule>();
+            parsed.EnabledFeatures ??= new EnabledFeatures();
+            parsed.LastModified ??= "";
+
+            if (parsed.ConfigVersion != CurrentConfigVersion)
+            {
+                Logger.Warn($"Config version mismatch (file={parsed.ConfigVersion}, expected={CurrentConfigVersion}); migrating in-memory config");
+                parsed = ConfigMigrator.Migrate(parsed);
+            }
+
+            if (!ValidateConfig(parsed, out var reason))
+            {
+                Logger.Error($"Config validation failed: {reason}");
+                return null;
+            }
+
+            return parsed;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to load config from '{configPath}'", ex);
+            return null;
+        }
+    }
+
+    private static readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings
+    {
+        Formatting = Formatting.Indented,
+        NullValueHandling = NullValueHandling.Ignore,
+        Culture = System.Globalization.CultureInfo.InvariantCulture,
+    };
+
+    private static void WriteToDiskUnlocked(string configPath, GlobalConfig config)
+    {
+        try
+        {
+            string json = JsonConvert.SerializeObject(config, _jsonSettings);
+            File.WriteAllText(configPath, json);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to write config to '{configPath}'", ex);
+        }
+    }
+
+    // -------- validation --------
+
+    private static bool ValidateConfig(GlobalConfig config, out string reason)
+    {
+        if (config.GlobalDefaults is null)
+        {
+            reason = "GlobalDefaults is null";
+            return false;
+        }
+        if (!ValidateRule(config.GlobalDefaults, "GlobalDefaults", out reason))
+        {
+            return false;
+        }
+
+        foreach (var kv in config.PerSettlementOverrides)
+        {
+            if (kv.Value is null)
+            {
+                reason = $"PerSettlementOverrides['{kv.Key}'] is null";
+                return false;
+            }
+            if (!ValidateRule(kv.Value, $"PerSettlementOverrides['{kv.Key}']", out reason))
+            {
+                return false;
+            }
+        }
+
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateRule(TownGarrisonRule rule, string ctx, out string reason)
+    {
+        if (rule.TargetTotalCount < 0)
+        {
+            reason = $"{ctx}.TargetTotalCount < 0";
+            return false;
+        }
+        if (rule.ExactTroopTemplate is null)
+        {
+            reason = $"{ctx}.ExactTroopTemplate is null";
+            return false;
+        }
+        foreach (var kv in rule.ExactTroopTemplate)
+        {
+            if (string.IsNullOrWhiteSpace(kv.Key))
+            {
+                reason = $"{ctx}.ExactTroopTemplate contains empty troop id";
+                return false;
+            }
+            if (kv.Value < 0)
+            {
+                reason = $"{ctx}.ExactTroopTemplate['{kv.Key}'] < 0";
+                return false;
+            }
+        }
+        if (rule.MinTier < 1 || rule.MaxTier < rule.MinTier || rule.MaxTier > 7)
+        {
+            reason = $"{ctx}.MinTier/MaxTier invalid ({rule.MinTier}..{rule.MaxTier})";
+            return false;
+        }
+        if (rule.MinimumDefenders < 0)
+        {
+            reason = $"{ctx}.MinimumDefenders < 0";
+            return false;
+        }
+        if (rule.BudgetLimit < 0)
+        {
+            reason = $"{ctx}.BudgetLimit < 0";
+            return false;
+        }
+        if (rule.WartimeMultiplier < 0f || rule.PeacetimeMultiplier < 0f)
+        {
+            reason = $"{ctx}.WartimeMultiplier/PeacetimeMultiplier must be >= 0";
+            return false;
+        }
+        if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)
+            || !ValidateRatio(rule.InfantryRatio, $"{ctx}.InfantryRatio", out reason)
+            || !ValidateRatio(rule.ArcherRatio, $"{ctx}.ArcherRatio", out reason)
+            || !ValidateRatio(rule.CrossbowRatio, $"{ctx}.CrossbowRatio", out reason)
+            || !ValidateRatio(rule.ThrowerRatio, $"{ctx}.ThrowerRatio", out reason)
+            || !ValidateRatio(rule.Tier1Ratio, $"{ctx}.Tier1Ratio", out reason)
+            || !ValidateRatio(rule.Tier2Ratio, $"{ctx}.Tier2Ratio", out reason)
+            || !ValidateRatio(rule.Tier3Ratio, $"{ctx}.Tier3Ratio", out reason)
+            || !ValidateRatio(rule.Tier4Ratio, $"{ctx}.Tier4Ratio", out reason)
+            || !ValidateRatio(rule.Tier5Ratio, $"{ctx}.Tier5Ratio", out reason)
+            || !ValidateRatio(rule.Tier6Ratio, $"{ctx}.Tier6Ratio", out reason))
+        {
+            return false;
+        }
+
+        float troopSum = rule.CavalryRatio + rule.InfantryRatio + rule.ArcherRatio + rule.CrossbowRatio + rule.ThrowerRatio;
+        if (troopSum < RatioSumMin || troopSum > RatioSumMax)
+        {
+            reason = $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
+            return false;
+        }
+
+        float tierSum = rule.Tier1Ratio + rule.Tier2Ratio + rule.Tier3Ratio + rule.Tier4Ratio + rule.Tier5Ratio + rule.Tier6Ratio;
+        if (tierSum < RatioSumMin || tierSum > RatioSumMax)
+        {
+            reason = $"{ctx} tier ratios sum={tierSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
+            return false;
+        }
+
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateRatio(float value, string field, out string reason)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value) || value < 0f || value > 1f)
+        {
+            reason = $"{field} invalid ({value})";
+            return false;
+        }
+
+        reason = "";
+        return true;
+    }
+
+
+
+}
