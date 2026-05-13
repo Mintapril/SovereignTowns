@@ -3,226 +3,674 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sovereign Towns · 控制面板 (Phase 1)</title>
+  <title>Sovereign Towns · 控制面板</title>
+
+  <!-- Tailwind CSS (CDN dev mode) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            panel: { DEFAULT: '#1a1a1d', soft: '#26262b', border: '#3a3a40' },
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+
   <style>
     :root { color-scheme: dark; }
-    * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                    "Microsoft YaHei", Roboto, sans-serif;
-      background: #1a1a1d; color: #e4e4e7; margin: 0; padding: 24px;
-      max-width: 1280px; margin-inline: auto;
     }
-    h1 { margin: 0 0 4px; font-size: 24px; }
-    .subtitle { color: #999; font-size: 13px; margin-bottom: 20px; }
-    .status-bar {
-      display: flex; gap: 16px; align-items: center; padding: 12px 16px;
-      background: #26262b; border: 1px solid #3a3a40; border-radius: 8px;
-      margin-bottom: 16px; flex-wrap: wrap;
+    /* prevent CDN flash of unstyled content */
+    [x-cloak] { display: none !important; }
+    /* slimmer scrollbar in dark theme */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: #1a1a1d; }
+    ::-webkit-scrollbar-thumb { background: #3a3a40; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+    /* range slider styling */
+    input[type=range] {
+      -webkit-appearance: none; appearance: none; height: 6px; background: #3a3a40;
+      border-radius: 3px; outline: none;
     }
-    .status-pill {
-      padding: 4px 10px; border-radius: 12px; font-size: 12px;
-      background: #2a3f2a; color: #a0e0a0;
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
+      border-radius: 50%; background: #6b8aaf; cursor: pointer; border: 2px solid #1a1a1d;
     }
-    .status-pill.err { background: #4a2a2a; color: #e0a0a0; }
-    .status-pill.warn { background: #4a3f2a; color: #e0c0a0; }
-    .status-pill.info { background: #2a3a4a; color: #a0c0e0; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-    button {
-      padding: 8px 16px; background: #3a3a40; color: #e4e4e7; border: 1px solid #555;
-      border-radius: 4px; cursor: pointer; font-size: 14px; font-family: inherit;
+    input[type=number] {
+      -moz-appearance: textfield;
     }
-    button:hover { background: #4a4a52; }
-    button.primary { background: #2a5f3a; border-color: #3a7050; }
-    button.primary:hover { background: #357040; }
-    button.danger { background: #5f2a2a; border-color: #703a3a; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    textarea {
-      width: 100%; min-height: 60vh; padding: 12px; background: #0f0f12;
-      color: #d4d4d8; border: 1px solid #3a3a40; border-radius: 4px;
-      font-family: "Consolas", "Cascadia Code", "Fira Code", monospace;
-      font-size: 13px; line-height: 1.5; resize: vertical;
-    }
-    textarea:focus { outline: 2px solid #5d8aa8; }
-    .log {
-      margin-top: 12px; padding: 12px; background: #0f0f12;
-      border: 1px solid #3a3a40; border-radius: 4px;
-      font-family: monospace; font-size: 12px; max-height: 200px; overflow-y: auto;
-      white-space: pre-wrap;
-    }
-    .log-entry { padding: 2px 0; }
-    .log-entry.err { color: #ff8080; }
-    .log-entry.warn { color: #ffc080; }
-    .log-entry.ok { color: #80e080; }
-    .hint {
-      margin-top: 8px; padding: 8px 12px; background: #2a3a4a;
-      border-radius: 4px; font-size: 12px; color: #a0c0e0;
-    }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   </style>
 </head>
-<body>
-  <h1>Sovereign Towns · 控制面板</h1>
-  <div class="subtitle">Phase 1 简陋版 — 编辑 global.json 原始 JSON。Phase 2 会替换为完整 UI。</div>
 
-  <div class="status-bar">
-    <span class="status-pill" id="server-status">连接中…</span>
-    <span class="status-pill info" id="capital-status">capital: ?</span>
-    <span class="status-pill info" id="override-count">覆盖数: ?</span>
-    <span class="status-pill info" id="exact-troop-count">具体兵员: ?</span>
-    <span class="status-pill info" id="last-modified">last-modified: ?</span>
+<body class="bg-panel text-zinc-200 min-h-screen">
+  <div x-data="configApp()" x-init="init()" x-cloak class="max-w-6xl mx-auto p-6">
+
+    <!-- ============ Header ============ -->
+    <header class="mb-4">
+      <h1 class="text-2xl font-bold">Sovereign Towns 控制面板</h1>
+      <p class="text-xs text-zinc-500 mt-1">浏览器编辑配置 · 保存后游戏内自动生效</p>
+    </header>
+
+    <!-- ============ Status pills ============ -->
+    <div class="flex flex-wrap gap-2 items-center bg-panel-soft border border-panel-border rounded-lg p-3 mb-4">
+      <span class="px-3 py-1 rounded-full text-xs"
+            :class="status ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'">
+        server <span x-text="status ? '在线' : '失联'"></span>
+      </span>
+      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
+            x-text="`covers ${settlements.length} 城/堡`"></span>
+      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
+            x-text="`兵种 dump: ${troops.length}`"></span>
+      <span class="px-3 py-1 rounded-full text-xs bg-blue-900 text-blue-300"
+            x-text="`上次保存: ${config?.LastModified || '?'}`"></span>
+      <span class="flex-1"></span>
+      <button @click="reloadAll()" class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">↻ 重读</button>
+      <button @click="save()" :disabled="saving || !config"
+              class="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 rounded font-medium"
+              x-text="saving ? '保存中…' : '保存到游戏'"></button>
+    </div>
+
+    <!-- ============ Validation warning footer (sticks at top of content) ============ -->
+    <div x-show="warning" class="mb-3 px-4 py-2 bg-red-900/60 border border-red-700 rounded text-sm text-red-200"
+         x-text="warning"></div>
+
+    <!-- ============ Tab bar ============ -->
+    <nav class="flex gap-1 mb-4 border-b border-panel-border">
+      <template x-for="(tab, idx) in tabs" :key="idx">
+        <button @click="activeTab = idx"
+                :class="activeTab === idx
+                  ? 'bg-panel-soft text-zinc-100 border-t border-l border-r border-panel-border'
+                  : 'text-zinc-400 hover:text-zinc-200'"
+                class="px-4 py-2 text-sm font-medium rounded-t -mb-px"
+                x-text="tab"></button>
+      </template>
+    </nav>
+
+    <!-- ============ Loading state ============ -->
+    <div x-show="!config" class="text-center text-zinc-500 py-16">配置加载中…</div>
+
+    <!-- ============ Tab content panels ============ -->
+    <main x-show="config" class="bg-panel-soft border border-panel-border rounded-lg p-6">
+
+      <!-- Tab 1: 功能开关 -->
+      <section x-show="activeTab === 0" class="space-y-2">
+        <h2 class="text-lg font-semibold mb-3">功能开关</h2>
+        <template x-for="t in toggleSpecs" :key="t.key">
+          <label class="flex items-center justify-between py-2 border-b border-panel-border/50">
+            <span class="text-sm">
+              <span class="font-medium" x-text="t.label"></span>
+              <span class="block text-xs text-zinc-500 mt-0.5" x-text="t.hint"></span>
+            </span>
+            <input type="checkbox" class="ml-4 w-5 h-5 accent-green-600"
+                   :checked="getToggleValue(t)" @change="setToggleValue(t, $event.target.checked)" />
+          </label>
+        </template>
+      </section>
+
+      <!-- Tab 2: 数量与预算 -->
+      <section x-show="activeTab === 1" class="space-y-4">
+        <h2 class="text-lg font-semibold mb-3">数量与预算（应用到 GlobalDefaults）</h2>
+        <template x-for="s in budgetSpecs" :key="s.key">
+          <div class="grid grid-cols-12 gap-3 items-center py-2 border-b border-panel-border/50">
+            <div class="col-span-4 text-sm">
+              <div class="font-medium" x-text="s.label"></div>
+              <div class="text-xs text-zinc-500" x-text="s.hint"></div>
+            </div>
+            <div class="col-span-6">
+              <input type="range" class="w-full"
+                     :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
+            </div>
+            <div class="col-span-2">
+              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
+                     :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- Tab 3: 兵种与 Tier 比例 -->
+      <section x-show="activeTab === 2" class="space-y-4">
+        <h2 class="text-lg font-semibold mb-3">兵种与 Tier 比例（应用到 GlobalDefaults）</h2>
+
+        <div class="bg-panel border border-panel-border rounded p-3 mb-4">
+          <div class="text-sm">
+            <span :class="ratioSumOk(troopSum) ? 'text-green-400' : 'text-red-400'"
+                  x-text="`兵种 Σ = ${troopSum.toFixed(2)}`"></span>
+            <span class="mx-3 text-zinc-600">·</span>
+            <span :class="ratioSumOk(tierSum) ? 'text-green-400' : 'text-red-400'"
+                  x-text="`Tier Σ = ${tierSum.toFixed(2)}`"></span>
+          </div>
+          <div x-show="!ratioSumOk(troopSum) || !ratioSumOk(tierSum)"
+               class="text-xs text-red-400 mt-1">
+            两个 Σ 都必须落在 [0.9, 1.1] 区间，否则保存会被拒。
+          </div>
+        </div>
+
+        <h3 class="text-sm font-semibold text-zinc-400 mt-4 mb-1">兵种占比</h3>
+        <template x-for="s in troopRatioSpecs" :key="s.key">
+          <div class="grid grid-cols-12 gap-3 items-center py-1">
+            <div class="col-span-3 text-sm font-medium" x-text="s.label"></div>
+            <div class="col-span-7">
+              <input type="range" class="w-full" min="0" max="1" step="0.01"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+            </div>
+            <div class="col-span-2">
+              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
+                     min="0" max="1" step="0.01"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+            </div>
+          </div>
+        </template>
+
+        <h3 class="text-sm font-semibold text-zinc-400 mt-4 mb-1">Tier 占比</h3>
+        <template x-for="s in tierRatioSpecs" :key="s.key">
+          <div class="grid grid-cols-12 gap-3 items-center py-1">
+            <div class="col-span-3 text-sm font-medium" x-text="s.label"></div>
+            <div class="col-span-7">
+              <input type="range" class="w-full" min="0" max="1" step="0.01"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+            </div>
+            <div class="col-span-2">
+              <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
+                     min="0" max="1" step="0.01"
+                     :value="config.GlobalDefaults[s.key]"
+                     @input="config.GlobalDefaults[s.key] = parseFloat($event.target.value)" />
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- Tab 4: 模板与资源 -->
+      <section x-show="activeTab === 3" class="space-y-6">
+        <h2 class="text-lg font-semibold">模板与资源</h2>
+
+        <!-- TrainingTemplate Apply -->
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-400 mb-2">应用预设（覆盖数值/比例，保留具体兵员模板）</h3>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <template x-for="t in templates" :key="t.TemplateId">
+              <div class="bg-panel border border-panel-border rounded p-3 flex flex-col">
+                <div class="font-medium text-sm" x-text="t.DisplayName"></div>
+                <div class="text-xs text-zinc-500 mt-1 flex-1" x-text="t.Description"></div>
+                <button @click="applyTemplate(t)"
+                        class="mt-3 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 rounded text-xs">应用</button>
+              </div>
+            </template>
+            <div x-show="templates.length === 0" class="col-span-3 text-xs text-zinc-500">
+              预设加载失败/为空。
+            </div>
+          </div>
+        </div>
+
+        <!-- ExactTroopTemplate picker -->
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-400 mb-2">
+            具体兵员模板 <span class="text-zinc-600 font-normal"
+              x-text="`(${Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length} 兵种)`"></span>
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            <!-- 左：已选 -->
+            <div class="bg-panel border border-panel-border rounded p-3">
+              <div class="text-xs text-zinc-500 mb-2">当前模板</div>
+              <div class="space-y-1 max-h-96 overflow-y-auto pr-2">
+                <template x-for="[id, count] in Object.entries(config.GlobalDefaults.ExactTroopTemplate || {})" :key="id">
+                  <div class="flex items-center gap-2 text-sm py-1 border-b border-panel-border/30">
+                    <span class="flex-1 truncate" x-text="troopLabel(id)"></span>
+                    <input type="number" class="w-16 bg-panel-soft border border-panel-border rounded px-1 py-0.5 text-right"
+                           min="0" :value="count"
+                           @input="updateTroopCount(id, $event.target.value)" />
+                    <button @click="removeTroop(id)" class="text-red-500 hover:text-red-400 px-1">✕</button>
+                  </div>
+                </template>
+                <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
+                     class="text-xs text-zinc-600 italic py-2">空。从右侧选择兵种添加。</div>
+              </div>
+            </div>
+
+            <!-- 右：候选 -->
+            <div class="bg-panel border border-panel-border rounded p-3">
+              <div class="flex flex-wrap gap-2 mb-2">
+                <input type="text" placeholder="搜索兵种…"
+                       class="flex-1 min-w-32 bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm"
+                       x-model="troopSearch" />
+                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm" x-model="troopCultureFilter">
+                  <option value="">所有文化</option>
+                  <template x-for="c in cultureList" :key="c">
+                    <option :value="c" x-text="c"></option>
+                  </template>
+                </select>
+                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm" x-model="troopTypeFilter">
+                  <option value="">所有兵种</option>
+                  <option value="cavalry">骑兵</option>
+                  <option value="infantry">步兵</option>
+                  <option value="archer">弓手</option>
+                  <option value="crossbow">弩手</option>
+                  <option value="thrower">投掷</option>
+                </select>
+                <select class="bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm w-16" x-model.number="troopTierFilter">
+                  <option value="0">全 Tier</option>
+                  <template x-for="n in [1,2,3,4,5,6]" :key="n">
+                    <option :value="n" x-text="`T${n}`"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="text-xs text-zinc-500 mb-1" x-text="`匹配 ${filteredTroops.length} / ${troops.length}`"></div>
+              <div class="space-y-0.5 max-h-80 overflow-y-auto pr-2">
+                <template x-for="tr in filteredTroops.slice(0, 200)" :key="tr.id">
+                  <div class="flex items-center gap-2 text-sm py-1 border-b border-panel-border/30 hover:bg-panel-soft cursor-pointer"
+                       @click="addTroop(tr.id)">
+                    <span class="w-6 text-xs text-zinc-600" x-text="`T${tr.tier}`"></span>
+                    <span class="flex-1 truncate" x-text="tr.name"></span>
+                    <span class="text-xs text-zinc-600" x-text="tr.culture"></span>
+                    <span class="text-xs text-zinc-600 w-12 text-right" x-text="tr.type"></span>
+                    <span class="text-blue-400">＋</span>
+                  </div>
+                </template>
+                <div x-show="filteredTroops.length > 200" class="text-xs text-zinc-600 italic py-1">
+                  仅显示前 200 条。继续输入收缩。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 资源类 numerics -->
+        <div>
+          <h3 class="text-sm font-semibold text-zinc-400 mb-2">资源与调度</h3>
+          <template x-for="s in resourceSpecs" :key="s.key">
+            <div class="grid grid-cols-12 gap-3 items-center py-2 border-b border-panel-border/50">
+              <div class="col-span-4 text-sm">
+                <div class="font-medium" x-text="s.label"></div>
+                <div class="text-xs text-zinc-500" x-text="s.hint"></div>
+              </div>
+              <div class="col-span-6">
+                <input type="range" class="w-full"
+                       :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                       :value="getResourceValue(s)"
+                       @input="setResourceValue(s, $event.target.value)" />
+              </div>
+              <div class="col-span-2">
+                <input type="number" class="w-full bg-panel border border-panel-border rounded px-2 py-1 text-sm text-right"
+                       :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                       :value="getResourceValue(s)"
+                       @input="setResourceValue(s, $event.target.value)" />
+              </div>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- Tab 5: 按城堡覆盖 -->
+      <section x-show="activeTab === 4" class="space-y-4">
+        <h2 class="text-lg font-semibold mb-3">按城/堡覆盖</h2>
+        <p class="text-xs text-zinc-500 mb-2">
+          打开覆盖后该城/堡使用独立规则，否则继承 GlobalDefaults。覆盖关闭时该 settlement 的规则字典条目会被删除。
+        </p>
+
+        <div x-show="settlements.length === 0" class="text-zinc-500 italic text-sm">
+          玩家暂无城/堡（或网页刚加载完，刷新一下试试）。
+        </div>
+
+        <template x-for="s in settlements" :key="s.stringId">
+          <div class="bg-panel border border-panel-border rounded">
+            <div class="flex items-center gap-3 p-3 border-b border-panel-border/50">
+              <span class="px-2 py-0.5 rounded text-xs"
+                    :class="s.isCastle ? 'bg-amber-900 text-amber-300' : 'bg-blue-900 text-blue-300'"
+                    x-text="s.isCastle ? '城堡' : '城镇'"></span>
+              <span class="font-medium" x-text="s.name"></span>
+              <span class="text-xs text-zinc-600" x-text="s.stringId"></span>
+              <span class="flex-1"></span>
+              <label class="flex items-center gap-2 text-sm">
+                <span class="text-zinc-500">覆盖</span>
+                <input type="checkbox" class="w-4 h-4 accent-green-600"
+                       :checked="!!config.PerSettlementOverrides[s.stringId]"
+                       @change="toggleOverride(s.stringId, $event.target.checked)" />
+              </label>
+            </div>
+
+            <div x-show="!!config.PerSettlementOverrides[s.stringId]" class="p-3 space-y-2">
+              <template x-for="spec in perSettlementNumericSpecs" :key="spec.key">
+                <div class="grid grid-cols-12 gap-3 items-center py-1">
+                  <div class="col-span-4 text-sm" x-text="spec.label"></div>
+                  <div class="col-span-6">
+                    <input type="range" class="w-full"
+                           :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
+                           :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
+                           @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                  </div>
+                  <div class="col-span-2">
+                    <input type="number" class="w-full bg-panel-soft border border-panel-border rounded px-2 py-1 text-sm text-right"
+                           :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
+                           :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
+                           @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </section>
+    </main>
+
+    <!-- ============ Activity log ============ -->
+    <div class="mt-4 bg-panel-soft border border-panel-border rounded p-3">
+      <div class="text-xs text-zinc-500 mb-1">活动日志</div>
+      <div class="space-y-0.5 max-h-32 overflow-y-auto font-mono text-xs">
+        <template x-for="(entry, idx) in logEntries" :key="idx">
+          <div :class="entry.cls" x-text="`[${entry.ts}] ${entry.msg}`"></div>
+        </template>
+      </div>
+    </div>
+
   </div>
 
-  <div class="actions">
-    <button id="btn-fetch">从游戏读取当前配置</button>
-    <button id="btn-save" class="primary">保存到游戏</button>
-    <button id="btn-reload">让游戏重读磁盘</button>
-    <button id="btn-format">JSON 格式化</button>
-    <button id="btn-troops">查看兵种 dump</button>
-    <button id="btn-settlements">查看玩家城/堡</button>
-  </div>
+  <script>
+    function configApp() {
+      return {
+        // ============ State ============
+        token: '',
+        activeTab: 0,
+        tabs: ['功能开关', '数量与预算', '兵种与 Tier 比例', '模板与资源', '按城/堡覆盖'],
+        config: null,
+        status: null,
+        troops: [],
+        settlements: [],
+        templates: [],
+        warning: '',
+        saving: false,
+        logEntries: [],
 
-  <textarea id="cfg" spellcheck="false" placeholder="点「从游戏读取当前配置」开始..."></textarea>
+        // ExactTroop picker filter state
+        troopSearch: '',
+        troopCultureFilter: '',
+        troopTypeFilter: '',
+        troopTierFilter: 0,
 
-  <div class="log" id="log"></div>
+        // ============ Spec tables (drive the slider rows) ============
+        toggleSpecs: [
+          { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount。' },
+          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军。' },
+          { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地。' },
+          { key: 'CastleSupport', root: 'EnabledFeatures', label: '城堡支持', hint: '对玩家归属城堡同等启用上述功能。' },
+          { key: 'LlmReasoning', root: 'EnabledFeatures', label: 'LLM 推理建议', hint: '启用 LLM 提供决策建议（仅建议，不动手）。' },
+          { key: 'LlmAutoExecute', root: 'EnabledFeatures', label: 'LLM 自动执行', hint: '允许 LLM 直接执行决策（高风险）。' },
+          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '无巡逻队时附近有敌对势力则出城攻击。' },
+          { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军。' },
+          { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town。' },
+          { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town。' },
+          { key: 'UseGenericMatching', root: 'GlobalDefaults', label: '通用匹配（忽略文化）', hint: '开启=按 Tier+兵种类型匹配；关闭=按 ExactTroopTemplate 具体兵种匹配。' },
+        ],
 
-  <div class="hint">
-    提示：保存后游戏内的 Manager 下一次 hourly tick 自动用新配置。无需重启游戏 / 重载存档。
-    校验失败（如 ratio 之和不在 [0.9, 1.1]）会显示红字，磁盘上的配置不会被坏值覆盖。
-  </div>
+        budgetSpecs: [
+          { key: 'TargetTotalCount', label: '目标驻军总数', hint: '50–500，驻军应维持的兵员数', min: 50, max: 500, discrete: true },
+          { key: 'MinimumDefenders', label: '最少防守人数', hint: '0–300，至少保留的防守人数', min: 0, max: 300, discrete: true },
+          { key: 'BudgetLimit', label: '招募预算上限', hint: '0–50000 denar/日', min: 0, max: 50000, discrete: true },
+          { key: 'MinTier', label: '最低 Tier', hint: '1–6', min: 1, max: 6, discrete: true },
+          { key: 'MaxTier', label: '最高 Tier', hint: '1–6', min: 1, max: 6, discrete: true },
+          { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '0.5–2.0', min: 0.5, max: 2.0, discrete: false },
+          { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '0.5–2.0', min: 0.5, max: 2.0, discrete: false },
+        ],
 
-<script>
-(() => {
-  "use strict";
+        troopRatioSpecs: [
+          { key: 'CavalryRatio', label: '骑兵占比' },
+          { key: 'InfantryRatio', label: '步兵占比' },
+          { key: 'ArcherRatio', label: '弓手占比' },
+          { key: 'CrossbowRatio', label: '弩手占比' },
+          { key: 'ThrowerRatio', label: '投掷兵占比' },
+        ],
 
-  // ====== Bootstrap: read token from ?t= and stash in sessionStorage. ======
-  function getToken() {
-    const u = new URL(window.location.href);
-    const fromQuery = u.searchParams.get("t");
-    if (fromQuery) {
-      sessionStorage.setItem("st-token", fromQuery);
-      // Strip query string for cleanliness (no F5 reuse needed since sessionStorage holds it).
-      window.history.replaceState(null, "", u.pathname);
-      return fromQuery;
+        tierRatioSpecs: [
+          { key: 'Tier1Ratio', label: 'Tier 1' },
+          { key: 'Tier2Ratio', label: 'Tier 2' },
+          { key: 'Tier3Ratio', label: 'Tier 3' },
+          { key: 'Tier4Ratio', label: 'Tier 4' },
+          { key: 'Tier5Ratio', label: 'Tier 5' },
+          { key: 'Tier6Ratio', label: 'Tier 6' },
+        ],
+
+        // Resource specs: mix of GlobalDefaults + top-level GlobalConfig fields.
+        // root='GlobalDefaults' or '' (top-level).
+        resourceSpecs: [
+          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募 (-50 ~ 50)', min: -50, max: 50, discrete: false, step: 0.5 },
+          { key: 'DailyTroopXpBonus', root: 'GlobalDefaults', label: '每日驻军 XP 奖励', hint: '每日给非 hero 兵员注入 XP (0–30)', min: 0, max: 30, discrete: true },
+          { key: 'DailyPrisonerConformityAmount', root: '', label: '每日俘虏 Conformity', hint: '每日给驻军俘虏累加 conformity (0–30)', min: 0, max: 30, discrete: true },
+          { key: 'RecruiterEscortSize', root: '', label: '征兵护卫数', hint: '征兵队出发时从首府抽取的低 Tier 兵 (0–50)', min: 0, max: 50, discrete: true },
+          { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
+          { key: 'RecruiterReturnThreshold', root: '', label: '征兵队回首府阈值', hint: '征兵队总人数达此值立即回首府 (10–200)', min: 10, max: 200, discrete: true },
+        ],
+
+        perSettlementNumericSpecs: [
+          { key: 'TargetTotalCount', label: '目标驻军总数', min: 50, max: 500, discrete: true },
+          { key: 'MinimumDefenders', label: '最少防守人数', min: 0, max: 300, discrete: true },
+          { key: 'BudgetLimit', label: '招募预算上限', min: 0, max: 50000, discrete: true },
+          { key: 'WartimeMultiplier', label: '战时目标乘数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'PeacetimeMultiplier', label: '和平目标乘数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'FoodSafetyThreshold', label: '食物安全阈值', min: -50, max: 50, discrete: false, step: 0.5 },
+        ],
+
+        // ============ Computed ============
+        get troopSum() {
+          if (!this.config) return 0;
+          const g = this.config.GlobalDefaults;
+          return (g.CavalryRatio||0) + (g.InfantryRatio||0) + (g.ArcherRatio||0) + (g.CrossbowRatio||0) + (g.ThrowerRatio||0);
+        },
+        get tierSum() {
+          if (!this.config) return 0;
+          const g = this.config.GlobalDefaults;
+          return (g.Tier1Ratio||0) + (g.Tier2Ratio||0) + (g.Tier3Ratio||0) + (g.Tier4Ratio||0) + (g.Tier5Ratio||0) + (g.Tier6Ratio||0);
+        },
+        get cultureList() {
+          const set = new Set();
+          for (const t of this.troops) if (t.culture) set.add(t.culture);
+          return Array.from(set).sort();
+        },
+        get filteredTroops() {
+          const q = this.troopSearch.toLowerCase().trim();
+          return this.troops.filter(t => {
+            if (this.troopCultureFilter && t.culture !== this.troopCultureFilter) return false;
+            if (this.troopTypeFilter && t.type !== this.troopTypeFilter) return false;
+            if (this.troopTierFilter > 0 && t.tier !== this.troopTierFilter) return false;
+            if (q && !t.name.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false;
+            return true;
+          });
+        },
+
+        // ============ Lifecycle ============
+        async init() {
+          // Bootstrap token from ?t= or sessionStorage.
+          const u = new URL(window.location.href);
+          const fromQuery = u.searchParams.get('t');
+          if (fromQuery) {
+            sessionStorage.setItem('st-token', fromQuery);
+            window.history.replaceState(null, '', u.pathname);
+            this.token = fromQuery;
+          } else {
+            this.token = sessionStorage.getItem('st-token') || '';
+          }
+          if (!this.token) {
+            this.log('缺少 token。请从游戏内「打开网页控制面板」入口启动。', 'err');
+            return;
+          }
+          await this.reloadAll();
+        },
+
+        async reloadAll() {
+          this.warning = '';
+          await Promise.all([
+            this.fetchConfig(),
+            this.fetchStatus(),
+            this.fetchTroops(),
+            this.fetchSettlements(),
+            this.fetchTemplates(),
+          ]);
+        },
+
+        // ============ API ============
+        async http(method, path, body = null) {
+          const opt = { method, headers: { 'X-ST-Token': this.token } };
+          if (body !== null) {
+            opt.headers['Content-Type'] = 'application/json';
+            opt.body = typeof body === 'string' ? body : JSON.stringify(body);
+          }
+          try {
+            const res = await fetch(path, opt);
+            let parsed = null;
+            try { parsed = await res.json(); } catch {}
+            return { status: res.status, ok: res.ok, body: parsed };
+          } catch (e) {
+            return { status: -1, ok: false, body: { message: e.message } };
+          }
+        },
+
+        async fetchConfig() {
+          const r = await this.http('GET', '/api/config');
+          if (r.ok) {
+            // Ensure ExactTroopTemplate is an object (Newtonsoft may serialize empty dict as missing).
+            r.body.GlobalDefaults = r.body.GlobalDefaults || {};
+            r.body.GlobalDefaults.ExactTroopTemplate = r.body.GlobalDefaults.ExactTroopTemplate || {};
+            r.body.PerSettlementOverrides = r.body.PerSettlementOverrides || {};
+            r.body.EnabledFeatures = r.body.EnabledFeatures || {};
+            this.config = r.body;
+            this.log('配置已读取', 'ok');
+          } else {
+            this.log(`配置读取失败 ${r.status}: ${r.body?.message || '?'}`, 'err');
+          }
+        },
+        async fetchStatus() {
+          const r = await this.http('GET', '/api/status');
+          this.status = r.ok ? r.body : null;
+        },
+        async fetchTroops() {
+          const r = await this.http('GET', '/api/troops');
+          this.troops = r.ok ? (r.body.troops || []) : [];
+        },
+        async fetchSettlements() {
+          const r = await this.http('GET', '/api/settlements');
+          this.settlements = r.ok ? (r.body.settlements || []) : [];
+        },
+        async fetchTemplates() {
+          const r = await this.http('GET', '/api/training-templates');
+          this.templates = r.ok ? (r.body.templates || []) : [];
+        },
+
+        async save() {
+          if (!this.config) return;
+          this.saving = true;
+          this.warning = '';
+          const r = await this.http('PUT', '/api/config', this.config);
+          this.saving = false;
+          if (r.ok) {
+            this.log('保存成功', 'ok');
+            await this.fetchStatus();
+          } else {
+            this.warning = `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`;
+            this.log(this.warning, 'err');
+          }
+        },
+
+        // ============ Toggles ============
+        getToggleValue(t) {
+          if (!this.config) return false;
+          return !!this.config[t.root][t.key];
+        },
+        setToggleValue(t, v) {
+          this.config[t.root][t.key] = v;
+        },
+
+        // ============ Resource values (mixed root) ============
+        getResourceValue(s) {
+          const root = s.root ? this.config[s.root] : this.config;
+          return root?.[s.key];
+        },
+        setResourceValue(s, raw) {
+          const v = s.discrete ? parseInt(raw) : parseFloat(raw);
+          const root = s.root ? this.config[s.root] : this.config;
+          root[s.key] = v;
+        },
+
+        // ============ ExactTroopTemplate ============
+        troopLabel(id) {
+          const t = this.troops.find(x => x.id === id);
+          return t ? `${t.name} · ${t.culture} T${t.tier}` : id;
+        },
+        addTroop(id) {
+          const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
+          if (!(id in tmpl)) tmpl[id] = 10;
+        },
+        updateTroopCount(id, raw) {
+          const n = parseInt(raw);
+          if (Number.isFinite(n) && n >= 0) {
+            this.config.GlobalDefaults.ExactTroopTemplate[id] = n;
+          }
+        },
+        removeTroop(id) {
+          delete this.config.GlobalDefaults.ExactTroopTemplate[id];
+        },
+
+        // ============ TrainingTemplate Apply ============
+        applyTemplate(t) {
+          if (!confirm(`将「${t.DisplayName}」应用到 GlobalDefaults？\n这会覆盖目标人数 / 兵种比例 / Tier 比例 / 倍率 / 食物 / XP。\n你的功能开关、具体兵员模板和按城堡覆盖不变。`)) return;
+          const src = t.Rule;
+          const fields = [
+            'TargetTotalCount','MinimumDefenders','BudgetLimit','MinTier','MaxTier',
+            'CavalryRatio','InfantryRatio','ArcherRatio','CrossbowRatio','ThrowerRatio',
+            'Tier1Ratio','Tier2Ratio','Tier3Ratio','Tier4Ratio','Tier5Ratio','Tier6Ratio',
+            'WartimeMultiplier','PeacetimeMultiplier','FoodSafetyThreshold','DailyTroopXpBonus'
+          ];
+          for (const k of fields) {
+            if (src[k] !== undefined) this.config.GlobalDefaults[k] = src[k];
+          }
+          this.log(`已应用预设：${t.DisplayName}（未保存，需要点「保存到游戏」）`, 'ok');
+        },
+
+        // ============ PerSettlementOverrides ============
+        toggleOverride(id, enabled) {
+          if (enabled) {
+            // 深拷贝 GlobalDefaults 作为初值
+            this.config.PerSettlementOverrides[id] = JSON.parse(JSON.stringify(this.config.GlobalDefaults));
+          } else {
+            delete this.config.PerSettlementOverrides[id];
+          }
+        },
+        setOverrideValue(id, spec, raw) {
+          const rule = this.config.PerSettlementOverrides[id];
+          if (!rule) return;
+          rule[spec.key] = spec.discrete ? parseInt(raw) : parseFloat(raw);
+        },
+
+        // ============ UI helpers ============
+        ratioSumOk(sum) { return sum >= 0.9 && sum <= 1.1; },
+
+        log(msg, cls = '') {
+          this.logEntries.unshift({
+            ts: new Date().toLocaleTimeString(),
+            msg,
+            cls: cls === 'err' ? 'text-red-400' : cls === 'ok' ? 'text-green-400' : 'text-zinc-400',
+          });
+          while (this.logEntries.length > 30) this.logEntries.pop();
+        },
+      };
     }
-    return sessionStorage.getItem("st-token") || "";
-  }
-  const TOKEN = getToken();
-
-  if (!TOKEN) {
-    document.getElementById("log").innerHTML =
-      `<div class="log-entry err">[fatal] 缺少 token。请关闭此页面，从游戏内 MCM「打开网页配置」按钮重新进入。</div>`;
-    document.querySelectorAll("button").forEach(b => b.disabled = true);
-    return;
-  }
-
-  // ====== Logging helpers ======
-  const logEl = document.getElementById("log");
-  function log(msg, cls = "") {
-    const ts = new Date().toLocaleTimeString();
-    const entry = document.createElement("div");
-    entry.className = `log-entry ${cls}`;
-    entry.textContent = `[${ts}] ${msg}`;
-    logEl.prepend(entry);
-    while (logEl.childElementCount > 50) logEl.lastChild.remove();
-  }
-
-  // ====== HTTP wrapper ======
-  async function call(method, path, body = null) {
-    const opt = {
-      method,
-      headers: { "X-ST-Token": TOKEN },
-    };
-    if (body !== null) {
-      opt.headers["Content-Type"] = "application/json";
-      opt.body = typeof body === "string" ? body : JSON.stringify(body);
-    }
-    const res = await fetch(path, opt);
-    let parsed = null;
-    try { parsed = await res.json(); } catch { /* non-JSON response */ }
-    return { status: res.status, ok: res.ok, body: parsed };
-  }
-
-  // ====== Status pills ======
-  async function refreshStatus() {
-    try {
-      const r = await call("GET", "/api/status");
-      if (!r.ok) {
-        document.getElementById("server-status").textContent = `server: ${r.status}`;
-        document.getElementById("server-status").className = "status-pill err";
-        return;
-      }
-      const s = r.body;
-      document.getElementById("server-status").textContent = "server: 在线";
-      document.getElementById("server-status").className = "status-pill";
-      document.getElementById("override-count").textContent = `覆盖数: ${s.perSettlementOverrideCount}`;
-      document.getElementById("exact-troop-count").textContent = `具体兵员: ${s.exactTroopTemplateCount}`;
-      document.getElementById("last-modified").textContent = `last-modified: ${s.lastModified || "?"}`;
-      document.getElementById("capital-status").textContent =
-        `features: ${Object.entries(s.features || {}).filter(([,v]) => v === true).length} 项启用`;
-    } catch (e) {
-      document.getElementById("server-status").textContent = "server: 失联";
-      document.getElementById("server-status").className = "status-pill err";
-    }
-  }
-
-  // ====== Buttons ======
-  const cfgEl = document.getElementById("cfg");
-
-  document.getElementById("btn-fetch").addEventListener("click", async () => {
-    const r = await call("GET", "/api/config");
-    if (!r.ok) { log(`fetch failed: ${r.status} ${JSON.stringify(r.body)}`, "err"); return; }
-    cfgEl.value = JSON.stringify(r.body, null, 2);
-    log("已从游戏读取配置", "ok");
-  });
-
-  document.getElementById("btn-save").addEventListener("click", async () => {
-    let parsed;
-    try { parsed = JSON.parse(cfgEl.value); }
-    catch (e) { log(`JSON 解析失败：${e.message}`, "err"); return; }
-
-    const r = await call("PUT", "/api/config", parsed);
-    if (r.ok) {
-      log("保存成功", "ok");
-      refreshStatus();
-    } else {
-      log(`保存失败 ${r.status}：${r.body?.code || "?"} — ${r.body?.message || "(no message)"}`, "err");
-    }
-  });
-
-  document.getElementById("btn-reload").addEventListener("click", async () => {
-    const r = await call("POST", "/api/reload");
-    if (r.ok) log("游戏已重读磁盘配置", "ok");
-    else log(`reload failed ${r.status}: ${JSON.stringify(r.body)}`, "err");
-  });
-
-  document.getElementById("btn-format").addEventListener("click", () => {
-    try {
-      const obj = JSON.parse(cfgEl.value);
-      cfgEl.value = JSON.stringify(obj, null, 2);
-      log("已重新格式化", "ok");
-    } catch (e) { log(`JSON 解析失败：${e.message}`, "err"); }
-  });
-
-  document.getElementById("btn-troops").addEventListener("click", async () => {
-    const r = await call("GET", "/api/troops");
-    if (!r.ok) { log(`troops failed ${r.status}: ${JSON.stringify(r.body)}`, "err"); return; }
-    const w = window.open("", "_blank");
-    if (!w) { log("浏览器拦截了新窗口", "warn"); return; }
-    w.document.title = "Troops dump";
-    w.document.body.style.cssText = "background:#1a1a1d;color:#d4d4d8;font-family:monospace;padding:16px;white-space:pre;";
-    w.document.body.textContent = JSON.stringify(r.body, null, 2);
-  });
-
-  document.getElementById("btn-settlements").addEventListener("click", async () => {
-    const r = await call("GET", "/api/settlements");
-    if (!r.ok) { log(`settlements failed ${r.status}: ${JSON.stringify(r.body)}`, "err"); return; }
-    log("玩家城/堡: " + JSON.stringify(r.body.settlements), "ok");
-  });
-
-  // Boot
-  refreshStatus();
-  document.getElementById("btn-fetch").click();
-})();
-</script>
+  </script>
 </body>
 </html>

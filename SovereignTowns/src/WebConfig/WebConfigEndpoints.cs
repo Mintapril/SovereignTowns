@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using Newtonsoft.Json;
 using SovereignTowns.Configuration;
+using SovereignTowns.Templates;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
@@ -169,6 +170,21 @@ internal static class WebConfigEndpoints
         catch (Exception ex)
         {
             Logger.Error("GetSettlements threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
+    /// <summary>GET /api/training-templates → 内置预设规则列表（前端「应用预设」用）。</summary>
+    public static void GetTrainingTemplates(HttpListenerContext ctx)
+    {
+        try
+        {
+            var templates = TemplateManager.GetAllTemplates();
+            WebConfigServer.WriteJson(ctx, 200, new { templates });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetTrainingTemplates threw", ex);
             WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
         }
     }
