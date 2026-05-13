@@ -106,7 +106,9 @@ public static class SafeUninstallMenu
                 try
                 {
                     if (p?.PartyComponent is SovereignTowns.Parties.RecruitingPartyComponent
-                        || p?.PartyComponent is SovereignTowns.Parties.TransferPartyComponent)
+                        || p?.PartyComponent is SovereignTowns.Parties.TransferPartyComponent
+                        || p?.PartyComponent is SovereignTowns.Parties.SallyForthPartyComponent
+                        || p?.PartyComponent is SovereignTowns.Parties.DismissPartyComponent)
                     {
                         if (p!.IsActive)
                         {

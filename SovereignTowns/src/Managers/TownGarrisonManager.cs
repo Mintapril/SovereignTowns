@@ -27,19 +27,22 @@ public sealed class TownGarrisonManager
     // 当前 (B1) 未直接使用；CastleSupportManager 已通过 ctor 持有它。保留字段以备未来 case
     // 需要直派 transfer 时的 quick-access (避免再扩 CastleSupportManager 公开面)。
     private readonly Transfer.GarrisonTransferManager? _transferManager;
+    private readonly Lifecycle.PartyLifecycleManager? _lifecycle;
 
     public TownGarrisonManager(
         RecruitmentManager? recruitmentManager = null,
         LLMReasoningService? llmService = null,
         CapitalManager? capitalManager = null,
         Transfer.CastleSupportManager? castleSupportManager = null,
-        Transfer.GarrisonTransferManager? transferManager = null)
+        Transfer.GarrisonTransferManager? transferManager = null,
+        Lifecycle.PartyLifecycleManager? lifecycle = null)
     {
         _recruitmentManager = recruitmentManager;
         _llmService = llmService;
         _capitalManager = capitalManager;
         _castleSupportManager = castleSupportManager;
         _transferManager = transferManager;
+        _lifecycle = lifecycle;
     }
 
     /// <summary>
@@ -205,6 +208,18 @@ public sealed class TownGarrisonManager
                      && !ConfigurationManager.Current.EnabledFeatures.CastleSupport)
             {
                 rejectionReason = "CastleSupport feature disabled";
+            }
+            else if (d.Kind == GarrisonActionKind.RequestDisbandExcess
+                     && rule.AutoDisbandExcess
+                     && _lifecycle != null)
+            {
+                int dismissed = Lifecycle.DisbandReturnPartyDispatcher.DismissExcess(town, d.Magnitude, _lifecycle);
+                dispatched = dismissed > 0;
+                rejectionReason = dismissed == 0 ? "no eligible troops / no home village / at limit" : null;
+            }
+            else if (d.Kind == GarrisonActionKind.RequestDisbandExcess && !rule.AutoDisbandExcess)
+            {
+                rejectionReason = "AutoDisbandExcess=false in rule";
             }
             else
             {
