@@ -50,7 +50,7 @@ public sealed class PrisonerRecruitmentManager
             if (rule == null || !rule.AllowPrisonerConversion) return;
 
             // B1 #7: pause when food trend below threshold
-            if (FoodGuard.IsRecruitmentPausedForFood(town, rule, "PrisonerRecruitment"))
+            if (FoodGuard.IsRecruitmentPausedForFood(town, rule, "PrisonerRecruitmentManager"))
                 return;
 
             var settlementParty = settlement.Party;
