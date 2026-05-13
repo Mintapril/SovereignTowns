@@ -207,12 +207,16 @@ public sealed class CastleSupportManager
                     DecisionAuditLogger.LogRule(
                         decisionType: "TransferRequestedByIntent",
                         inputSummary: $"dst={destination.Settlement.StringId} src={task.Source.StringId} requested={requestedMagnitude}",
-                        decisionJson: $"{{\"requested\":{requestedMagnitude},\"task_troops\":{task.RequestedTroops},\"reason\":\"{EscapeAudit(task.Reason)}\"}}",
+                        decisionJson: $"{{\"requested\":{requestedMagnitude},\"task_troops\":{task.RequestedTroops},\"reason\":\"{AuditHelpers.EscapeJson(task.Reason)}\"}}",
                         accepted: true);
                 }
             }
 
-            Logger.Info($"TryDispatchForDemand '{destination.Name}': dispatched={dispatched} / candidates={allTasks.Count} (requested={requestedMagnitude})");
+            int destCandidates = 0;
+            foreach (var t in allTasks)
+                if (t.Destination == destination.Settlement) destCandidates++;
+
+            Logger.Info($"TryDispatchForDemand '{destination.Name}': dispatched={dispatched} / destCandidates={destCandidates} / totalCandidates={allTasks.Count} (requested={requestedMagnitude})");
             return dispatched;
         }
         catch (Exception ex)
@@ -220,12 +224,6 @@ public sealed class CastleSupportManager
             Logger.Error($"CastleSupportManager.TryDispatchForDemand outer failure for '{destination.Name}'", ex);
             return 0;
         }
-    }
-
-    private static string EscapeAudit(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return "";
-        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ");
     }
 
     // ---------------------------------------------------------------

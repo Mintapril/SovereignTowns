@@ -24,7 +24,8 @@ public sealed class TownGarrisonManager
     private readonly LLMReasoningService? _llmService;
     private readonly CapitalManager? _capitalManager;
     private readonly Transfer.CastleSupportManager? _castleSupportManager;
-    // 当前 (B1) 未直接使用；保留以备未来 case (Disband/Upgrade 等) 需要直派 transfer 时复用。
+    // 当前 (B1) 未直接使用；CastleSupportManager 已通过 ctor 持有它。保留字段以备未来 case
+    // 需要直派 transfer 时的 quick-access (避免再扩 CastleSupportManager 公开面)。
     private readonly Transfer.GarrisonTransferManager? _transferManager;
 
     public TownGarrisonManager(
@@ -181,7 +182,6 @@ public sealed class TownGarrisonManager
             }
             else if (d.Kind == GarrisonActionKind.RequestTransferIn
                      && _castleSupportManager != null
-                     && _transferManager != null
                      && ConfigurationManager.Current.EnabledFeatures.CastleSupport)
             {
                 int n = _castleSupportManager.TryDispatchForDemand(town, d.Magnitude);
@@ -201,16 +201,10 @@ public sealed class TownGarrisonManager
             DecisionAuditLogger.LogRule(
                 decisionType: d.Kind.ToString(),
                 inputSummary: inputSummary,
-                decisionJson: $"{{\"kind\":\"{d.Kind}\",\"priority\":{d.Priority},\"magnitude\":{d.Magnitude},\"reason\":\"{EscapeJson(d.Reason)}\"}}",
+                decisionJson: $"{{\"kind\":\"{d.Kind}\",\"priority\":{d.Priority},\"magnitude\":{d.Magnitude},\"reason\":\"{AuditHelpers.EscapeJson(d.Reason)}\"}}",
                 accepted: dispatched,
                 rejectionReason: rejectionReason);
         }
-    }
-
-    private static string EscapeJson(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return "";
-        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ");
     }
 
     private static List<Town> ListPlayerOwnedTowns()
