@@ -103,11 +103,19 @@ public static class TroopDumper
                 var role = GenericTroopMatcher.GetRole(co);
                 if (role == GenericTroopRole.Unknown) continue; // 跳过怪物/无效条目
 
+                // co.Name and Culture.Name return the vanilla localization for the active
+                // game language (i.e. official Chinese when the player is running 简体中文
+                // Bannerlord). Mods that add new troops / cultures supply their own L10N too,
+                // so this automatically covers RBM, Calradia Expanded, etc.
+                string cultureStringId = co.Culture?.StringId ?? "";
+                string cultureName = co.Culture?.Name?.ToString() ?? cultureStringId;
+
                 list.Add(new TroopEntry
                 {
                     id = id,
                     name = co.Name?.ToString() ?? id,
-                    culture = co.Culture?.StringId ?? "",
+                    culture = cultureStringId,
+                    cultureName = cultureName,
                     tier = co.Tier,
                     type = role.ToString().ToLowerInvariant(),
                     isMounted = SafeBool(() => co.IsMounted),
@@ -140,10 +148,11 @@ public static class TroopDumper
     private sealed class TroopEntry
     {
         public string id { get; set; } = "";
-        public string name { get; set; } = "";
-        public string culture { get; set; } = "";
+        public string name { get; set; } = "";          // vanilla-localized character name
+        public string culture { get; set; } = "";       // stringId (key for filter/serialization)
+        public string cultureName { get; set; } = "";   // vanilla-localized culture display name
         public int tier { get; set; }
-        public string type { get; set; } = "";
+        public string type { get; set; } = "";          // role enum lowercase: cavalry/infantry/archer/crossbow/thrower
         public bool isMounted { get; set; }
         public bool isRanged { get; set; }
         public bool isNoble { get; set; }

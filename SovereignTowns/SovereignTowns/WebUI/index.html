@@ -571,7 +571,7 @@
                       <div class="flex-1 min-w-0">
                         <div class="text-[14px] text-parchment-50 truncate" x-text="troopById[id]?.name || id"></div>
                         <div class="text-[11px] text-parchment-300 flex gap-2 items-center mt-0.5">
-                          <span class="culture-badge" x-text="troopById[id]?.culture || '?'"></span>
+                          <span class="culture-badge" x-text="cultureLabel(troopById[id]?.culture)"></span>
                           <span class="font-mono" x-text="`T${troopById[id]?.tier || '?'}`"></span>
                           <span x-text="typeLabel(troopById[id]?.type)"></span>
                         </div>
@@ -607,10 +607,10 @@
                     <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12">文化</span>
                     <button @click="troopCultureFilter = ''"
                             :class="troopCultureFilter === '' ? 'chip-filter active' : 'chip-filter'">全部</button>
-                    <template x-for="c in cultureList" :key="c">
-                      <button @click="troopCultureFilter = (troopCultureFilter === c ? '' : c)"
-                              :class="troopCultureFilter === c ? 'chip-filter active' : 'chip-filter'"
-                              x-text="cultureZh(c)"></button>
+                    <template x-for="[cid, cname] in cultureList" :key="cid">
+                      <button @click="troopCultureFilter = (troopCultureFilter === cid ? '' : cid)"
+                              :class="troopCultureFilter === cid ? 'chip-filter active' : 'chip-filter'"
+                              x-text="cname"></button>
                     </template>
                   </div>
 
@@ -652,7 +652,7 @@
                       <span class="tier-dot shrink-0" :class="`tier-${tr.tier}`"></span>
                       <span class="font-mono text-[12px] text-parchment-300 shrink-0" x-text="`T${tr.tier}`"></span>
                       <span class="flex-1 truncate text-[14px] text-parchment-50" x-html="highlight(tr.name, troopSearch)"></span>
-                      <span class="culture-badge" x-text="cultureZh(tr.culture)"></span>
+                      <span class="culture-badge" x-text="tr.cultureName || tr.culture"></span>
                       <span class="type-glyph shrink-0" :title="typeLabel(tr.type)" x-text="typeGlyph(tr.type)"></span>
                       <span x-show="tr.id in (config.GlobalDefaults.ExactTroopTemplate || {})" class="text-sage-400 text-sm shrink-0">✓</span>
                       <span x-show="!(tr.id in (config.GlobalDefaults.ExactTroopTemplate || {}))" class="text-gold-300 text-base leading-none shrink-0">＋</span>
@@ -840,14 +840,11 @@
         troopTierFilter: 0,
         hideSelected: false,
 
-        // Chinese culture names (vanilla cultures + commonly seen mod additions)
-        cultureZhMap: {
-          empire: '帝国', vlandia: '瓦兰迪亚', sturgia: '斯图尔吉亚',
-          aserai: '阿塞莱', battania: '巴丹尼亚', khuzait: '库赛特',
-          neutral_culture: '中立', looter: '劫匪', forest_bandit: '林匪',
-          sea_raider: '海寇', mountain_bandit: '山匪', steppe_bandit: '草原匪',
-          desert_bandit: '沙匪', darshi: '达西',
-        },
+        // No more hard-coded Chinese culture map: TroopDumper now ships each troop entry
+        // with cultureName populated from Culture.Name (vanilla localization), so the
+        // active game language wins automatically — covers Chinese + English + every mod
+        // that supplies its own L10N. cultureLabel() does an stringId → localized lookup
+        // off the dumped troop list.
 
         // i18n descriptions for the three built-in TrainingTemplates.
         presetMap: {
@@ -920,9 +917,17 @@
           return this.ratioKeys.reduce((s, k) => s + (g[k] || 0), 0);
         },
         get cultureList() {
-          const set = new Set();
-          for (const t of this.troops) if (t.culture) set.add(t.culture);
-          return Array.from(set).sort();
+          // Returns sorted [stringId, displayName] pairs. stringId stays the filter key
+          // (stable across language switches); displayName is the vanilla-localized text
+          // for the player's current game language.
+          const map = new Map();
+          for (const t of this.troops) {
+            if (t.culture && !map.has(t.culture)) {
+              map.set(t.culture, t.cultureName || t.culture);
+            }
+          }
+          return Array.from(map.entries())
+            .sort((a, b) => a[1].localeCompare(b[1], 'zh-Hans-CN'));
         },
         get troopById() {
           const map = {};
@@ -1125,7 +1130,15 @@
         typeLabel(type) {
           return ({ cavalry: '骑兵', infantry: '步兵', archer: '弓手', crossbow: '弩手', thrower: '投掷' })[type] || type || '';
         },
-        cultureZh(c) { return this.cultureZhMap[c] || c; },
+        cultureLabel(stringId) {
+          // Look up the localized name from any dumped troop with that culture id;
+          // fall back to the stringId itself if we somehow can't find one.
+          if (!stringId) return '';
+          for (const t of this.troops) {
+            if (t.culture === stringId) return t.cultureName || stringId;
+          }
+          return stringId;
+        },
         highlight(text, query) {
           if (!query) return this.escape(text);
           const q = query.toLowerCase();
