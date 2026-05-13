@@ -11,10 +11,10 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Ui;
 
 /// <summary>
-/// Registers the "设为首府" option on the vanilla "town" game-menu. This is the only town-menu
-/// hook the mod ships — all other UI (诊断 / 控制面板) now lives behind the persistent campaign-map
-/// ribbon (<see cref="SovereignTowns.Ui.MapRibbon.SovereignTownsRibbonInjector"/>), so the town
-/// menu stays lean (one extra row max, gated by player-clan ownership).
+/// Registers the "设为首府" and "打开网页控制面板" options on the vanilla "town" game-menu.
+/// These are the only town-menu hooks the mod ships — all detailed configuration now lives in
+/// the browser-side web config served by <see cref="SovereignTowns.WebConfig.WebConfigServer"/>,
+/// so the town menu stays lean.
 ///
 /// <para>
 /// Class name kept as <c>DiagnosticGameMenu</c> to minimise diff against existing call-sites

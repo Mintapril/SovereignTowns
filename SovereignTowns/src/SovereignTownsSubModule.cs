@@ -178,9 +178,6 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
         try { SovereignTowns.WebConfig.WebConfigServer.Stop(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} WebConfigServer.Stop threw: {ex.Message}"); }
 
-        try { SovereignTowns.Ui.MapRibbon.SovereignTownsRibbonInjector.Unload(); }
-        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} Ribbon.Unload threw: {ex.Message}"); }
-
         try { SovereignTowns.Audit.DecisionAuditLogger.Shutdown(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} AuditLogger.Shutdown threw: {ex.Message}"); }
 

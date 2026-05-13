@@ -12,7 +12,6 @@ using SovereignTowns.Recruitment;
 using SovereignTowns.SallyForth;
 using SovereignTowns.Transfer;
 using SovereignTowns.Ui;
-using SovereignTowns.Ui.MapRibbon;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -124,9 +123,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             SafeUninstallMenu.Register(campaignGameStarter);
             MCMIntegration.TryRegister();
 
-            // 大地图常驻 ribbon — 点击直接打开控制面板。Inject 内部幂等 + try/catch，
-            // MapScreen 尚未存在时只记日志，由 OnGameMenuOpened 兜底重试。
-            SovereignTownsRibbonInjector.Inject();
+            // B7: ribbon retired. Player config is now web-only via DiagnosticGameMenu's
+            // "打开网页控制面板" town menu option + WebConfigServer.
 
             _llmConfig = LoadLlmConfigOrDefault();
             ILLMProvider provider = _llmConfig.Provider?.ToLowerInvariant() switch
@@ -245,11 +243,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _transferManager?.OnHourlyTickParty(party);
             _patrolManager?.OnHourlyTickParty(party);
             _sallyForthManager?.OnHourlyTickParty(party);
-
-            // 兜底：OnSessionLaunched 时若 MapScreen 尚未实例化（罕见路径：教程/角色创建），
-            // 用 hourly tick 重试一次。Inject 自身幂等 + 内部检查 IsInjected 后立即 return。
-            if (!SovereignTownsRibbonInjector.IsInjected)
-                SovereignTownsRibbonInjector.Inject();
         }
         catch (Exception ex)
         {
