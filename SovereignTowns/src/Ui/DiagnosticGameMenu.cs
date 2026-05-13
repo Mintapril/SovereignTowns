@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using SovereignTowns.Capital;
+using SovereignTowns.WebConfig;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.GameMenus;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -56,10 +58,77 @@ public static class DiagnosticGameMenu
                 index: -1,
                 isRepeatable: false);
             Logger.Info("DiagnosticGameMenu: registered 'sovereign_towns_set_capital'");
+
+            // B7.5: web config entry. Available in any town menu — once we pivot to web-only
+            // configuration in Phase 2 this is the only player-facing config touchpoint.
+            starter.AddGameMenuOption(
+                menuId: "town",
+                optionId: "sovereign_towns_open_web_config",
+                optionText: "Sovereign Towns: 打开网页控制面板",
+                condition: new GameMenuOption.OnConditionDelegate(IsOpenWebConfigAvailable),
+                consequence: new GameMenuOption.OnConsequenceDelegate(OnOpenWebConfigSelected),
+                isLeave: false,
+                index: -1,
+                isRepeatable: true);
+            Logger.Info("DiagnosticGameMenu: registered 'sovereign_towns_open_web_config'");
         }
         catch (Exception ex)
         {
             Logger.Error("DiagnosticGameMenu.Register failed", ex);
+        }
+    }
+
+    /// <summary>「打开网页控制面板」条件 —— server 在运行才显示。</summary>
+    private static bool IsOpenWebConfigAvailable(MenuCallbackArgs args)
+    {
+        try
+        {
+            try { args.optionLeaveType = GameMenuOption.LeaveType.Submenu; }
+            catch { /* enum value or property absent on this build — non-fatal */ }
+            return WebConfigServer.IsRunning;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("IsOpenWebConfigAvailable failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>「打开网页控制面板」consequence —— Process.Start 启动系统默认浏览器到含 token 的 URL。</summary>
+    private static void OnOpenWebConfigSelected(MenuCallbackArgs args)
+    {
+        try
+        {
+            string url = WebConfigServer.GetBrowserUrl();
+            if (string.IsNullOrEmpty(url))
+            {
+                SafeDisplay("[Sovereign Towns] 网页服务未启动；查看日志了解原因。", Colors.Yellow);
+                TryReturnToTownMenu();
+                return;
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true,
+                });
+                SafeDisplay($"[Sovereign Towns] 已尝试启动浏览器：{url}", Colors.Green);
+            }
+            catch (Exception procEx)
+            {
+                Logger.Error("Process.Start for web config URL failed", procEx);
+                SafeDisplay($"[Sovereign Towns] 浏览器启动失败。请手动访问：{url}", Colors.Yellow);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnOpenWebConfigSelected failed", ex);
+        }
+        finally
+        {
+            TryReturnToTownMenu();
         }
     }
 

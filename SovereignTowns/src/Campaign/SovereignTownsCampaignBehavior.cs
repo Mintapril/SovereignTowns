@@ -18,6 +18,8 @@ using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Library;
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Campaign;
@@ -157,6 +159,26 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 Logger.Info("  HINT: CastleSupport 已禁用。global.json 改为 true 启用");
             if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
                 Logger.Info("  HINT: AutoPatrol 已禁用。global.json 改为 true 启用");
+
+            // B7.5: announce web config endpoint to the player. URL contains the auth token —
+            // displayed once per session so they can copy it manually if needed, but the
+            // normal path is via the "打开网页控制面板" town menu option.
+            try
+            {
+                if (SovereignTowns.WebConfig.WebConfigServer.IsRunning)
+                {
+                    string url = SovereignTowns.WebConfig.WebConfigServer.GetBrowserUrl();
+                    InformationManager.DisplayMessage(new InformationMessage(
+                        $"[Sovereign Towns] 网页控制面板：{url}", Colors.Green));
+                    Logger.Info($"WebConfigServer URL: {url}");
+                }
+                else
+                {
+                    InformationManager.DisplayMessage(new InformationMessage(
+                        "[Sovereign Towns] 网页控制面板未启动（端口冲突/沙盒拒绝），详见日志。", Colors.Yellow));
+                }
+            }
+            catch (Exception ex) { Logger.Error("WebConfig URL announce failed (swallowed)", ex); }
         }
         catch (Exception ex)
         {
