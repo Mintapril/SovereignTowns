@@ -133,15 +133,28 @@ public sealed class TownGarrisonManager
         // 上一轮 LLM 推理结果（如果有）
         var townId = town.Settlement?.StringId ?? town.Name?.ToString() ?? "<unknown>";
         var pendingLlmAdvice = town.Settlement != null ? LlmAutoExecuteBridge.ConsumePendingAdvice(town.Settlement) : null;
+        GarrisonDecision? llmDecision = null;
+        bool llmAdvisoryOnly = false;
         if (pendingLlmAdvice != null)
         {
             Logger.Info($"  consuming LLM advice for '{town.Name}': action={pendingLlmAdvice.Action} target={pendingLlmAdvice.TargetSettlement} mag={pendingLlmAdvice.MagnitudeSuggested}");
-            // MVP 6: LLM 建议日志化 + 审计；实际行为仍由规则引擎驱动以保稳定性
-            // 后续版本：将 LLM advice 转为 GarrisonDecision 并优先于规则引擎执行
+            llmDecision = TranslateLlmAdvice(pendingLlmAdvice);
+            llmAdvisoryOnly = llmDecision == null
+                && (pendingLlmAdvice.Action == "advise_user" || pendingLlmAdvice.Action == "adjust_rule");
+            if (llmDecision == null && !llmAdvisoryOnly)
+            {
+                DecisionAuditLogger.LogRule(
+                    decisionType: "LLMAdviceRejectedAtTranslate",
+                    inputSummary: $"town={townId} action={pendingLlmAdvice.Action} mag={pendingLlmAdvice.MagnitudeSuggested}",
+                    decisionJson: $"{{\"action\":\"{AuditHelpers.EscapeJson(pendingLlmAdvice.Action)}\",\"reason\":\"untranslatable\"}}",
+                    accepted: false,
+                    rejectionReason: "Action not in translate map or magnitude < 0");
+            }
         }
 
-        // 规则引擎决策 + 审计 + 派发到 Manager
-        var decisions = RuleBasedFallbackDecisionMaker.Decide(town);
+        // 规则引擎决策 + LLM 翻译 + 合并 + 审计 + 派发
+        var ruleDecisions = RuleBasedFallbackDecisionMaker.Decide(town);
+        var decisions = MergeDedupSort(ruleDecisions, llmDecision);
         var inputSummary = $"town={townId} risk={risk.Level} target={effectiveTarget} current={snap.Total} gap={totalGap}";
 
         // MVP 6: fire-and-forget 启动下一轮 LLM 推理（**绝不在当轮等待**）
@@ -198,13 +211,97 @@ public sealed class TownGarrisonManager
                 rejectionReason = $"MVP 3: action '{d.Kind}' not yet implemented";
             }
 
-            DecisionAuditLogger.LogRule(
-                decisionType: d.Kind.ToString(),
-                inputSummary: inputSummary,
-                decisionJson: $"{{\"kind\":\"{d.Kind}\",\"priority\":{d.Priority},\"magnitude\":{d.Magnitude},\"reason\":\"{AuditHelpers.EscapeJson(d.Reason)}\"}}",
-                accepted: dispatched,
-                rejectionReason: rejectionReason);
+            bool fromLlm = llmDecision.HasValue
+                           && d.Kind == llmDecision.Value.Kind
+                           && d.Priority == llmDecision.Value.Priority
+                           && d.Magnitude == llmDecision.Value.Magnitude;
+
+            DecisionAuditLogger.Log(new AuditEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                DecisionType = d.Kind.ToString(),
+                Source = fromLlm ? DecisionSource.Llm : DecisionSource.Rule,
+                InputSummary = inputSummary,
+                DecisionJson = $"{{\"kind\":\"{d.Kind}\",\"priority\":{d.Priority},\"magnitude\":{d.Magnitude},\"reason\":\"{AuditHelpers.EscapeJson(d.Reason)}\"}}",
+                Accepted = dispatched,
+                RejectionReason = rejectionReason
+            });
         }
+
+        if (llmAdvisoryOnly && pendingLlmAdvice != null)
+        {
+            DecisionAuditLogger.Log(new AuditEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                DecisionType = "LLMAdvisoryLogged",
+                Source = DecisionSource.Llm,
+                InputSummary = inputSummary,
+                DecisionJson = $"{{\"action\":\"{AuditHelpers.EscapeJson(pendingLlmAdvice.Action)}\",\"reason\":\"{AuditHelpers.EscapeJson(pendingLlmAdvice.Reason)}\"}}",
+                Accepted = true
+            });
+        }
+    }
+
+    /// <summary>
+    /// B1 #2: translate an LLM advice into at most one GarrisonDecision.
+    /// Returns null for advice that should not enter the decision list
+    /// (do_nothing / advise_user / adjust_rule / unknown action / negative magnitude).
+    /// </summary>
+    private static GarrisonDecision? TranslateLlmAdvice(LLMAdvice? advice)
+    {
+        if (advice == null) return null;
+        if (string.IsNullOrEmpty(advice.Action)) return null;
+        if (advice.MagnitudeSuggested < 0) return null;
+
+        const int LlmPriority = 60; // between gap≥10 (50+gap/2) and siege (100)
+        var reason = string.IsNullOrEmpty(advice.Reason) ? "llm-advice" : "llm:" + advice.Reason;
+
+        switch (advice.Action)
+        {
+            case "send_recruiting_party":
+                return new GarrisonDecision(GarrisonActionKind.RequestRecruitment,
+                    priority: LlmPriority, magnitude: advice.MagnitudeSuggested, reason: reason);
+            case "transfer_troops":
+                return new GarrisonDecision(GarrisonActionKind.RequestTransferIn,
+                    priority: LlmPriority, magnitude: advice.MagnitudeSuggested, reason: reason);
+            case "adjust_rule":
+            case "advise_user":
+            case "do_nothing":
+            default:
+                return null; // logged + audited at caller, not dispatched
+        }
+    }
+
+    /// <summary>
+    /// B1 #2: merge rule + LLM decisions. Dedup by Kind keeping the highest priority;
+    /// when priorities tie, LLM-sourced wins (assumed input via <paramref name="llmDecision"/>).
+    /// Result is sorted priority-desc, ready to drive the dispatch loop.
+    /// </summary>
+    private static List<GarrisonDecision> MergeDedupSort(
+        IReadOnlyList<GarrisonDecision> ruleDecisions,
+        GarrisonDecision? llmDecision)
+    {
+        var by = new Dictionary<GarrisonActionKind, (GarrisonDecision Dec, bool FromLlm)>();
+        foreach (var r in ruleDecisions)
+        {
+            by[r.Kind] = (r, false);
+        }
+        if (llmDecision.HasValue)
+        {
+            var l = llmDecision.Value;
+            if (!by.TryGetValue(l.Kind, out var existing) || l.Priority > existing.Dec.Priority)
+            {
+                by[l.Kind] = (l, true);
+            }
+            else if (l.Priority == existing.Dec.Priority)
+            {
+                by[l.Kind] = (l, true); // tie → LLM wins
+            }
+        }
+        var merged = new List<GarrisonDecision>(by.Count);
+        foreach (var kv in by.Values) merged.Add(kv.Dec);
+        merged.Sort(static (a, b) => b.Priority.CompareTo(a.Priority));
+        return merged;
     }
 
     private static List<Town> ListPlayerOwnedTowns()
