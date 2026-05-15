@@ -9,37 +9,36 @@ namespace SovereignTowns.Configuration;
 /// </summary>
 public sealed class TownGarrisonRule
 {
-    /// <summary>目标驻军总人数（不含贵族军官/英雄）。</summary>
-    public int TargetTotalCount { get; set; } = 80;
+    /// <summary>目标驻军总人数（不含贵族军官/英雄）。B7.20：默认 150。</summary>
+    public int TargetTotalCount { get; set; } = 150;
 
     /// <summary>
-    /// true = 使用文化无关的兵种/Tier 比例匹配；false = 使用 ImprovedGarrisons 风格的具体兵员模板。
+    /// true = 使用文化无关的兵种比例 + Tier 范围匹配；false = 使用按 stringId 精确指定的兵员模板（占比模式）。
     /// </summary>
     public bool UseGenericMatching { get; set; } = true;
 
     /// <summary>
-    /// ImprovedGarrisons 风格的具体兵员模板：CharacterObject.StringId -> 目标数量。
-    /// 当 <see cref="UseGenericMatching"/> 为 false 时，招募和升级会按升级树匹配这些目标兵种。
+    /// 精确兵员模板：CharacterObject.StringId -> 占比（0..1，约和为 1，自动归一化）。
+    /// 当 <see cref="UseGenericMatching"/> 为 false 时，招募和升级按 ratio × <see cref="TargetTotalCount"/>
+    /// 算每个 stringId 的目标人数；招募和升级会按升级树匹配这些目标兵种。
+    /// B7.20 起从绝对数量改为占比，避免与 TargetTotalCount 双重声明冲突。
     /// </summary>
-    public Dictionary<string, int> ExactTroopTemplate { get; set; } = new();
+    public Dictionary<string, float> ExactTroopTemplate { get; set; } = new();
 
-    /// <summary>骑兵兵种占比。Cavalry + Infantry + Archer + Crossbow + Thrower 期望约等于 1.0。</summary>
+    /// <summary>骑兵兵种占比。Cavalry + HorseArcher + Infantry + Ranged 期望约等于 1.0。</summary>
     public float CavalryRatio { get; set; } = 0.20f;
+
+    /// <summary>骑射手兵种占比。按 Bannerlord 默认 FormationClass.HorseArcher 归类。</summary>
+    public float HorseArcherRatio { get; set; } = 0.05f;
 
     /// <summary>步兵（含盾兵 / 长矛 / 双手）兵种占比。</summary>
     public float InfantryRatio { get; set; } = 0.50f;
 
-    /// <summary>弓手兵种占比。</summary>
-    public float ArcherRatio { get; set; } = 0.20f;
-
-    /// <summary>弩手兵种占比。</summary>
-    public float CrossbowRatio { get; set; } = 0.05f;
-
-    /// <summary>投掷兵（标枪 / 飞斧）占比。</summary>
-    public float ThrowerRatio { get; set; } = 0.05f;
+    /// <summary>远程兵种占比。包含默认编队为 Ranged 的弓手、弩手及其他远程兵。</summary>
+    public float RangedRatio { get; set; } = 0.25f;
 
     /// <summary>允许招募的最低 Tier（含）。通用匹配模式下作为硬边界，与 MaxTier 一起圈定可招募范围。</summary>
-    /// <remarks>B7.10: 之前还有 Tier1..6Ratio 用于按 tier 分桶；用户决策简化为只看 5 个 role 比例，
+    /// <remarks>B7.10: 之前还有 Tier1..6Ratio 用于按 tier 分桶；用户决策简化为只看 role 比例，
     /// tier 维度仅保留 MinTier/MaxTier 硬边界。</remarks>
     public int MinTier { get; set; } = 2;
 
@@ -91,8 +90,9 @@ public sealed class TownGarrisonRule
     /// <summary>当 Town.FoodChange 低于此阈值时暂停招募，避免饿城。</summary>
     public float FoodSafetyThreshold { get; set; } = -2.0f;
 
-    /// <summary>每日给驻军每个非 hero 兵员注入的固定 XP（与 vanilla DailyTroopXpBonusModel 加成叠加）。</summary>
-    public int DailyTroopXpBonus { get; set; } = 5;
+    // B7.19：DailyTroopXpBonus 字段已删除，每日驻军 XP 注入数值改为按兵营建筑等级派生
+    // （见 GarrisonXpInjector.ComputeXpFromBarracks），不再可配置 — 避免破坏游戏数值平衡。
+    // 老存档 JSON 中残留的 DailyTroopXpBonus key 会被 Newtonsoft 自动忽略并在下次保存时 drop。
 
     /// <summary>构造一份带默认值的规则实例（与各属性的 default 初始化一致）。</summary>
     public static TownGarrisonRule CreateDefault() => new TownGarrisonRule();
@@ -105,12 +105,11 @@ public sealed class TownGarrisonRule
     {
         TargetTotalCount = this.TargetTotalCount,
         UseGenericMatching = this.UseGenericMatching,
-        ExactTroopTemplate = new Dictionary<string, int>(this.ExactTroopTemplate ?? new Dictionary<string, int>()),
+        ExactTroopTemplate = new Dictionary<string, float>(this.ExactTroopTemplate ?? new Dictionary<string, float>()),
         CavalryRatio = this.CavalryRatio,
+        HorseArcherRatio = this.HorseArcherRatio,
         InfantryRatio = this.InfantryRatio,
-        ArcherRatio = this.ArcherRatio,
-        CrossbowRatio = this.CrossbowRatio,
-        ThrowerRatio = this.ThrowerRatio,
+        RangedRatio = this.RangedRatio,
         MinTier = this.MinTier,
         MaxTier = this.MaxTier,
         RestrictToFactionCultures = this.RestrictToFactionCultures,
@@ -128,6 +127,5 @@ public sealed class TownGarrisonRule
         PeacetimeMultiplier = this.PeacetimeMultiplier,
         BudgetLimit = this.BudgetLimit,
         FoodSafetyThreshold = this.FoodSafetyThreshold,
-        DailyTroopXpBonus = this.DailyTroopXpBonus,
     };
 }

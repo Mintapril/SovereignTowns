@@ -26,7 +26,7 @@ public sealed class AuditEntry
     /// <summary>UTC 时间戳。</summary>
     public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
-    /// <summary>决策类型标识，如 "send_recruiting_party", "transfer_troops", "set_patrol_order"。</summary>
+    /// <summary>决策类型标识，如 "send_recruiting_party", "transfer_troops", "create_patrol_party"。</summary>
     public string DecisionType { get; set; } = "";
 
     /// <summary>决策来源。</summary>

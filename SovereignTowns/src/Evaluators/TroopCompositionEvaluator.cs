@@ -3,13 +3,12 @@ using System.Globalization;
 using System.Text;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Roster;
-using TaleWorlds.Core;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Evaluators;
 
 /// <summary>
-/// 兵种粗分类。判定全部基于 vanilla 运行时属性（IsHero/Tier/IsMounted/IsRanged/HasThrowingWeapon），
+/// 兵种粗分类。判定主要基于 vanilla 运行时的 DefaultFormationClass，
 /// 不依赖任何 stringId 硬编码，对 RBM 等覆盖兵种 xml 的 mod 完全友好。
 /// </summary>
 public enum TroopType
@@ -18,10 +17,8 @@ public enum TroopType
     Noble = 1,
     HorseArcher = 2,
     Cavalry = 3,
-    Crossbow = 4,
-    Archer = 5,
-    Thrower = 6,
-    Infantry = 7
+    Ranged = 4,
+    Infantry = 5
 }
 
 /// <summary>
@@ -35,9 +32,7 @@ public readonly struct CompositionSnapshot
         int nobles,
         int horseArchers,
         int cavalry,
-        int archers,
-        int crossbows,
-        int throwers,
+        int ranged,
         int infantry,
         int wounded,
         int tier1To2,
@@ -49,9 +44,7 @@ public readonly struct CompositionSnapshot
         Nobles = nobles;
         HorseArchers = horseArchers;
         Cavalry = cavalry;
-        Archers = archers;
-        Crossbows = crossbows;
-        Throwers = throwers;
+        Ranged = ranged;
         Infantry = infantry;
         Wounded = wounded;
         Tier1To2 = tier1To2;
@@ -64,9 +57,7 @@ public readonly struct CompositionSnapshot
     public int Nobles { get; }
     public int HorseArchers { get; }
     public int Cavalry { get; }
-    public int Archers { get; }
-    public int Crossbows { get; }
-    public int Throwers { get; }
+    public int Ranged { get; }
     public int Infantry { get; }
     public int Wounded { get; }
     public int Tier1To2 { get; }
@@ -85,9 +76,7 @@ public readonly struct CompositionSnapshot
             TroopType.Noble       => Nobles,
             TroopType.HorseArcher => HorseArchers,
             TroopType.Cavalry     => Cavalry,
-            TroopType.Crossbow    => Crossbows,
-            TroopType.Archer      => Archers,
-            TroopType.Thrower     => Throwers,
+            TroopType.Ranged      => Ranged,
             TroopType.Infantry    => Infantry,
             _                     => 0
         };
@@ -102,9 +91,7 @@ public readonly struct CompositionSnapshot
         sb.Append(" cav=").Append(Cavalry.ToString(ci));
         sb.Append(" ha=").Append(HorseArchers.ToString(ci));
         sb.Append(" inf=").Append(Infantry.ToString(ci));
-        sb.Append(" arc=").Append(Archers.ToString(ci));
-        sb.Append(" crb=").Append(Crossbows.ToString(ci));
-        sb.Append(" thr=").Append(Throwers.ToString(ci));
+        sb.Append(" rng=").Append(Ranged.ToString(ci));
         sb.Append(" noble=").Append(Nobles.ToString(ci));
         sb.Append(" hero=").Append(Heroes.ToString(ci));
         sb.Append(" wounded=").Append(Wounded.ToString(ci));
@@ -122,44 +109,21 @@ public readonly struct CompositionSnapshot
 public static class TroopCompositionEvaluator
 {
     /// <summary>
-    /// 按粗规则把单个角色分类。判定顺序：Hero -> Tier&gt;=5 Noble -> Mounted+Ranged -> Mounted ->
-    /// Ranged+ThrowingWeapon -> Ranged+Crossbow -> Ranged(Bow) -> Infantry 兜底。
-    ///
-    /// 弓/弩区分基于 vanilla <c>Equipment.HasWeaponOfClass(WeaponClass.Crossbow)</c>（v1.3.15 验证）。
+    /// 按粗规则把单个角色分类。Hero / 高阶贵族统计优先；普通兵种委托给
+    /// <see cref="GenericTroopMatcher.GetRole"/>，即按 Bannerlord 默认编队分类。
     /// </summary>
     public static TroopType GetTroopType(CharacterObject character)
     {
         if (character is null) return TroopType.Infantry;
         if (character.IsHero) return TroopType.Hero;
         if (character.Tier >= 5) return TroopType.Noble;
-        if (character.IsMounted && character.IsRanged) return TroopType.HorseArcher;
-        if (character.IsMounted) return TroopType.Cavalry;
-        if (character.IsRanged)
+        return GenericTroopMatcher.GetRole(character) switch
         {
-            if (character.HasThrowingWeapon()) return TroopType.Thrower;
-            if (HasCrossbowWeapon(character)) return TroopType.Crossbow;
-            return TroopType.Archer;
-        }
-        return TroopType.Infantry;
-    }
-
-    /// <summary>
-    /// 判断该角色的默认战斗装备是否携带弩（区分弓兵 / 弩兵）。
-    /// 任何异常都吞掉并返回 false，绝不让分类逻辑抛出。
-    /// </summary>
-    private static bool HasCrossbowWeapon(CharacterObject character)
-    {
-        try
-        {
-            var equipment = character.FirstBattleEquipment;
-            if (equipment == null) return false;
-            return equipment.HasWeaponOfClass(WeaponClass.Crossbow);
-        }
-        catch (Exception ex)
-        {
-            Logger.Debug($"HasCrossbowWeapon threw for '{character?.StringId}': {ex.Message}");
-            return false;
-        }
+            GenericTroopRole.HorseArcher => TroopType.HorseArcher,
+            GenericTroopRole.Cavalry => TroopType.Cavalry,
+            GenericTroopRole.Ranged => TroopType.Ranged,
+            _ => TroopType.Infantry,
+        };
     }
 
     /// <summary>
@@ -172,7 +136,7 @@ public static class TroopCompositionEvaluator
         if (roster is null) return default;
 
         int heroes = 0, nobles = 0, horseArchers = 0, cavalry = 0;
-        int archers = 0, crossbows = 0, throwers = 0, infantry = 0;
+        int ranged = 0, infantry = 0;
         int tier12 = 0, tier34 = 0, tier5p = 0;
 
         var elements = roster.GetTroopRoster();
@@ -192,13 +156,9 @@ public static class TroopCompositionEvaluator
 
                 switch (GenericTroopMatcher.GetRole(ch))
                 {
-                    case GenericTroopRole.Cavalry:
-                        if (ch.IsRanged) horseArchers += n;
-                        cavalry += n;
-                        break;
-                    case GenericTroopRole.Crossbow: crossbows += n; break;
-                    case GenericTroopRole.Archer: archers += n; break;
-                    case GenericTroopRole.Thrower: throwers += n; break;
+                    case GenericTroopRole.HorseArcher: horseArchers += n; break;
+                    case GenericTroopRole.Cavalry: cavalry += n; break;
+                    case GenericTroopRole.Ranged: ranged += n; break;
                     case GenericTroopRole.Infantry: infantry += n; break;
                     default:
                         if (ch.IsHero) heroes += n;
@@ -221,9 +181,7 @@ public static class TroopCompositionEvaluator
             nobles: nobles,
             horseArchers: horseArchers,
             cavalry: cavalry,
-            archers: archers,
-            crossbows: crossbows,
-            throwers: throwers,
+            ranged: ranged,
             infantry: infantry,
             wounded: wounded,
             tier1To2: tier12,

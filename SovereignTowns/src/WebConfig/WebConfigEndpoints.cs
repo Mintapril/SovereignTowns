@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using Newtonsoft.Json;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Templates;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -88,6 +89,10 @@ internal static class WebConfigEndpoints
                 return;
             }
 
+            // HttpListener handlers run off the campaign thread. Queue any campaign-object
+            // mutations and let the next campaign tick apply them.
+            WebConfigGameThreadSync.Request("PUT /api/config");
+
             WebConfigServer.WriteJson(ctx, 200, new { ok = true });
             Logger.Info("PUT /api/config accepted and persisted");
         }
@@ -104,6 +109,8 @@ internal static class WebConfigEndpoints
         try
         {
             ConfigurationManager.Reload();
+            WebConfigGameThreadSync.Request("POST /api/reload");
+
             WebConfigServer.WriteJson(ctx, 200, new { ok = true });
         }
         catch (Exception ex)
@@ -174,21 +181,6 @@ internal static class WebConfigEndpoints
         }
     }
 
-    /// <summary>GET /api/training-templates → 内置预设规则列表（前端「应用预设」用）。</summary>
-    public static void GetTrainingTemplates(HttpListenerContext ctx)
-    {
-        try
-        {
-            var templates = TemplateManager.GetAllTemplates();
-            WebConfigServer.WriteJson(ctx, 200, new { templates });
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("GetTrainingTemplates threw", ex);
-            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
-        }
-    }
-
     /// <summary>GET /api/status → 简单运行时统计。</summary>
     public static void GetStatus(HttpListenerContext ctx)
     {
@@ -209,6 +201,21 @@ internal static class WebConfigEndpoints
         catch (Exception ex)
         {
             Logger.Error("GetStatus threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
+    /// <summary>GET /api/finance → mod 支出报告（今日/本周/全部 + 近期流水）。</summary>
+    public static void GetFinance(HttpListenerContext ctx)
+    {
+        try
+        {
+            var report = ModExpenseLedger.BuildReport();
+            WebConfigServer.WriteJson(ctx, 200, report);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetFinance threw", ex);
             WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
         }
     }

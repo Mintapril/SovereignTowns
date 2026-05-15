@@ -54,8 +54,8 @@ public sealed class RecruitingPartyComponent : CustomPartyComponent
                 return _cachedName;
             }
 
-            var settlementName = _homeSettlement?.Name?.ToString() ?? "Unknown";
-            _cachedName = new TextObject("{=ST_RecruitingPartyName}Recruiting Party of " + settlementName);
+            var settlementName = _homeSettlement?.Name?.ToString() ?? "未知";
+            _cachedName = new TextObject("{=ST_RecruitingPartyName}征兵队 - " + settlementName);
             return _cachedName;
         }
     }
@@ -136,7 +136,7 @@ public sealed class RecruitingPartyComponent : CustomPartyComponent
                 emptyPrisoners);
 
             var nameObj = new TextObject(
-                "{=ST_RecruitingPartyName}Recruiting Party of " + settlement.Name);
+                "{=ST_RecruitingPartyName}征兵队 - " + settlement.Name);
 
             var component = new RecruitingPartyComponent(
                 homeSettlement: settlement,
@@ -161,24 +161,12 @@ public sealed class RecruitingPartyComponent : CustomPartyComponent
                 Logger.Error($"RecruitingPartyComponent.CreateForTown: MobileParty.CreateParty returned null for '{stringId}'");
                 return null;
             }
+            // B7.22：强制 0 攻击性 — 防自家征兵队主动招惹敌方 / 与玩家产生冲突 dialog
+            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
 
-            // 资金注入：从 town 自身扣除。GiveGoldAction 内部会处理 overdraw（town 不够则给实际值）。
-            if (initialGold > 0)
-            {
-                try
-                {
-                    // 2026-05-12 审查 A-WARN：显式 disableNotification=true，
-                    // 否则玩家屏幕每次创建招募队都会弹"settlement 给了 party N 金币"通知。
-                    GiveGoldAction.ApplyForSettlementToParty(settlement, mobileParty.Party, initialGold, disableNotification: true);
-                }
-                catch (Exception goldEx)
-                {
-                    // 资金注入失败不致命：队伍仍可使用 0 金币运转，由 lifecycle 后续兜底
-                    Logger.Error(
-                        $"RecruitingPartyComponent.CreateForTown: failed to fund party '{stringId}' with {initialGold} from '{settlement.StringId}'",
-                        goldEx);
-                }
-            }
+            // initialGold 参数保留作为契约稳定（B7.27：实际扣费已移到 ModTreasury，不再从城金库注入 party purse）
+            // 调用方（RecruitmentManager.TryDispatchRecruiter）已通过 ModTreasury 完成扣费；
+            // 此处不再调用 GiveGoldAction.ApplyForSettlementToParty，避免双重扣款。
 
             Logger.Info(
                 $"RecruitingPartyComponent: created '{stringId}' for town '{settlement.StringId}' (owner={ownerLeader.Name}, gold={initialGold})");

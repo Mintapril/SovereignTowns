@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using SovereignTowns.Audit;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
@@ -126,7 +127,6 @@ public static class TroopUpgradeService
 
             int budgetRemaining = budgetCap;
             var partyBase = garrisonParty.Party;
-            var settlement = homeTown.Settlement;
 
             foreach (var elem in candidates)
             {
@@ -198,7 +198,19 @@ public static class TroopUpgradeService
                         break;
                     }
 
-                    // 执行兵员置换：从原兵种扣 1，目标兵种 +1
+                    // B7.27：升级金币改走玩家个人金币（不再从城金库），统一记账走 ModTreasury。
+                    // AI clan 升级跳过扣费（AI 经济保持原 vanilla 行为）。
+                    if (goldCost > 0 && homeTown.OwnerClan == Clan.PlayerClan)
+                    {
+                        bool charged = ModTreasury.Charge(ExpenseCategory.Upgrade, goldCost, $"upgrade {ch.StringId}->{target.StringId} town={homeTown.Settlement.StringId}");
+                        if (!charged)
+                        {
+                            skipped++;
+                            continue;
+                        }
+                    }
+
+                    // 执行兵员置换：从原兵种扣 1，目标兵种 +1。扣费已成功，避免免费升级。
                     roster.RemoveTroop(ch, 1, default, 0);
                     roster.AddToCounts(target, 1);
 
@@ -210,20 +222,6 @@ public static class TroopUpgradeService
                         var newXp = remainingXp - xpCost;
                         if (newXp < 0) newXp = 0;
                         roster.SetElementXp(idx, newXp);
-                    }
-
-                    // 扣金币：vanilla GiveGoldAction.amount 不支持负数；party→settlement 表示 garrison 付费给城。
-                    // GarrisonParty.PartyTradeGold 实务上由游戏维护，这一步可能因为驻军金库不足而部分扣；任何异常吞掉不阻塞升级流。
-                    if (goldCost > 0)
-                    {
-                        try
-                        {
-                            GiveGoldAction.ApplyForPartyToSettlement(partyBase, settlement, goldCost, disableNotification: true);
-                        }
-                        catch (Exception goldEx)
-                        {
-                            Logger.Warn($"TroopUpgradeService: gold deduction skipped for upgrade '{ch.StringId}'→'{target.StringId}' cost={goldCost}: {goldEx.Message}");
-                        }
                     }
 
                     upgraded++;

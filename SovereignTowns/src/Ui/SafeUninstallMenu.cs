@@ -19,8 +19,8 @@ namespace SovereignTowns.Ui;
 /// 仅在玩家所在 settlement 为玩家自有 Town 时显示。点击后：
 ///   1) 销毁本 Mod 创建的所有 <see cref="RecruitingPartyComponent"/> /
 ///      <see cref="TransferPartyComponent"/> 队伍；
-///   2) 销毁玩家自有 town 的 <see cref="PatrolPartyComponent"/> 队伍
-///      (MVP 5 简化：不区分本 Mod 创建与 vanilla 创建)；
+///   2) 销毁本 Mod 创建的 <see cref="PatrolPartyComponent"/> 队伍
+///      （stringId 前缀 <c>st_patrol_</c>；兼容旧行为仍清玩家自家巡逻队）；
 ///   3) 还原玩家自有 Town 的 <see cref="Town.GarrisonAutoRecruitmentIsEnabled"/> = true；
 ///   4) 通过 <see cref="DecisionAuditLogger"/> 记录一条 SafeUninstall 审计；
 ///   5) 返回 "town" 菜单，避免把玩家踢回大地图。
@@ -51,7 +51,7 @@ public static class SafeUninstallMenu
             starter.AddGameMenuOption(
                 menuId: "town",
                 optionId: "sovereign_towns_uninstall",
-                optionText: "{=ST_SU}Sovereign Towns: 安全卸载向导",
+                optionText: "{=ST_SU}主权城镇：安全卸载向导",
                 condition: new GameMenuOption.OnConditionDelegate(IsAvailable),
                 consequence: new GameMenuOption.OnConsequenceDelegate(OnSelected),
                 isLeave: false,
@@ -123,16 +123,21 @@ public static class SafeUninstallMenu
                 }
             }
 
-            // 2) 销毁玩家 owner clan 拥有的 PatrolPartyComponent 队伍。
-            //    MVP 5 简化：vanilla 与 Mod 创建无法区分，全部销毁；玩家可通过 vanilla 菜单重新生成。
+            // 2) 销毁 ST 创建的 PatrolPartyComponent 队伍。历史版本曾可能给 AI 创建 st_patrol_*，
+            //    所以按 stringId 前缀清全图；兼容旧行为仍清玩家自家巡逻队。
             var patrolCopy = MobileParty.AllPatrolParties.ToList();
             foreach (var p in patrolCopy)
             {
                 try
                 {
-                    if (p?.PartyComponent is PatrolPartyComponent pp
-                        && pp.HomeSettlement?.OwnerClan == Clan.PlayerClan)
+                    if (p?.PartyComponent is PatrolPartyComponent pp)
                     {
+                        bool stCreated = false;
+                        try { stCreated = (p.StringId ?? "").StartsWith("st_patrol_", StringComparison.Ordinal); }
+                        catch { stCreated = false; }
+                        bool legacyPlayerPatrol = pp.HomeSettlement?.OwnerClan == Clan.PlayerClan;
+                        if (!stCreated && !legacyPlayerPatrol) continue;
+
                         if (p.IsActive)
                         {
                             DisbandPartyAction.StartDisband(p);
@@ -146,21 +151,67 @@ public static class SafeUninstallMenu
                 }
             }
 
-            // 3) 还原玩家自有 Town 的自动招募。
-            foreach (var t in Town.AllTowns)
+            // 2.5) B7.26：清空所有 clan 的 patrol scheduler 状态。
+            //      虽然 SyncData 在卸载后自然不再写盘，但显式 clear 避免存档残留。
+            try
+            {
+                var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
+                if (registry != null)
+                {
+                    foreach (var mgr in registry.AllManagers)
+                    {
+                        try { mgr?.PatrolScheduler?.NotifyAllLost(); }
+                        catch (Exception ex) { Logger.Warn("uninstall: NotifyAllLost on single scheduler failed: " + ex.Message); }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("uninstall: NotifyAllLost iteration failed: " + ex.Message);
+            }
+
+            // 2.6) B7.27：清空所有 clan 的 recruiter scheduler + ModExpenseLedger
+            try
+            {
+                var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
+                if (registry != null)
+                {
+                    foreach (var mgr in registry.AllManagers)
+                    {
+                        try { mgr?.RecruiterScheduler?.NotifyAllLost(); }
+                        catch (Exception ex) { Logger.Warn("uninstall: RecruiterScheduler.NotifyAllLost failed: " + ex.Message); }
+                    }
+                }
+                SovereignTowns.Economy.ModExpenseLedger.Clear();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn("uninstall: recruiter+ledger cleanup failed: " + ex.Message);
+            }
+
+            // 3) 还原所有 Town / Castle 的 GarrisonAutoRecruitmentIsEnabled。
+            //    B7.14：之前只还原 player 拥有的 Town，遗漏：
+            //      (a) player 拥有的 Castle（VanillaSuppressionManager 现在也覆盖 castle）
+            //      (b) AI 拥有的全部 Town/Castle（若曾开过 ApplyToAiSettlementsToo）
+            //    卸载是终态操作，无脑全图 restore 才能让 AI 阵营恢复 vanilla 行为。
+            foreach (var s in Settlement.All)
             {
                 try
                 {
-                    if (t != null && t.OwnerClan == Clan.PlayerClan)
+                    if (s == null) continue;
+                    if (!(s.IsTown || s.IsCastle)) continue;
+                    var t = s.Town;
+                    if (t == null) continue;
+                    if (!t.GarrisonAutoRecruitmentIsEnabled)
                     {
                         t.GarrisonAutoRecruitmentIsEnabled = true;
                         restoredTowns++;
                     }
                 }
-                catch { /* 单座 town 失败不影响其他 */ }
+                catch { /* 单座 settlement 失败不影响其他 */ }
             }
 
-            var msg = $"Sovereign Towns 安全卸载完成。销毁本 Mod 队伍 {destroyedParties} 支；还原 {restoredTowns} 座城镇的自动招募。请在启动器中禁用本 Mod 并重新读档。";
+            var msg = $"主权城镇：安全卸载完成。销毁本 Mod 队伍 {destroyedParties} 支；还原 {restoredTowns} 座城镇的自动招募。请在启动器中禁用本 Mod 并重新读档。";
             SafeDisplay(msg, Colors.Yellow);
 
             try
@@ -181,7 +232,7 @@ public static class SafeUninstallMenu
         catch (Exception ex)
         {
             Logger.Error("SafeUninstall failed", ex);
-            SafeDisplay("Sovereign Towns 安全卸载出错，请查日志。", Colors.Red);
+            SafeDisplay("主权城镇：安全卸载出错，请查日志。", Colors.Red);
         }
         finally
         {

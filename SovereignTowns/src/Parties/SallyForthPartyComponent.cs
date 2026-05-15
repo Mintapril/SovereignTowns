@@ -66,8 +66,8 @@ public sealed class SallyForthPartyComponent : CustomPartyComponent
                 return _cachedName;
             }
 
-            var settlementName = _homeSettlement?.Name?.ToString() ?? "Unknown";
-            _cachedName = new TextObject("{=ST_SallyForthPartyName}Sally Forth of " + settlementName);
+            var settlementName = _homeSettlement?.Name?.ToString() ?? "未知";
+            _cachedName = new TextObject("{=ST_SallyForthPartyName}出击队 - " + settlementName);
             return _cachedName;
         }
     }
@@ -150,7 +150,7 @@ public sealed class SallyForthPartyComponent : CustomPartyComponent
                 emptyPrisoners);
 
             var nameObj = new TextObject(
-                "{=ST_SallyForthPartyName}Sally Forth of " + settlement.Name);
+                "{=ST_SallyForthPartyName}出击队 - " + settlement.Name);
 
             var component = new SallyForthPartyComponent(
                 homeSettlement: settlement,
@@ -176,23 +176,12 @@ public sealed class SallyForthPartyComponent : CustomPartyComponent
                 Logger.Error($"SallyForthPartyComponent.CreateForTown: MobileParty.CreateParty returned null for '{stringId}'");
                 return null;
             }
+            // B7.22：0 攻击性 — sally 仍会攻击指定 target（通过 SetMoveGoToPoint），但不会半路追散兵
+            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
 
-            // 资金注入：从 town 自身扣除。GiveGoldAction 内部会处理 overdraw。
-            if (initialGold > 0)
-            {
-                try
-                {
-                    // 2026-05-12 审查 A-WARN：显式 disableNotification=true，避免玩家屏幕骚扰。
-                    TaleWorlds.CampaignSystem.Actions.GiveGoldAction.ApplyForSettlementToParty(settlement, mobileParty.Party, initialGold, disableNotification: true);
-                }
-                catch (Exception goldEx)
-                {
-                    // 资金注入失败不致命：队伍仍可使用 0 金币运转，由 lifecycle 后续兜底
-                    Logger.Error(
-                        $"SallyForthPartyComponent.CreateForTown: failed to fund party '{stringId}' with {initialGold} from '{settlement.StringId}'",
-                        goldEx);
-                }
-            }
+            // initialGold 参数保留作为契约稳定（B7.27：实际扣费已移到 ModTreasury，不再从城金库注入 party purse）
+            // 调用方（SallyForthManager.TryCreateSallyParty）已通过 ModTreasury 完成扣费；
+            // 此处不再调用 GiveGoldAction.ApplyForSettlementToParty，避免双重扣款。
 
             var targetDesc = initialTarget?.Name?.ToString() ?? "<none>";
             Logger.Info(

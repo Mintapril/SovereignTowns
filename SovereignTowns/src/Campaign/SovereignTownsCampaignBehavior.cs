@@ -1,8 +1,9 @@
 using System;
+using System.Collections.Generic;
+using Newtonsoft.Json;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
-using SovereignTowns.Integration;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Llm;
 using SovereignTowns.Managers;
@@ -12,6 +13,7 @@ using SovereignTowns.Recruitment;
 using SovereignTowns.SallyForth;
 using SovereignTowns.Transfer;
 using SovereignTowns.Ui;
+using SovereignTowns.WebConfig;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -30,7 +32,7 @@ namespace SovereignTowns.Campaign;
 public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 {
     private PartyLifecycleManager? _lifecycle;
-    private CapitalManager? _capitalManager;
+    private CapitalRegistry? _capitalRegistry;
     private RecruitmentManager? _recruitmentManager;
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
     private TownGarrisonManager? _townGarrisonManager;
@@ -38,14 +40,16 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private GarrisonTransferManager? _transferManager;
     private PatrolManager? _patrolManager;
     private SallyForthManager? _sallyForthManager;
+    private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
     private LLMReasoningService? _llmService;
     private LLMConfig _llmConfig = new LLMConfig();
 
     /// <summary>
-    /// SyncData 在 OnSessionLaunched 之前运行 — 此时 <see cref="_capitalManager"/> 还未构造。
-    /// 暂存从存档读到的 stringId，待 OnSessionLaunched 创建 <see cref="CapitalManager"/> 时回灌。
+    /// SyncData(load) → OnSessionLaunched 之间的暂存：clanStringId → settlementStringId。
+    /// 用户 2026-05-14 二次决策：仅回补"首府"这一项 mod 自定义存档；scheduler/ledger 仍瞬态。
+    /// 玩家 + AI 全在此 dict（取决于存档当时 ApplyToAiSettlementsToo 是否开启）。
     /// </summary>
-    private string? _pendingCapitalStringId;
+    private Dictionary<string, string>? _pendingCapitals;
 
     public override void RegisterEvents()
     {
@@ -72,15 +76,55 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
     public override void SyncData(IDataStore dataStore)
     {
-        // 仅持久化首府 settlement StringId；其余 Manager 状态从 vanilla state 重建。
-        // 注意：SyncData 在 OnSessionLaunched 之前运行，_capitalManager 此时仍为 null —
-        // 写入路径：若 _capitalManager 已构造则取最新值，否则回退到 _pendingCapitalStringId（旧存档→新加载循环）；
-        // 读取路径：把读到的 stringId 暂存到 _pendingCapitalStringId，OnSessionLaunched 创建 CapitalManager 时再回灌。
-        string? capStringId = _capitalManager?.GetCapitalStringId() ?? _pendingCapitalStringId;
-        dataStore.SyncData("st_capital_stringid", ref capStringId);
-        if (dataStore.IsLoading)
+        // 仅回补"首府"持久化（用户 2026-05-14 二次决策）。
+        // Scheduler 历史 / Finance ledger / Snapshot 仍不存 — 重载后由 daily/hourly + RebuildFromCampaign 重建。
+        // vanilla [SaveableField] / SovereignTownsTypeDefiner 不在此方法范围。
+        //
+        // 序列化形式：单一 key "st_capitals_json"，值是 Dictionary<clanStringId, settlementStringId> 的 JSON。
+        // 失败任何一步都落 _pendingCapitals = null（不阻断 mod 启动；Initialize() 走随机抽取兜底）。
+        try
         {
-            _pendingCapitalStringId = capStringId;
+            string capitalsJson = string.Empty;
+            if (dataStore.IsSaving)
+            {
+                try
+                {
+                    var dict = _capitalRegistry?.ExportCapitals() ?? new Dictionary<string, string>();
+                    capitalsJson = JsonConvert.SerializeObject(dict);
+                }
+                catch (Exception exSave)
+                {
+                    Logger.Error("SovereignTowns: SyncData export failed; writing empty payload", exSave);
+                    capitalsJson = string.Empty;
+                }
+            }
+
+            dataStore.SyncData("st_capitals_json", ref capitalsJson);
+
+            if (dataStore.IsLoading)
+            {
+                if (!string.IsNullOrEmpty(capitalsJson))
+                {
+                    try
+                    {
+                        _pendingCapitals = JsonConvert.DeserializeObject<Dictionary<string, string>>(capitalsJson);
+                    }
+                    catch (Exception exLoad)
+                    {
+                        Logger.Error("SovereignTowns: failed to parse st_capitals_json; falling back to empty", exLoad);
+                        _pendingCapitals = null;
+                    }
+                }
+                else
+                {
+                    _pendingCapitals = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("SovereignTowns: SyncData(st_capitals_json) failed", ex);
+            _pendingCapitals = null;
         }
     }
 
@@ -91,6 +135,14 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             ConfigurationManager.Initialize();
             DecisionAuditLogger.Initialize();
 
+            // B7.1 (fix 2026-05-14): dump troops.json HERE, not in OnGameStart — by the time
+            // OnSessionLaunched fires the full CharacterObject pool from spnpccharacters.xml
+            // (and every other mod's troop xml) is registered with MBObjectManager. Earlier
+            // attempts at OnGameStart produced count=0 because that hook runs before campaign
+            // object xml ingestion.
+            try { SovereignTowns.WebConfig.TroopDumper.Dump(); }
+            catch (Exception ex) { Logger.Error("TroopDumper.Dump failed (swallowed)", ex); }
+
             _lifecycle = new PartyLifecycleManager();
             _lifecycle.Initialize();
 
@@ -99,15 +151,22 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // Campaign 已 finalized，AddModel 会破坏内部 model list 致后续 vanilla 计算崩溃。
             // 2026-05-13 启动崩溃修复：已搬到 SovereignTownsSubModule.OnGameStart。
 
-            _capitalManager = new CapitalManager(_lifecycle);
-            _capitalManager.RestoreFromStringId(_pendingCapitalStringId);
-            _capitalManager.Initialize();
-            _pendingCapitalStringId = null; // 已回灌，清理暂存
+            // B7.15：CapitalManager 多 clan 化 — registry 接管 player + 可选 AI。
+            _capitalRegistry = new CapitalRegistry(_lifecycle);
+            // 2026-05-14 Task X：把 SyncData 暂存的 clan→capital 映射喂给 registry，
+            // 让 EnsureForClan 在 Initialize 内走"沿用持久化 stringId"分支；为空 → 走随机抽取兜底。
+            if (_pendingCapitals != null)
+            {
+                _capitalRegistry.RestoreCapitals(_pendingCapitals);
+                _pendingCapitals = null;
+            }
+            _capitalRegistry.Initialize();
 
             _transferManager = new GarrisonTransferManager(_lifecycle);
-            _castleSupportManager = new CastleSupportManager(_capitalManager, _transferManager);
-            _patrolManager = new PatrolManager(_lifecycle, _capitalManager);
-            _sallyForthManager = new SallyForthManager(_lifecycle, _capitalManager);
+            _castleSupportManager = new CastleSupportManager(_capitalRegistry, _transferManager);
+            // B7.27：sally 先构造，patrol 接受 sally 引用以做支援判定
+            _sallyForthManager = new SallyForthManager(_lifecycle, _capitalRegistry);
+            _patrolManager = new PatrolManager(_lifecycle, _capitalRegistry, _sallyForthManager);
 
             // 2026-05-12 审查 B-WarPartyComponent.OnFinalize 修复：sally party 战场被歼灭时
             // 由 vanilla 直接 destroy → roster 残留兵员丢失；订阅 MobilePartyDestroyed 抢救存活兵回 home。
@@ -119,9 +178,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             }
             catch (Exception ex) { Logger.Error("Failed to subscribe MobilePartyDestroyed for SallyForth rescue", ex); }
 
-            DiagnosticGameMenu.Register(campaignGameStarter, _capitalManager);
+            // DiagnosticGameMenu 仍只关心 player capital（UI 玩家视角）— 传 registry，菜单内部走 GetForPlayer。
+            DiagnosticGameMenu.Register(campaignGameStarter, _capitalRegistry);
+            // B7.22：自家 party encounter 拦截 — 玩家碰到征兵队 / 调拨队等会进入对话而非战斗界面
+            STPartyDialogRegistration.Register(campaignGameStarter);
             SafeUninstallMenu.Register(campaignGameStarter);
-            MCMIntegration.TryRegister();
 
             // B7: ribbon retired. Player config is now web-only via DiagnosticGameMenu's
             // "打开网页控制面板" town menu option + WebConfigServer.
@@ -135,17 +196,21 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             };
             _llmService = new LLMReasoningService(provider, _llmConfig);
 
-            _recruitmentManager = new RecruitmentManager(_lifecycle, _capitalManager);
-            _prisonerRecruitmentManager = new PrisonerRecruitmentManager();
+            _recruitmentManager = new RecruitmentManager(_lifecycle, _capitalRegistry);
+            _prisonerRecruitmentManager = new PrisonerRecruitmentManager(_capitalRegistry);
             _townGarrisonManager = new TownGarrisonManager(
                 recruitmentManager: _recruitmentManager,
                 llmService: _llmService,
-                capitalManager: _capitalManager,
+                capitalRegistry: _capitalRegistry,
                 castleSupportManager: _castleSupportManager,
-                transferManager: _transferManager,
                 lifecycle: _lifecycle);
 
-            Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (8 个, 含 Capital + SallyForth) ConfigVersion={ConfigurationManager.Current.ConfigVersion} MCM={MCMIntegration.GetDiagnosticInfo()} LLM=provider:{provider.Name} configured:{provider.IsConfigured}");
+            // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
+            // 时序：必须在 RecruitmentManager 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
+            _vanillaSuppression = new SovereignTowns.SettlementManagement.VanillaSuppressionManager();
+            _vanillaSuppression.Initialize();
+
+            Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (9 个, 含 Capital + SallyForth + VanillaSuppression) ConfigVersion={ConfigurationManager.Current.ConfigVersion} LLM=provider:{provider.Name} configured:{provider.IsConfigured}");
             Logger.Info($"  features: AutoGarrison={ConfigurationManager.Current.EnabledFeatures.AutoGarrison} " +
                         $"AutoRecruitment={ConfigurationManager.Current.EnabledFeatures.AutoRecruitment} " +
                         $"AutoPatrol={ConfigurationManager.Current.EnabledFeatures.AutoPatrol} " +
@@ -167,13 +232,13 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 {
                     string url = SovereignTowns.WebConfig.WebConfigServer.GetBrowserUrl();
                     InformationManager.DisplayMessage(new InformationMessage(
-                        $"[Sovereign Towns] 网页控制面板：{url}", Colors.Green));
+                        $"[主权城镇] 网页控制面板：{url}", Colors.Green));
                     Logger.Info($"WebConfigServer URL: {url}");
                 }
                 else
                 {
                     InformationManager.DisplayMessage(new InformationMessage(
-                        "[Sovereign Towns] 网页控制面板未启动（端口冲突/沙盒拒绝），详见日志。", Colors.Yellow));
+                        "[主权城镇] 网页控制面板未启动（端口冲突/沙盒拒绝），详见日志。", Colors.Yellow));
                 }
             }
             catch (Exception ex) { Logger.Error("WebConfig URL announce failed (swallowed)", ex); }
@@ -205,6 +270,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            DrainWebConfigSync();
             _townGarrisonManager?.EvaluateAll();
 
             // CastleSupport 调拨决策
@@ -238,6 +304,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            DrainWebConfigSync();
             // 首行性能：每个 Manager 内部都有 PartyComponent 类型过滤
             _recruitmentManager?.OnHourlyTickParty(party);
             _transferManager?.OnHourlyTickParty(party);
@@ -254,6 +321,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            DrainWebConfigSync();
             _patrolManager?.OnHourlyTickSettlement(settlement);
             _sallyForthManager?.OnHourlyTickSettlement(settlement);
         }
@@ -271,9 +339,18 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            DrainWebConfigSync();
             _sallyForthManager?.OnHourlyTickSettlement(settlement);
             // 用户明确：XP 注入 + 俘虏招募 + 升级触发 仅在首府进行；非首府/城堡走 CastleSupport 调拨。
-            var capitalSettlement = _capitalManager?.GetCapitalSettlement();
+            // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
+            var mgr = _capitalRegistry?.GetForSettlement(settlement);
+            var capitalSettlement = mgr?.GetCapitalSettlement();
+            // B7.20：诊断日志 — 让玩家在 ModLogs 直接看到 daily tick 是否走到首府路径
+            if (settlement != null && (settlement.IsTown || settlement.IsCastle) && settlement.OwnerClan == Clan.PlayerClan)
+            {
+                Logger.Info($"OnDailyTickSettlement '{settlement.Name}' (ownerClan={settlement.OwnerClan?.StringId}): " +
+                            $"registry hasMgr={mgr != null} capital={capitalSettlement?.Name?.ToString() ?? "<none>"} matches={(capitalSettlement == settlement)}");
+            }
             if (capitalSettlement != null && settlement == capitalSettlement)
             {
                 Upgrades.GarrisonXpInjector.GiveDailyXpToGarrison(settlement);
@@ -304,6 +381,12 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         }
     }
 
+    private static void DrainWebConfigSync()
+    {
+        try { WebConfigGameThreadSync.Drain(); }
+        catch (Exception ex) { Logger.Error("WebConfigGameThreadSync.Drain failed", ex); }
+    }
+
     /// <summary>
     /// settlement 易主回调（vanilla
     /// <c>CampaignEvents.OnSettlementOwnerChangedEvent</c>，签名
@@ -320,7 +403,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
-            _capitalManager?.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);
+            DrainWebConfigSync();
+            // B7.15 multi-clan：registry 内部转发到 oldOwner / newOwner clan 的 manager，
+            // 并在 AI toggle 开启时给新获得城的 AI clan 自动 EnsureForClan。
+            _capitalRegistry?.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);
         }
         catch (Exception ex)
         {

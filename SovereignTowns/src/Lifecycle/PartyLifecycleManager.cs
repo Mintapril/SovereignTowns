@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using SovereignTowns.Common;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
@@ -27,6 +28,7 @@ namespace SovereignTowns.Lifecycle;
 public sealed class PartyLifecycleManager
 {
     // ────────── 上限（按城镇 × kind） ──────────
+    /// <summary>B7.27 起：KindRecruiter 不再使用此常量，改用 ComputePatrolCapForHome。常量保留作为 fallback / 历史参考。</summary>
     public const int MaxRecruitersPerTown = 1;
     public const int MaxTransfersPerTown  = 1;
     public const int MaxSallyForthPerTown = 1;
@@ -82,33 +84,41 @@ public sealed class PartyLifecycleManager
             }
             if (home is null)
             {
-                Logger.Warn($"RegisterTrackedParty: home is null for party '{SafeName(party)}', ignored");
+                Logger.Warn($"RegisterTrackedParty: home is null for party '{PartyNameFormatter.SafeName(party)}', ignored");
                 return;
             }
             if (string.IsNullOrEmpty(kind))
             {
-                Logger.Warn($"RegisterTrackedParty: kind is null/empty for party '{SafeName(party)}', ignored");
+                Logger.Warn($"RegisterTrackedParty: kind is null/empty for party '{PartyNameFormatter.SafeName(party)}', ignored");
                 return;
             }
 
-            var meta = new TrackedPartyMeta(home, kind, CampaignTime.Now, party.TargetSettlement, SafeMemberCount(party));
+            var meta = new TrackedPartyMeta(
+                home,
+                kind,
+                CampaignTime.Now,
+                party.TargetSettlement,
+                PartyNameFormatter.SafeMemberCount(party),
+                SafeActualClan(party, home));
             _tracked[party] = meta;
-            Logger.Info($"RegisterTrackedParty: '{SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
+            Logger.Info($"RegisterTrackedParty: '{PartyNameFormatter.SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
         }
         catch (Exception ex)
         {
-            Logger.Error($"RegisterTrackedParty failed for party '{SafeName(party)}'", ex);
+            Logger.Error($"RegisterTrackedParty failed for party '{PartyNameFormatter.SafeName(party)}'", ex);
         }
     }
 
-    /// <summary>查询：某城镇当前是否还能再创建一支某 kind 的队伍（未达上限）。</summary>
+    /// <summary>查询：某城镇当前是否还能再创建一支某 kind 的队伍（未达上限）。
+    /// B7.16：Patrol 上限改为按 town 的 Garrison Barracks 建筑等级缩放（无建筑=1，每升一级 +1）。
+    /// 其他 kind 仍走静态常量。</summary>
     public bool CanCreateAnotherParty(Settlement home, string kind)
     {
         try
         {
             if (home is null || string.IsNullOrEmpty(kind)) return false;
             var active = CountActive(home, kind);
-            var max = GetMaxFor(kind);
+            var max = GetMaxFor(home, kind);
             return active < max;
         }
         catch (Exception ex)
@@ -117,6 +127,9 @@ public sealed class PartyLifecycleManager
             return false;
         }
     }
+
+    /// <summary>外露：让 PatrolManager 之类查询某城镇当前 kind 的硬上限。</summary>
+    public int GetCapFor(Settlement home, string kind) => GetMaxFor(home, kind);
 
     /// <summary>查询：某城镇当前指定 kind 的 active 队伍数。</summary>
     public int CountActive(Settlement home, string kind)
@@ -171,21 +184,21 @@ public sealed class PartyLifecycleManager
                             {
                                 var home = rp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, SafeMemberCount(party));
+                                _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                                 recruiters++;
                             }
                             else if (comp is TransferPartyComponent tp)
                             {
                                 var home = tp.Source;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, SafeMemberCount(party));
+                                _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                                 transfers++;
                             }
                             else if (comp is SallyForthPartyComponent sp)
                             {
                                 var home = sp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, SafeMemberCount(party));
+                                _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                                 sallyforths++;
                             }
                             else if (comp is DismissPartyComponent dp)
@@ -194,14 +207,14 @@ public sealed class PartyLifecycleManager
                                 // can sweep in-flight dismiss parties when source town falls.
                                 var home = dp.DismissedFromSettlement;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindDismiss, now, party.TargetSettlement, SafeMemberCount(party));
+                                _tracked[party] = new TrackedPartyMeta(home, KindDismiss, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                                 dismisses++;
                             }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略
                         }
                         catch (Exception oneEx)
                         {
-                            Logger.Error($"RebuildFromCampaign: failed to register custom party '{SafeName(party)}'", oneEx);
+                            Logger.Error($"RebuildFromCampaign: failed to register custom party '{PartyNameFormatter.SafeName(party)}'", oneEx);
                         }
                     }
                 }
@@ -227,12 +240,12 @@ public sealed class PartyLifecycleManager
                             var home = pp.HomeSettlement;
                             if (home == null) continue;
                             if (home.OwnerClan != Clan.PlayerClan) continue; // 关键过滤
-                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, SafeMemberCount(party));
+                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                             patrols++;
                         }
                         catch (Exception oneEx)
                         {
-                            Logger.Error($"RebuildFromCampaign: failed to register patrol party '{SafeName(party)}'", oneEx);
+                            Logger.Error($"RebuildFromCampaign: failed to register patrol party '{PartyNameFormatter.SafeName(party)}'", oneEx);
                         }
                     }
                 }
@@ -257,14 +270,27 @@ public sealed class PartyLifecycleManager
     ///   - 随后 DisbandPartyAction.StartDisband 解散
     /// 单 party 失败 try-catch 不影响整体；结束清空 _tracked。
     /// </summary>
-    public void MigrateAllOrDisband(Settlement? newCapital)
+    /// <summary>
+    /// 把 *指定氏族* 名下的全部 in-flight party 迁移到该氏族的新首府或解散。
+    /// B7.15 多 clan 化：必须传入 <paramref name="ownerClan"/>；只处理创建时属于该氏族的
+    /// party，避免跨氏族污染（旧版本无过滤，AI 失守首府会把玩家 / 其他 AI 的 party 全部清空）。
+    /// 不能用当前 home.OwnerClan 判定，因为易主事件触发时 home 通常已经归新主人。
+    /// 失败 try-catch 不影响整体；只 Remove 处理过的 entry，不再 _tracked.Clear()。
+    /// </summary>
+    public void MigrateAllOrDisband(Clan ownerClan, Settlement? newCapital)
     {
+        if (ownerClan is null)
+        {
+            Logger.Warn("MigrateAllOrDisband: ownerClan is null, refusing to migrate (would risk cross-clan contamination)");
+            return;
+        }
         try
         {
             var newGarrison = newCapital?.Town?.GarrisonParty;
             var newCapitalName = newCapital?.Name?.ToString() ?? "<none>";
             int migratedTroops = 0;
             int partiesDisbanded = 0;
+            int skippedOtherClan = 0;
 
             // 拷贝 keys 快照，避免边迭代边修改
             var snapshot = new List<MobileParty>(_tracked.Keys);
@@ -273,16 +299,25 @@ public sealed class PartyLifecycleManager
                 try
                 {
                     if (party == null) continue;
+                    if (!_tracked.TryGetValue(party, out var meta)) continue;
+
+                    // B7.15 关键过滤：只动创建时属于本氏族的 party。
+                    // 不能看 meta.Home.OwnerClan：SettlementOwnerChanged 触发时 home 可能已经易主。
+                    if (meta.OwnerClan != ownerClan)
+                    {
+                        skippedOtherClan++;
+                        continue;
+                    }
 
                     // B1 #6.B: dismiss parties evaporate — do not migrate roster to new garrison
-                    if (_tracked.TryGetValue(party, out var meta) && meta.Kind == KindDismiss)
+                    if (meta.Kind == KindDismiss)
                     {
                         if (party.IsActive)
                         {
                             try { DestroyPartyAction.Apply(null, party); }
                             catch (Exception destroyEx)
                             {
-                                Logger.Error($"MigrateAllOrDisband: dismiss-party DestroyPartyAction failed for '{SafeName(party)}'", destroyEx);
+                                Logger.Error($"MigrateAllOrDisband: dismiss-party DestroyPartyAction failed for '{PartyNameFormatter.SafeName(party)}'", destroyEx);
                             }
                             partiesDisbanded++;
                         }
@@ -306,14 +341,14 @@ public sealed class PartyLifecycleManager
                         DisbandPartyAction.StartDisband(party);
                         partiesDisbanded++;
                     }
+                    _tracked.Remove(party);
                 }
                 catch (Exception oneEx)
                 {
-                    Logger.Error($"MigrateAllOrDisband: failed for party '{SafeName(party)}'", oneEx);
+                    Logger.Error($"MigrateAllOrDisband: failed for party '{PartyNameFormatter.SafeName(party)}'", oneEx);
                 }
             }
-            _tracked.Clear();
-            Logger.Info($"MigrateAllOrDisband: migrated_troops={migratedTroops} parties_disbanded={partiesDisbanded} newCapital='{newCapitalName}'");
+            Logger.Info($"MigrateAllOrDisband(clan={ownerClan.StringId}): migrated_troops={migratedTroops} parties_disbanded={partiesDisbanded} skipped_other_clan={skippedOtherClan} newCapital='{newCapitalName}'");
         }
         catch (Exception ex)
         {
@@ -352,7 +387,7 @@ public sealed class PartyLifecycleManager
                             try { DestroyPartyAction.Apply(null, party); }
                             catch (Exception destroyEx)
                             {
-                                Logger.Error($"MigrateByHomeSettlement: dismiss-party DestroyPartyAction failed for '{SafeName(party)}'", destroyEx);
+                                Logger.Error($"MigrateByHomeSettlement: dismiss-party DestroyPartyAction failed for '{PartyNameFormatter.SafeName(party)}'", destroyEx);
                             }
                             disbanded++;
                         }
@@ -380,7 +415,7 @@ public sealed class PartyLifecycleManager
                 }
                 catch (Exception oneEx)
                 {
-                    Logger.Error($"MigrateByHomeSettlement: failed for party '{SafeName(party)}'", oneEx);
+                    Logger.Error($"MigrateByHomeSettlement: failed for party '{PartyNameFormatter.SafeName(party)}'", oneEx);
                 }
             }
             Logger.Info($"MigrateByHomeSettlement: lost='{lostSettlement.Name}' migrated={migrated} disbanded={disbanded} fallback='{fallbackName}'");
@@ -399,12 +434,27 @@ public sealed class PartyLifecycleManager
         {
             if (_tracked.Remove(party))
             {
-                Logger.Info($"UntrackParty: '{SafeName(party)}' removed (remaining={_tracked.Count})");
+                Logger.Info($"UntrackParty: '{PartyNameFormatter.SafeName(party)}' removed (remaining={_tracked.Count})");
             }
+
+            // B7.26：通知所有 clan scheduler 该 party 已销毁，清掉瞬态字典里的条目（防 MBGUID 复用脏数据）。
+            try
+            {
+                var reg = SovereignTowns.Capital.CapitalRegistry.Instance;
+                if (reg != null)
+                {
+                    foreach (var mgr in reg.AllManagers)
+                    {
+                        try { mgr?.PatrolScheduler?.NotifyPartyDestroyed(party); }
+                        catch (Exception ex) { Logger.Warn("scheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
+                    }
+                }
+            }
+            catch (Exception ex) { Logger.Warn("scheduler NotifyPartyDestroyed iteration failed: " + ex.Message); }
         }
         catch (Exception ex)
         {
-            Logger.Error($"UntrackParty failed for '{SafeName(party)}'", ex);
+            Logger.Error($"UntrackParty failed for '{PartyNameFormatter.SafeName(party)}'", ex);
         }
     }
 
@@ -422,9 +472,9 @@ public sealed class PartyLifecycleManager
             var homeVillage = dp.HomeVillage;
             if (homeVillage != null && (party.CurrentSettlement == homeVillage || party.LastVisitedSettlement == homeVillage))
             {
-                Logger.Info($"HourlyTick '{SafeName(party)}': dismiss arrived at '{homeVillage.Name}' → DestroyPartyAction.Apply");
+                Logger.Info($"HourlyTick '{PartyNameFormatter.SafeName(party)}': dismiss arrived at '{homeVillage.Name}' → DestroyPartyAction.Apply");
                 try { DestroyPartyAction.Apply(null, party); }
-                catch (Exception destroyEx) { Logger.Error($"DestroyPartyAction failed for dismiss '{SafeName(party)}'", destroyEx); }
+                catch (Exception destroyEx) { Logger.Error($"DestroyPartyAction failed for dismiss '{PartyNameFormatter.SafeName(party)}'", destroyEx); }
                 UntrackParty(party);
                 return;
             }
@@ -434,7 +484,7 @@ public sealed class PartyLifecycleManager
         {
             // 1) 进展检测：TargetSettlement 改变 或 兵员数量改变 → 视为有进展，刷新 LastActiveAt
             var currentTarget = party.TargetSettlement;
-            var currentMembers = SafeMemberCount(party);
+            var currentMembers = PartyNameFormatter.SafeMemberCount(party);
             var hasProgress = (currentTarget != meta.LastTargetSettlement) ||
                               (currentMembers != meta.LastMemberCount);
 
@@ -445,7 +495,7 @@ public sealed class PartyLifecycleManager
                 meta.LastActiveAt = CampaignTime.Now;
                 _tracked[party] = meta;
                 var targetName = currentTarget?.Name?.ToString() ?? "<none>";
-                Logger.Debug($"HourlyTick '{SafeName(party)}': progress detected (target={targetName} members={currentMembers}) — LastActiveAt refreshed");
+                Logger.Debug($"HourlyTick '{PartyNameFormatter.SafeName(party)}': progress detected (target={targetName} members={currentMembers}) — LastActiveAt refreshed");
                 return;
             }
 
@@ -459,14 +509,14 @@ public sealed class PartyLifecycleManager
             // 3) 超过 disband 阈值 → 解散
             if (idleHours >= IdleHoursBeforeDisband)
             {
-                Logger.Warn($"HourlyTick '{SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeDisband}h — issuing DisbandPartyAction.StartDisband");
+                Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeDisband}h — issuing DisbandPartyAction.StartDisband");
                 try
                 {
                     DisbandPartyAction.StartDisband(party);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"StartDisband failed for '{SafeName(party)}'", ex);
+                    Logger.Error($"StartDisband failed for '{PartyNameFormatter.SafeName(party)}'", ex);
                 }
                 UntrackParty(party);
                 return;
@@ -477,10 +527,10 @@ public sealed class PartyLifecycleManager
             {
                 if (meta.Home != null && party.TargetSettlement != meta.Home)
                 {
-                    Logger.Warn($"HourlyTick '{SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeForceReturn}h — forcing return to home '{meta.Home.Name}'");
+                    Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeForceReturn}h — forcing return to home '{meta.Home.Name}'");
                     try
                     {
-                        party.SetTargetSettlement(meta.Home, isTargetingPort: false);
+                        party.SetMoveGoToSettlement(meta.Home, MobileParty.NavigationType.Default, false);
                         // 强制重定向也视为一次"刷新"，避免每小时都重发
                         meta.LastActiveAt = CampaignTime.Now;
                         meta.LastTargetSettlement = meta.Home;
@@ -488,14 +538,14 @@ public sealed class PartyLifecycleManager
                     }
                     catch (Exception ex)
                     {
-                        Logger.Error($"SetTargetSettlement failed for '{SafeName(party)}'", ex);
+                        Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(party)}'", ex);
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            Logger.Error($"OnHourlyTickParty failed for '{SafeName(party)}'", ex);
+            Logger.Error($"OnHourlyTickParty failed for '{PartyNameFormatter.SafeName(party)}'", ex);
         }
     }
 
@@ -505,25 +555,72 @@ public sealed class PartyLifecycleManager
         if (!_tracked.ContainsKey(party)) return;
         try
         {
-            Logger.Info($"OnMobilePartyDestroyed: '{SafeName(party)}' — auto-untracking");
+            Logger.Info($"OnMobilePartyDestroyed: '{PartyNameFormatter.SafeName(party)}' — auto-untracking");
             UntrackParty(party);
         }
         catch (Exception ex)
         {
-            Logger.Error($"OnMobilePartyDestroyed failed for '{SafeName(party)}'", ex);
+            Logger.Error($"OnMobilePartyDestroyed failed for '{PartyNameFormatter.SafeName(party)}'", ex);
         }
     }
 
     // ────────── 辅助 ──────────
 
-    private static int GetMaxFor(string kind)
+    /// <summary>
+    /// 按 (home, kind) 返回硬上限。
+    /// B7.16：KindPatrol 按 vanilla "settlement_garrison" 建筑（兵营）等级缩放：
+    ///   未建造 / 0 级 → 1 支
+    ///   1 级 → 2 支
+    ///   2 级 → 3 支
+    ///   3 级 → 4 支
+    /// 城堡（IsCastle）走 castle 对应建筑 stringId "castle_barracks"。
+    /// 其他 kind 与 home 无关，沿用静态常量。
+    /// </summary>
+    private static int GetMaxFor(Settlement home, string kind)
     {
-        if (kind == KindRecruiter)  return MaxRecruitersPerTown;
+        // B7.27：征兵队上限改用与巡逻队相同的兵营建筑等级公式（首府 barracks lvl + 1，0级 1 支，3级 4 支）
+        if (kind == KindRecruiter)  return ComputePatrolCapForHome(home);
         if (kind == KindTransfer)   return MaxTransfersPerTown;
         if (kind == KindSallyForth) return MaxSallyForthPerTown;
         if (kind == KindDismiss)    return MaxDismissPerTown;
+        if (kind == KindPatrol)     return ComputePatrolCapForHome(home);
         // 未知 kind：保守上限 1，避免失控创建
         return 1;
+    }
+
+    /// <summary>
+    /// 兵营（Town: "settlement_garrison" / Castle: "castle_barracks"）等级 + 1。
+    /// 找不到 building 或 town == null → 退回 1（最低保底）。失败也返回 1，绝不抛。
+    /// </summary>
+    private static int ComputePatrolCapForHome(Settlement? home)
+    {
+        try
+        {
+            var town = home?.Town;
+            if (town?.Buildings == null) return 1;
+            string targetId = (home != null && home.IsCastle) ? "castle_barracks" : "settlement_garrison";
+            foreach (var b in town.Buildings)
+            {
+                if (b?.BuildingType == null) continue;
+                string id;
+                try { id = b.BuildingType.StringId ?? ""; }
+                catch { continue; }
+                if (string.Equals(id, targetId, StringComparison.Ordinal))
+                {
+                    int level;
+                    try { level = b.CurrentLevel; } catch { level = 0; }
+                    if (level < 0) level = 0;
+                    if (level > 3) level = 3;
+                    return level + 1;
+                }
+            }
+            return 1; // 未建造该建筑（建造槽空着）
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ComputePatrolCapForHome failed for '{home?.Name}'", ex);
+            return 1;
+        }
     }
 
     private static double ComputeIdleHours(CampaignTime lastActive)
@@ -547,28 +644,16 @@ public sealed class PartyLifecycleManager
         }
     }
 
-    private static int SafeMemberCount(MobileParty party)
+    private static Clan? SafeActualClan(MobileParty? party, Settlement? home)
     {
         try
         {
-            return party?.MemberRoster?.TotalManCount ?? 0;
+            return party?.ActualClan ?? home?.OwnerClan;
         }
         catch
         {
-            return 0;
-        }
-    }
-
-    private static string SafeName(MobileParty? party)
-    {
-        if (party is null) return "<null>";
-        try
-        {
-            return party.Name?.ToString() ?? party.StringId ?? "<unnamed>";
-        }
-        catch
-        {
-            return "<error>";
+            try { return home?.OwnerClan; }
+            catch { return null; }
         }
     }
 
@@ -577,14 +662,22 @@ public sealed class PartyLifecycleManager
     {
         public Settlement Home;
         public string Kind;
+        public Clan? OwnerClan;
         public CampaignTime LastActiveAt;
         public Settlement? LastTargetSettlement;
         public int LastMemberCount;
 
-        public TrackedPartyMeta(Settlement home, string kind, CampaignTime lastActiveAt, Settlement? lastTarget, int lastMembers)
+        public TrackedPartyMeta(
+            Settlement home,
+            string kind,
+            CampaignTime lastActiveAt,
+            Settlement? lastTarget,
+            int lastMembers,
+            Clan? ownerClan)
         {
             Home = home;
             Kind = kind;
+            OwnerClan = ownerClan ?? home.OwnerClan;
             LastActiveAt = lastActiveAt;
             LastTargetSettlement = lastTarget;
             LastMemberCount = lastMembers;

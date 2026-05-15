@@ -22,26 +22,21 @@ public sealed class TownGarrisonManager
 {
     private readonly RecruitmentManager? _recruitmentManager;
     private readonly LLMReasoningService? _llmService;
-    private readonly CapitalManager? _capitalManager;
+    private readonly CapitalRegistry? _capitalRegistry;
     private readonly Transfer.CastleSupportManager? _castleSupportManager;
-    // 当前 (B1) 未直接使用；CastleSupportManager 已通过 ctor 持有它。保留字段以备未来 case
-    // 需要直派 transfer 时的 quick-access (避免再扩 CastleSupportManager 公开面)。
-    private readonly Transfer.GarrisonTransferManager? _transferManager;
     private readonly Lifecycle.PartyLifecycleManager? _lifecycle;
 
     public TownGarrisonManager(
         RecruitmentManager? recruitmentManager = null,
         LLMReasoningService? llmService = null,
-        CapitalManager? capitalManager = null,
+        CapitalRegistry? capitalRegistry = null,
         Transfer.CastleSupportManager? castleSupportManager = null,
-        Transfer.GarrisonTransferManager? transferManager = null,
         Lifecycle.PartyLifecycleManager? lifecycle = null)
     {
         _recruitmentManager = recruitmentManager;
         _llmService = llmService;
-        _capitalManager = capitalManager;
+        _capitalRegistry = capitalRegistry;
         _castleSupportManager = castleSupportManager;
-        _transferManager = transferManager;
         _lifecycle = lifecycle;
     }
 
@@ -59,27 +54,34 @@ public sealed class TownGarrisonManager
                 return;
             }
 
-            var capital = _capitalManager?.GetCapital();
-            if (capital == null)
+            // B7.15 multi-clan：遍历 registry 中所有 managed clan 的当前首府，逐个评估。
+            if (_capitalRegistry == null)
             {
-                Logger.Info("EvaluateAll skipped: no capital town (player owns 0 towns, or system disabled)");
-                return;
-            }
-            if (capital.OwnerClan != Clan.PlayerClan)
-            {
-                Logger.Warn($"EvaluateAll: capital '{capital.Name}' no longer owned by player; waiting for OnSettlementOwnerChanged switch");
+                Logger.Info("EvaluateAll skipped: capitalRegistry not initialized");
                 return;
             }
 
-            Logger.Info($"EvaluateAll: capital='{capital.Name}' (single-capital mode)");
-            try
+            int evaluated = 0;
+            foreach (var mgr in _capitalRegistry.AllManagers)
             {
-                EvaluateOne(capital);
+                var capital = mgr.GetCapital();
+                if (capital == null) continue; // 该 clan 当前无 town
+                if (capital.OwnerClan != mgr.OwnerClan)
+                {
+                    Logger.Warn($"EvaluateAll: '{capital.Name}' clan ownership drift; skipping until OnSettlementOwnerChanged fires");
+                    continue;
+                }
+                try
+                {
+                    EvaluateOne(capital);
+                    evaluated++;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"EvaluateOne failed for capital '{capital.Name}' (clan={mgr.OwnerClan?.StringId})", ex);
+                }
             }
-            catch (Exception ex)
-            {
-                Logger.Error($"EvaluateOne failed for capital '{capital.Name}'", ex);
-            }
+            Logger.Info($"EvaluateAll: evaluated {evaluated} capital(s) across {_capitalRegistry.AllManagers.Count} managed clan(s)");
         }
         catch (Exception ex)
         {
@@ -99,10 +101,9 @@ public sealed class TownGarrisonManager
         var totalGap = effectiveTarget - snap.Total;
 
         var targetCavalry  = (int)Math.Round(rule.CavalryRatio   * effectiveTarget);
+        var targetHorseArchers = (int)Math.Round(rule.HorseArcherRatio * effectiveTarget);
         var targetInfantry = (int)Math.Round(rule.InfantryRatio  * effectiveTarget);
-        var targetArchers  = (int)Math.Round(rule.ArcherRatio    * effectiveTarget);
-        var targetCrossbow = (int)Math.Round(rule.CrossbowRatio  * effectiveTarget);
-        var targetThrower  = (int)Math.Round(rule.ThrowerRatio   * effectiveTarget);
+        var targetRanged = (int)Math.Round(rule.RangedRatio * effectiveTarget);
 
         Logger.Info(
             $"Town '{town.Name}' risk={risk.Level}({risk.Score:F2}, {risk.Reason}) " +
@@ -111,8 +112,8 @@ public sealed class TownGarrisonManager
 
         Logger.Info($"  composition: {snap.ToOneLineSummary()}");
         Logger.Info(
-            $"  per-type gap: cav={targetCavalry - snap.Cavalry} inf={targetInfantry - snap.Infantry} " +
-            $"arc={targetArchers - snap.Archers} crb={targetCrossbow - snap.Crossbows} thr={targetThrower - snap.Throwers}");
+            $"  per-type gap: cav={targetCavalry - snap.Cavalry} ha={targetHorseArchers - snap.HorseArchers} " +
+            $"inf={targetInfantry - snap.Infantry} rng={targetRanged - snap.Ranged}");
         Logger.Info(
             $"  tier band: [{rule.MinTier}..{rule.MaxTier}] " +
             $"currentByTier=t1={genericSnap.Tier1} t2={genericSnap.Tier2} t3={genericSnap.Tier3} " +
@@ -319,18 +320,4 @@ public sealed class TownGarrisonManager
         return merged;
     }
 
-    private static List<Town> ListPlayerOwnedTowns()
-    {
-        var result = new List<Town>();
-        var playerClan = Clan.PlayerClan;
-        if (playerClan is null) return result;
-        foreach (var t in Town.AllTowns)
-        {
-            if (t.IsTown && t.OwnerClan == playerClan)
-            {
-                result.Add(t);
-            }
-        }
-        return result;
-    }
 }

@@ -17,7 +17,6 @@ namespace SovereignTowns.Models;
 ///
 /// v1.3.15 真实签名（reflection 验证）：
 ///   <c>public override ExplainedNumber GetPartyMemberSizeLimit(PartyBase party, bool includeDescriptions = false)</c>
-/// 与 IG 反编译一致；只是 IG 版本无 default value，这里仍写 default 以匹配 vanilla source 风格。
 /// </summary>
 public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
 {
@@ -39,7 +38,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     RecruitingPartyLimit,
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Recruit}Sovereign Towns recruiting party limit"));
+                    new TextObject("{=ST_PartySizeLimit_Recruit}主权城镇 征兵队容量上限"));
             }
 
             if (comp is TransferPartyComponent)
@@ -47,7 +46,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     TransferPartyLimit,
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Transfer}Sovereign Towns transfer party limit"));
+                    new TextObject("{=ST_PartySizeLimit_Transfer}主权城镇 调拨队容量上限"));
             }
 
             if (comp is SallyForthPartyComponent)
@@ -55,7 +54,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     SallyForthManager.MaxSallyPartySize,
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Sally}Sovereign Towns sally-forth party limit"));
+                    new TextObject("{=ST_PartySizeLimit_Sally}主权城镇 出击队容量上限"));
             }
 
             return base.GetPartyMemberSizeLimit(party!, includeDescriptions);

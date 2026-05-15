@@ -36,8 +36,9 @@ public static class BattleLootHandler
     /// 处置一支胜方 party 的战利品。null / 非玩家 / 非活跃 / 三个 toggle 全关 → no-op。
     /// </summary>
     /// <param name="winningParty">胜方 party（巡逻队 / 出击队 / 任意玩家 party 均可）。</param>
-    /// <param name="capitalManager">首府 manager（可空；空时俘虏招募跳过，仍处理物品 + 金钱）。</param>
-    public static void ProcessPartyLoot(MobileParty? winningParty, CapitalManager? capitalManager)
+    /// <param name="capitalRegistry">首府注册表（可空；空时俘虏招募跳过，仍处理物品 + 金钱）。
+    /// B7.15：本 handler 仅服务于玩家氏族（AI 战利品由 vanilla 处理），所以查 GetForPlayer()。</param>
+    public static void ProcessPartyLoot(MobileParty? winningParty, CapitalRegistry? capitalRegistry)
     {
         if (winningParty == null) return;
 
@@ -72,7 +73,7 @@ public static class BattleLootHandler
         }
 
         Settlement? capital = null;
-        try { capital = capitalManager?.GetCapitalSettlement(); }
+        try { capital = capitalRegistry?.GetForPlayer()?.GetCapitalSettlement(); }
         catch (Exception capEx) { Logger.Error("BattleLootHandler: GetCapitalSettlement threw", capEx); }
 
         // ───── 1) 俘虏处理 ─────
@@ -268,7 +269,12 @@ public static class BattleLootHandler
 
         int soldStacks = 0;
         int soldUnits = 0;
-        int goldBefore = party.PartyTradeGold;
+        // B7.22 Fix C：vanilla SellItemsAction 在某些路径下把收益直接 credit 给 hero/clan 而非
+        // party.PartyTradeGold，所以单纯看 PartyTradeGold delta 经常显示 +0。
+        // 这里同时跟踪 leader.Gold 来正确反映实际入账。
+        int partyGoldBefore = party.PartyTradeGold;
+        var sellerHero = party.LeaderHero ?? party.ActualClan?.Leader;
+        int heroGoldBefore = sellerHero?.Gold ?? 0;
 
         foreach (var elem in snapshot)
         {
@@ -310,10 +316,12 @@ public static class BattleLootHandler
             }
         }
 
-        int goldEarned = party.PartyTradeGold - goldBefore;
+        int partyGoldDelta = party.PartyTradeGold - partyGoldBefore;
+        int heroGoldDelta = (sellerHero?.Gold ?? 0) - heroGoldBefore;
+        int goldEarned = partyGoldDelta + heroGoldDelta;
         if (soldStacks > 0)
         {
-            Logger.Info($"BattleLootHandler: '{SafeName(party)}' sold {soldStacks} stack(s) ({soldUnits} unit(s)) at '{market.Name}', +{goldEarned} gold");
+            Logger.Info($"BattleLootHandler: '{SafeName(party)}' sold {soldStacks} stack(s) ({soldUnits} unit(s)) at '{market.Name}', +{goldEarned} gold (party Δ={partyGoldDelta}, hero Δ={heroGoldDelta})");
             DecisionAuditLogger.LogRule(
                 decisionType: "battle_loot_sell_items",
                 inputSummary: $"party={party.StringId} market={market.Settlement.StringId} stacks={soldStacks} units={soldUnits} gold={goldEarned}",
@@ -377,53 +385,6 @@ public static class BattleLootHandler
             return TroopTemplateMatcher.MatchesRule(troop, rule);
         }
         catch { return false; }
-    }
-
-    private enum TroopBucket { Unknown, Infantry, Archer, Crossbow, Thrower, Cavalry }
-
-    private static TroopBucket ClassifyTroop(CharacterObject troop)
-    {
-        try { if (troop.IsMounted) return TroopBucket.Cavalry; } catch { }
-        try { if (troop.DefaultFormationClass == FormationClass.Skirmisher) return TroopBucket.Thrower; } catch { }
-        bool isRanged = false;
-        try { isRanged = troop.IsRanged; } catch { }
-        if (isRanged)
-        {
-            var w = InspectRangedWeaponClass(troop);
-            if (w != TroopBucket.Unknown) return w;
-            return TroopBucket.Archer;
-        }
-        return TroopBucket.Infantry;
-    }
-
-    private static TroopBucket InspectRangedWeaponClass(CharacterObject troop)
-    {
-        try
-        {
-            var equipment = troop.FirstBattleEquipment;
-            if (equipment == null) return TroopBucket.Unknown;
-            for (int slot = (int)EquipmentIndex.Weapon0; slot <= (int)EquipmentIndex.Weapon3; slot++)
-            {
-                EquipmentElement elem;
-                try { elem = equipment[(EquipmentIndex)slot]; }
-                catch { continue; }
-                var item = elem.Item;
-                if (item == null) continue;
-                var weapon = item.PrimaryWeapon;
-                if (weapon == null) continue;
-                switch (weapon.WeaponClass)
-                {
-                    case WeaponClass.Bow: return TroopBucket.Archer;
-                    case WeaponClass.Crossbow: return TroopBucket.Crossbow;
-                    case WeaponClass.Javelin:
-                    case WeaponClass.ThrowingAxe:
-                    case WeaponClass.ThrowingKnife:
-                        return TroopBucket.Thrower;
-                }
-            }
-        }
-        catch { }
-        return TroopBucket.Unknown;
     }
 
     // ─────────────────────── 工具 ───────────────────────

@@ -10,16 +10,17 @@ namespace SovereignTowns.Evaluators;
 /// <summary>
 /// Culture-agnostic troop template matcher. It intentionally ignores faction/culture and
 /// compares a unit only by broad battlefield role plus tier, matching the user-facing
-/// "通用匹配" controls.
+/// "通用匹配" controls. Role classification follows Bannerlord's DefaultFormationClass:
+/// horse archers are independent, bow/crossbow troops share Ranged, and throwing troops
+/// are folded into their default formation or runtime fallback role.
 /// </summary>
 public enum GenericTroopRole
 {
     Unknown = 0,
     Cavalry = 1,
-    Infantry = 2,
-    Archer = 3,
-    Crossbow = 4,
-    Thrower = 5
+    HorseArcher = 2,
+    Infantry = 3,
+    Ranged = 4
 }
 
 public readonly struct GenericCompositionSnapshot
@@ -27,10 +28,9 @@ public readonly struct GenericCompositionSnapshot
     public GenericCompositionSnapshot(
         int total,
         int cavalry,
+        int horseArcher,
         int infantry,
-        int archer,
-        int crossbow,
-        int thrower,
+        int ranged,
         int tier1,
         int tier2,
         int tier3,
@@ -40,10 +40,9 @@ public readonly struct GenericCompositionSnapshot
     {
         Total = total;
         Cavalry = cavalry;
+        HorseArcher = horseArcher;
         Infantry = infantry;
-        Archer = archer;
-        Crossbow = crossbow;
-        Thrower = thrower;
+        Ranged = ranged;
         Tier1 = tier1;
         Tier2 = tier2;
         Tier3 = tier3;
@@ -54,10 +53,9 @@ public readonly struct GenericCompositionSnapshot
 
     public int Total { get; }
     public int Cavalry { get; }
+    public int HorseArcher { get; }
     public int Infantry { get; }
-    public int Archer { get; }
-    public int Crossbow { get; }
-    public int Thrower { get; }
+    public int Ranged { get; }
     public int Tier1 { get; }
     public int Tier2 { get; }
     public int Tier3 { get; }
@@ -68,10 +66,9 @@ public readonly struct GenericCompositionSnapshot
     public int CountOf(GenericTroopRole role) => role switch
     {
         GenericTroopRole.Cavalry => Cavalry,
+        GenericTroopRole.HorseArcher => HorseArcher,
         GenericTroopRole.Infantry => Infantry,
-        GenericTroopRole.Archer => Archer,
-        GenericTroopRole.Crossbow => Crossbow,
-        GenericTroopRole.Thrower => Thrower,
+        GenericTroopRole.Ranged => Ranged,
         _ => 0
     };
 
@@ -96,27 +93,50 @@ public static class GenericTroopMatcher
         {
             if (troop.IsHero) return GenericTroopRole.Unknown;
 
-            // Horse archers intentionally land in the cavalry bucket for the generic template.
-            if (troop.IsMounted) return GenericTroopRole.Cavalry;
-
-            if (SafeHasThrowingWeapon(troop) || HasWeaponClass(troop, WeaponClass.Javelin)
-                || HasWeaponClass(troop, WeaponClass.ThrowingAxe)
-                || HasWeaponClass(troop, WeaponClass.ThrowingKnife)
-                || troop.DefaultFormationClass == FormationClass.Skirmisher)
+            switch (troop.DefaultFormationClass)
             {
-                return GenericTroopRole.Thrower;
+                case FormationClass.HorseArcher:
+                    return GenericTroopRole.HorseArcher;
+
+                case FormationClass.Cavalry:
+                case FormationClass.LightCavalry:
+                case FormationClass.HeavyCavalry:
+                    return GenericTroopRole.Cavalry;
+
+                case FormationClass.Ranged:
+                    return GenericTroopRole.Ranged;
+
+                case FormationClass.HeavyInfantry:
+                case FormationClass.Infantry:
+                    return GenericTroopRole.Infantry;
+
+                case FormationClass.Skirmisher:
+                case FormationClass.General:
+                case FormationClass.Bodyguard:
+                case FormationClass.Unset:
+                    return ClassifyByRuntimeFlags(troop);
             }
 
-            if (troop.IsRanged)
-            {
-                return HasWeaponClass(troop, WeaponClass.Crossbow)
-                    ? GenericTroopRole.Crossbow
-                    : GenericTroopRole.Archer;
-            }
+            return ClassifyByRuntimeFlags(troop);
         }
         catch
         {
             return GenericTroopRole.Infantry;
+        }
+    }
+
+    private static GenericTroopRole ClassifyByRuntimeFlags(CharacterObject troop)
+    {
+        if (SafeBool(() => troop.IsMounted))
+        {
+            return SafeBool(() => troop.IsRanged)
+                ? GenericTroopRole.HorseArcher
+                : GenericTroopRole.Cavalry;
+        }
+
+        if (SafeBool(() => troop.IsRanged))
+        {
+            return GenericTroopRole.Ranged;
         }
 
         return GenericTroopRole.Infantry;
@@ -192,7 +212,7 @@ public static class GenericTroopMatcher
         if (roster == null) return default;
 
         int total = 0;
-        int cav = 0, inf = 0, arc = 0, crb = 0, thr = 0;
+        int cav = 0, ha = 0, inf = 0, rng = 0;
         int t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0;
 
         foreach (var elem in roster.GetTroopRoster())
@@ -204,10 +224,9 @@ public static class GenericTroopMatcher
             switch (GetRole(ch))
             {
                 case GenericTroopRole.Cavalry: cav += elem.Number; break;
+                case GenericTroopRole.HorseArcher: ha += elem.Number; break;
                 case GenericTroopRole.Infantry: inf += elem.Number; break;
-                case GenericTroopRole.Archer: arc += elem.Number; break;
-                case GenericTroopRole.Crossbow: crb += elem.Number; break;
-                case GenericTroopRole.Thrower: thr += elem.Number; break;
+                case GenericTroopRole.Ranged: rng += elem.Number; break;
             }
 
             switch (GetTierBucket(ch))
@@ -221,16 +240,15 @@ public static class GenericTroopMatcher
             }
         }
 
-        return new GenericCompositionSnapshot(total, cav, inf, arc, crb, thr, t1, t2, t3, t4, t5, t6);
+        return new GenericCompositionSnapshot(total, cav, ha, inf, rng, t1, t2, t3, t4, t5, t6);
     }
 
     public static float RoleRatio(TownGarrisonRule rule, GenericTroopRole role) => role switch
     {
         GenericTroopRole.Cavalry => rule.CavalryRatio,
+        GenericTroopRole.HorseArcher => rule.HorseArcherRatio,
         GenericTroopRole.Infantry => rule.InfantryRatio,
-        GenericTroopRole.Archer => rule.ArcherRatio,
-        GenericTroopRole.Crossbow => rule.CrossbowRatio,
-        GenericTroopRole.Thrower => rule.ThrowerRatio,
+        GenericTroopRole.Ranged => rule.RangedRatio,
         _ => 0f
     };
 
@@ -252,22 +270,10 @@ public static class GenericTroopMatcher
         return false;
     }
 
-    private static bool SafeHasThrowingWeapon(CharacterObject troop)
+    private static bool SafeBool(Func<bool> getter)
     {
-        try { return troop.HasThrowingWeapon(); }
+        try { return getter(); }
         catch { return false; }
     }
 
-    private static bool HasWeaponClass(CharacterObject troop, WeaponClass weaponClass)
-    {
-        try
-        {
-            var equipment = troop.FirstBattleEquipment;
-            return equipment != null && equipment.HasWeaponOfClass(weaponClass);
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }

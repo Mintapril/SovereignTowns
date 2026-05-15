@@ -10,7 +10,7 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Upgrades;
 
 /// <summary>
-/// 每日 XP 注入服务（替代 IG.GarrisonUpgradeLogic.GiveGarrisonExp 的核心职责）。
+/// 每日 XP 注入服务。
 /// <para>
 /// 背景：vanilla 给 town GarrisonParty 的兵种 XP 极少，导致驻军兵种无法触发自然升级。
 /// 本服务在 DailyTickSettlement 给每个玩家所属 Town 的驻军逐兵种注入一定 XP，使
@@ -19,7 +19,7 @@ namespace SovereignTowns.Upgrades;
 /// <para>
 /// XP 模型策略（关键技术决策，v1.3.15）：
 ///   - vanilla 暴露 <c>Campaign.Current.Models.DailyTroopXpBonusModel</c>（实现：
-///     <c>DefaultDailyTroopXpBonusModel</c>），与 IG 用法相同；
+///     <c>DefaultDailyTroopXpBonusModel</c>），用于读取 town 加成；
 ///   - 总 XP = (PerTroopBaseXp + 城镇加成round(daily*multiplier)) * 兵员数；
 ///   - 若 vanilla 模型异常（mod 覆盖错误 / 反射失败），回退到纯固定 <c>DailyTroopXpBonus</c>。
 /// </para>
@@ -36,9 +36,16 @@ public static class GarrisonXpInjector
         try
         {
             // 用户明确："xp注入应只在首府进行"。非首府的 town/castle 走 CastleSupport 调拨而非本城训练。
+            // B7.15 multi-clan：广义到任意受管 clan；外层 OnDailyTickSettlement 已按 "settlement == 该 clan 首府"
+            // 进行了路由，所以这里只需校验 clan 在 registry 中即可（玩家 / AI 都允许）。
             if (settlement == null) return;
             if (!settlement.IsTown) return;
-            if (settlement.OwnerClan != Clan.PlayerClan) return;
+            var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
+            if (registry != null)
+            {
+                if (!registry.IsManagedClan(settlement.OwnerClan)) return;
+            }
+            else if (settlement.OwnerClan != Clan.PlayerClan) return;
 
             var features = ConfigurationManager.Current?.EnabledFeatures;
             if (features == null || !features.AutoGarrison) return;
@@ -54,8 +61,15 @@ public static class GarrisonXpInjector
             var garrison = town.GarrisonParty;
             if (garrison == null)
             {
-                Logger.Debug($"GarrisonXpInjector: '{settlement.StringId}' GarrisonParty is null, skip");
-                return;
+                // B7.21 Fix A：被清 0 后 vanilla 移除 GarrisonParty，主动重建以便后续招募/XP 能继续运行
+                try
+                {
+                    settlement.AddGarrisonParty();
+                    garrison = town.GarrisonParty;
+                    Logger.Debug($"GarrisonXpInjector: '{settlement.StringId}' GarrisonParty 重建");
+                }
+                catch (Exception ex) { Logger.Error($"GarrisonXpInjector: AddGarrisonParty for '{settlement.StringId}' 失败", ex); return; }
+                if (garrison == null) return;
             }
 
             var roster = garrison.MemberRoster;
@@ -66,10 +80,12 @@ public static class GarrisonXpInjector
             }
 
             var rule = ConfigurationManager.GetRuleFor(town);
-            int perTroopBase = rule.DailyTroopXpBonus;
-            if (perTroopBase < 0) perTroopBase = 0;
+            // B7.19：每日 XP 奖励改为按兵营建筑等级派生（不再可手动调整）。
+            // settlement_garrison（Town）/ castle_barracks（Castle）等级 → (level + 1) × 5
+            // 即 lvl 0→5, lvl 1→10, lvl 2→15, lvl 3→20。
+            int perTroopBase = ComputeXpFromBarracks(settlement);
 
-            // vanilla daily bonus（与 IG 同源）：失败时回退 0
+            // vanilla daily bonus：失败时回退 0
             int townBonus = 0;
             try
             {
@@ -157,6 +173,43 @@ public static class GarrisonXpInjector
         catch (Exception ex)
         {
             Logger.Error("GarrisonXpInjector.GiveDailyXpToGarrison failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// B7.19：按兵营建筑等级派生每日 XP 奖励。Town 用 <c>settlement_garrison</c>、
+    /// Castle 用 <c>castle_barracks</c> 的 CurrentLevel（0..3），返回 (level + 1) × 5。
+    /// 找不到建筑或异常时返回 5（最低保底，对应 lvl 0）。
+    /// </summary>
+    private static int ComputeXpFromBarracks(Settlement? settlement)
+    {
+        const int XpPerLevel = 5;
+        const int FallbackXp = XpPerLevel; // lvl 0 等价
+        try
+        {
+            var town = settlement?.Town;
+            if (town?.Buildings == null) return FallbackXp;
+            string targetId = (settlement != null && settlement.IsCastle) ? "castle_barracks" : "settlement_garrison";
+            foreach (var b in town.Buildings)
+            {
+                if (b?.BuildingType == null) continue;
+                string id;
+                try { id = b.BuildingType.StringId ?? ""; } catch { continue; }
+                if (string.Equals(id, targetId, StringComparison.Ordinal))
+                {
+                    int level;
+                    try { level = b.CurrentLevel; } catch { level = 0; }
+                    if (level < 0) level = 0;
+                    if (level > 3) level = 3;
+                    return (level + 1) * XpPerLevel;
+                }
+            }
+            return FallbackXp; // 兵营尚未建造
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ComputeXpFromBarracks failed for '{settlement?.Name}'", ex);
+            return FallbackXp;
         }
     }
 }

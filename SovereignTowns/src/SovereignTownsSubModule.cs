@@ -65,7 +65,7 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
 
             if (!_skipBehaviorRegistration && _loggerInitialized)
             {
-                Logger.Info("互斥检测通过：未发现 ImprovedGarrisons / GarrisonDoSomething");
+                Logger.Info($"互斥检测通过：未发现冲突模块 ({string.Join(", ", IncompatibleModuleIds)})");
             }
         }
         catch (System.Exception ex)
@@ -83,7 +83,7 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
         {
             if (_skipBehaviorRegistration)
             {
-                var msg = $"Sovereign Towns: 检测到互斥模块（{string.Join(", ", IncompatibleModuleIds)}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。";
+                var msg = $"主权城镇：检测到互斥模块（{string.Join("，", IncompatibleModuleIds)}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。";
                 try { InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Red)); } catch { }
                 if (_loggerInitialized) Logger.Warn("Displayed incompatibility warning to user");
                 // 不再 throw — 应急修复期间，宁可让 mod 在退化模式下静默，也不让游戏崩。
@@ -143,12 +143,10 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
             }
 
             // B7.1: dump troops.json for the web frontend's ExactTroop picker.
-            // OnGameStart fires after all SubModuleLoads, so other mods' troops are already registered.
-            try { SovereignTowns.WebConfig.TroopDumper.Dump(); }
-            catch (System.Exception ex)
-            {
-                if (_loggerInitialized) Logger.Error("TroopDumper.Dump failed (swallowed)", ex);
-            }
+            // NOTE: actual dump call moved to SovereignTownsCampaignBehavior.OnSessionLaunched —
+            // at OnGameStart the CharacterObject pool (spnpccharacters.xml etc.) is not yet
+            // registered with MBObjectManager, so dumping here yields count=0. See troops.json
+            // empty-payload bug 2026-05-14.
 
             // B7.3: start local HTTP server so the player can edit config in a browser.
             // Idempotent — already-running call is a no-op.

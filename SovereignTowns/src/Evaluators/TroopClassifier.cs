@@ -5,8 +5,8 @@ namespace SovereignTowns.Evaluators;
 
 /// <summary>
 /// 兵种分类工具。当前仅暴露 <see cref="IsNoble"/>——基于升级树拓扑判定一个角色是否在
-/// 其文化的 noble line（<c>culture.EliteBasicTroop</c>）升级链上。这与 ImprovedGarrisons
-/// 的判定保持一致，正确区分同 Tier 的 common / noble line（例如 Imperial Cataphract 为
+/// 其文化的 noble line（<c>culture.EliteBasicTroop</c>）升级链上。
+/// 正确区分同 Tier 的 common / noble line（例如 Imperial Cataphract 为
 /// common，Imperial Elite Cataphract 为 noble，两者 Tier 都为 6）。
 /// </summary>
 /// <remarks>

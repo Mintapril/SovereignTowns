@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using System.Linq;
 using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.Core;
 using TaleWorlds.ObjectSystem;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -77,25 +79,36 @@ public static class TroopDumper
     private static List<TroopEntry> CollectTroops()
     {
         var list = new List<TroopEntry>();
-        IEnumerable<CharacterObject>? all = null;
+
+        // Build the "settlement-recruitable" whitelist by BFS from each culture's
+        // BasicTroop + EliteBasicTroop along UpgradeTargets. This is exactly what vanilla
+        // village/town notables draw from; tavern mercenaries / story / caravan-guard troops
+        // are NOT in these trees so they get excluded automatically.
+        // BasicTroop / EliteBasicTroop are the canonical vanilla entry points used by
+        // RecruitmentCampaignBehavior to seed each notable's VolunteerTypes.
+        HashSet<CharacterObject> recruitable;
         try
         {
-            all = MBObjectManager.Instance?.GetObjectTypeList<CharacterObject>();
+            recruitable = CollectRecruitableTroops();
         }
         catch (Exception ex)
         {
-            Logger.Error("TroopDumper: failed to enumerate CharacterObject list", ex);
+            Logger.Error("TroopDumper: failed to compute recruitable troop whitelist", ex);
             return list;
         }
-        if (all is null) return list;
 
-        foreach (var co in all)
+        if (recruitable.Count == 0)
+        {
+            Logger.Warn("TroopDumper: recruitable whitelist is empty — Cultures may not yet be registered.");
+            return list;
+        }
+
+        foreach (var co in recruitable)
         {
             try
             {
                 if (co is null) continue;
                 if (co.IsHero) continue;
-                if (!co.IsBasicTroop) continue;
 
                 string id = co.StringId ?? "";
                 if (string.IsNullOrEmpty(id)) continue;
@@ -140,6 +153,51 @@ public static class TroopDumper
         return list;
     }
 
+    /// <summary>
+    /// BFS the upgrade tree from each Culture's BasicTroop + EliteBasicTroop entry points.
+    /// The resulting HashSet is the set of CharacterObjects that can ultimately appear as a
+    /// village/town/castle recruit. Tavern mercenaries are absent from any Culture's tree and
+    /// thus excluded.
+    /// </summary>
+    private static HashSet<CharacterObject> CollectRecruitableTroops()
+    {
+        var result = new HashSet<CharacterObject>();
+        var cultures = MBObjectManager.Instance?.GetObjectTypeList<CultureObject>();
+        if (cultures is null) return result;
+
+        var queue = new Queue<CharacterObject>();
+        foreach (var culture in cultures)
+        {
+            if (culture is null) continue;
+            try
+            {
+                if (culture.BasicTroop is { } basic) queue.Enqueue(basic);
+                if (culture.EliteBasicTroop is { } elite) queue.Enqueue(elite);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"TroopDumper: culture '{culture.StringId}' seed enumeration failed", ex);
+            }
+        }
+
+        while (queue.Count > 0)
+        {
+            var co = queue.Dequeue();
+            if (co is null) continue;
+            if (!result.Add(co)) continue; // already visited
+
+            CharacterObject[]? targets = null;
+            try { targets = co.UpgradeTargets; } catch { /* swallow */ }
+            if (targets is null) continue;
+
+            foreach (var next in targets)
+            {
+                if (next is not null && !result.Contains(next)) queue.Enqueue(next);
+            }
+        }
+        return result;
+    }
+
     private static bool SafeBool(Func<bool> f)
     {
         try { return f(); } catch { return false; }
@@ -152,7 +210,7 @@ public static class TroopDumper
         public string culture { get; set; } = "";       // stringId (key for filter/serialization)
         public string cultureName { get; set; } = "";   // vanilla-localized culture display name
         public int tier { get; set; }
-        public string type { get; set; } = "";          // role enum lowercase: cavalry/infantry/archer/crossbow/thrower
+        public string type { get; set; } = "";          // role enum lowercase: cavalry/horsearcher/infantry/ranged
         public bool isMounted { get; set; }
         public bool isRanged { get; set; }
         public bool isNoble { get; set; }

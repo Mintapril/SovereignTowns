@@ -225,9 +225,9 @@ public static class WebConfigServer
             {
                 case "GET" when path == "/api/config":      WebConfigEndpoints.GetConfig(ctx); return;
                 case "PUT" when path == "/api/config":      WebConfigEndpoints.PutConfig(ctx); return;
+                case "GET" when path == "/api/finance":     WebConfigEndpoints.GetFinance(ctx); return;
                 case "GET" when path == "/api/troops":      WebConfigEndpoints.GetTroops(ctx); return;
                 case "GET" when path == "/api/settlements": WebConfigEndpoints.GetSettlements(ctx); return;
-                case "GET" when path == "/api/training-templates": WebConfigEndpoints.GetTrainingTemplates(ctx); return;
                 case "GET" when path == "/api/status":      WebConfigEndpoints.GetStatus(ctx); return;
                 case "POST" when path == "/api/reload":     WebConfigEndpoints.PostReload(ctx); return;
             }

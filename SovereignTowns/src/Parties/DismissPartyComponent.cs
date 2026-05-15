@@ -66,8 +66,8 @@ public sealed class DismissPartyComponent : CustomPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var srcName = DismissedFromSettlement?.Name?.ToString() ?? "Unknown";
-            _cachedName = new TextObject("{=ST_DismissedParty}Dismissed Troops of " + srcName);
+            var srcName = DismissedFromSettlement?.Name?.ToString() ?? "未知";
+            _cachedName = new TextObject("{=ST_DismissedParty}" + srcName + " 的退伍队伍");
             return _cachedName;
         }
     }
@@ -171,6 +171,8 @@ public sealed class DismissPartyComponent : CustomPartyComponent
                 Logger.Error($"DismissPartyComponent.CreateForTown: MobileParty.CreateParty returned null for '{stringId}'");
                 return null;
             }
+            // B7.22：0 攻击性
+            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
 
             Logger.Info(
                 $"DismissPartyComponent: created '{stringId}' from town '{sourceSettlement.StringId}' headed to '{homeVillage.StringId}' (owner={ownerLeader.Name})");

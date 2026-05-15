@@ -15,7 +15,6 @@ namespace SovereignTowns.Models;
 ///
 /// v1.3.15 真实签名（reflection 验证）：
 ///   <c>public override ExplainedNumber CalculateFinalSpeed(MobileParty mobileParty, ExplainedNumber finalSpeed)</c>
-/// 与 IG 反编译一致。
 ///
 /// 重要：使用 <see cref="ExplainedNumber.AddFactor"/> 叠加 +20%，
 /// **不**用 <c>new ExplainedNumber(...)</c> 替换，否则会丢掉 vanilla 所有 modifier
@@ -47,7 +46,7 @@ public sealed class STPartySpeedModel : DefaultPartySpeedCalculatingModel
             {
                 result.AddFactor(
                     SpeedBonusFactor,
-                    new TextObject("{=ST_PartySpeedBonus}Sovereign Towns town-funded party speed bonus"));
+                    new TextObject("{=ST_PartySpeedBonus}主权城镇 城镇拨款队伍 移速加成"));
             }
         }
         catch (Exception ex)

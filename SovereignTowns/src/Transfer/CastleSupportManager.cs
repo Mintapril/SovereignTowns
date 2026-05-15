@@ -64,17 +64,17 @@ public sealed class TransferTask
 /// </summary>
 public sealed class CastleSupportManager
 {
-    // === 可选依赖：用于判定 surplus 候选是否为首府（首府享受优先调出 + 较低 surplus 阈值） ===
-    private readonly CapitalManager? _capitalManager;
+    // === 可选依赖：B7.15 起为 Registry，支持多 clan ===
+    private readonly CapitalRegistry? _capitalRegistry;
     private readonly GarrisonTransferManager? _transferManager;
 
     /// <summary>
-    /// 构造。<paramref name="capitalManager"/> 为 null 时退化为旧版"对等阈值 + 仅按距离匹配"逻辑，
+    /// 构造。<paramref name="capitalRegistry"/> 为 null 时退化为旧版"对等阈值 + 仅按距离匹配"逻辑，
     /// 用于系统关闭 / 单元测试场景。
     /// </summary>
-    public CastleSupportManager(CapitalManager? capitalManager = null, GarrisonTransferManager? transferManager = null)
+    public CastleSupportManager(CapitalRegistry? capitalRegistry = null, GarrisonTransferManager? transferManager = null)
     {
-        _capitalManager = capitalManager;
+        _capitalRegistry = capitalRegistry;
         _transferManager = transferManager;
     }
 
@@ -88,11 +88,14 @@ public sealed class CastleSupportManager
     /// <summary>首府的盈余阈值：只要达到 TargetTotalCount × 1.0 即视为 surplus（积极外调）。</summary>
     private const float CapitalSurplusMultiplier = 1.0f;
 
-    /// <summary>单次调拨硬上限（人）。</summary>
-    private const int MaxTroopsPerTask = 30;
+    /// <summary>单次调拨硬上限（人）。B7.24：从 30 提升到 100 以配合百分比抽调。</summary>
+    private const int MaxTroopsPerTask = 100;
 
-    /// <summary>调拨人数缩放系数（min(deficit, surplus, 30) × 0.5）。</summary>
-    private const float TransferScale = 0.5f;
+    /// <summary>B7.24：从源城抽调的百分比 — 30%。配合 TrivialExtractionFloor 用。</summary>
+    private const float TransferRatio = 0.30f;
+
+    /// <summary>B7.24：< 此抽兵量直接放弃任务（trivial 调拨没意义，反而浪费 path 时间）。</summary>
+    private const int TrivialExtractionFloor = 50;
 
     /// <summary>地图二维距离上限。</summary>
     private const float MaxPairDistance = 100f;
@@ -230,20 +233,34 @@ public sealed class CastleSupportManager
     // 内部辅助：所有玩家自有 Town/Castle
     // ---------------------------------------------------------------
 
-    private static List<Town> CollectPlayerOwnedTownsAndCastles()
+    /// <summary>
+    /// 枚举所有 *受 ST 管理* 的 clan 的 Town/Castle。B7.15 起按 clan 分组评估调拨，
+    /// 不再混合不同 clan（不会把玩家驻军调给 AI、也不会把 AI A 的兵调给 AI B）。
+    /// 实现：把 owned 列表里的 entry 按 ownerClan 分组，返回每个 clan 一份。
+    /// 这里仍返回扁平 list；调用方 EvaluateAll 已经按 clan 局部决策（调拨配对在同 clan 内进行）。
+    /// 详见 PairAndBuildTasks 的 clan 隔离逻辑。
+    /// </summary>
+    private List<Town> CollectPlayerOwnedTownsAndCastles()
     {
         var result = new List<Town>();
         try
         {
-            var playerClan = Clan.PlayerClan;
-            if (playerClan == null) return result;
-
             // Town.AllTowns 同时枚举 Town 和 Castle（Castle 内部也持有一个 Town 实体）。
             foreach (var t in Town.AllTowns)
             {
                 if (t == null) continue;
                 if (!(t.IsTown || t.IsCastle)) continue;
-                if (t.OwnerClan != playerClan) continue;
+
+                // B7.15：受 registry 管理的 clan 才算
+                if (_capitalRegistry != null)
+                {
+                    if (!_capitalRegistry.IsManagedClan(t.OwnerClan)) continue;
+                }
+                else
+                {
+                    // 兼容：registry 缺失 → 退回老逻辑只看玩家
+                    if (t.OwnerClan != Clan.PlayerClan) continue;
+                }
                 result.Add(t);
             }
         }
@@ -272,11 +289,12 @@ public sealed class CastleSupportManager
         int garrisonCount = town.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
 
         // 首府：surplus 阈值降为 1.0× 以积极外调；非首府保持 1.3×。
-        // _capitalManager 为 null（系统关闭）时退化为旧逻辑（全部走 1.3×）。
+        // B7.15 multi-clan：查"本 settlement 所属 clan 把它当首府吗"。
         bool isCapital = false;
         try
         {
-            var capitalSettlement = _capitalManager?.GetCapitalSettlement();
+            var mgr = _capitalRegistry?.GetForSettlement(settlement);
+            var capitalSettlement = mgr?.GetCapitalSettlement();
             isCapital = capitalSettlement != null && capitalSettlement == settlement;
         }
         catch (Exception ex)
@@ -359,13 +377,16 @@ public sealed class CastleSupportManager
                     continue;
                 }
 
-                int rawAmount = Math.Min(dest.Gap, Math.Min(pair.Gap, MaxTroopsPerTask));
-                int planned = (int)Math.Floor(rawAmount * TransferScale);
-                if (planned < 1)
+                // B7.24：按源城 garrison × 30% 抽调，受 deficit 缺口和单次硬上限钳制。
+                // 算出来 < TrivialExtractionFloor (50) 直接放弃这条任务。
+                int sourceGarrison = pair.Settlement?.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+                int byRatio = (int)Math.Round(sourceGarrison * TransferRatio);
+                int planned = Math.Min(MaxTroopsPerTask, Math.Min(dest.Gap, byRatio));
+                if (planned < TrivialExtractionFloor)
                 {
                     Logger.Debug(
                         $"  skip pair: dest='{dest.Settlement?.Name}' source='{pair.Settlement?.Name}' " +
-                        $"planned<1 (raw={rawAmount})");
+                        $"planned={planned} < {TrivialExtractionFloor} (sourceGarrison={sourceGarrison} × {TransferRatio:P0} → {byRatio}, destGap={dest.Gap})");
                     continue;
                 }
 
@@ -423,6 +444,8 @@ public sealed class CastleSupportManager
 
             // 同 MapFaction
             if (src.MapFaction != destFaction) continue;
+            // B7.15 multi-clan：必须同 ownerClan — 不能把玩家的兵借给同王国的 AI 附庸（或反过来）
+            if (src.OwnerClan != destSettlement.OwnerClan) continue;
 
             // 不被围攻
             if (src.IsUnderSiege) continue;

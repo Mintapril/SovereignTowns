@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Newtonsoft.Json;
+using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.ModuleManager;
 using Logger = SovereignTowns.Logging.Logger;
@@ -22,7 +23,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。</summary>
-    public const int CurrentConfigVersion = 4;
+    public const int CurrentConfigVersion = 11;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -109,7 +110,12 @@ public static class ConfigurationManager
         }
     }
 
-    /// <summary>为某 Town 取最终生效规则：先查 PerSettlementOverrides[town.Settlement.StringId]，否则返回 GlobalDefaults。</summary>
+    /// <summary>
+    /// 为某 Town 取最终生效规则。lookup 优先级：
+    ///   1) PerSettlementOverrides[town.Settlement.StringId] —— 玩家手工 override（最高，玩家 + AI 城都适用）
+    ///   2) AI 城 + ApplyToAiSettlementsToo=true → <see cref="AiCulturePresets"/> 按 OwnerClan.Culture.StringId 查
+    ///   3) GlobalDefaults —— 兜底（玩家城无 override 时走此；AI 城未识别 culture 时也走此）
+    /// </summary>
     public static TownGarrisonRule GetRuleFor(Town town)
     {
         try
@@ -122,6 +128,15 @@ public static class ConfigurationManager
                 {
                     return rule;
                 }
+
+                if (town?.OwnerClan != null
+                    && town.OwnerClan != Clan.PlayerClan
+                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
+                {
+                    var preset = AiCulturePresets.TryGet(town.OwnerClan.Culture?.StringId);
+                    if (preset != null) return preset;
+                }
+
                 return _current.GlobalDefaults;
             }
         }
@@ -351,12 +366,15 @@ public static class ConfigurationManager
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
             parsed.PerSettlementOverrides ??= new System.Collections.Generic.Dictionary<string, TownGarrisonRule>();
             parsed.EnabledFeatures ??= new EnabledFeatures();
+            parsed.ClanPatrol ??= new ClanPatrolConfig();
+            parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.LastModified ??= "";
 
+            // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
             if (parsed.ConfigVersion != CurrentConfigVersion)
             {
-                Logger.Warn($"Config version mismatch (file={parsed.ConfigVersion}, expected={CurrentConfigVersion}); migrating in-memory config");
-                parsed = ConfigMigrator.Migrate(parsed);
+                Logger.Warn($"Config 版本不匹配 (file={parsed.ConfigVersion}, expected={CurrentConfigVersion})；不做迁移，重置为默认。请重新在网页面板配置。");
+                return null;
             }
 
             if (!ValidateConfig(parsed, out var reason))
@@ -421,6 +439,17 @@ public static class ConfigurationManager
             }
         }
 
+        if (config.VillageCooldownHours < 0)
+        {
+            reason = "VillageCooldownHours < 0";
+            return false;
+        }
+        if (config.RecruiterReturnThreshold < 1)
+        {
+            reason = "RecruiterReturnThreshold < 1";
+            return false;
+        }
+
         reason = "";
         return true;
     }
@@ -444,9 +473,9 @@ public static class ConfigurationManager
                 reason = $"{ctx}.ExactTroopTemplate contains empty troop id";
                 return false;
             }
-            if (kv.Value < 0)
+            if (float.IsNaN(kv.Value) || float.IsInfinity(kv.Value) || kv.Value < 0f || kv.Value > 1f)
             {
-                reason = $"{ctx}.ExactTroopTemplate['{kv.Key}'] < 0";
+                reason = $"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} 不在 [0,1] 占比范围";
                 return false;
             }
         }
@@ -471,15 +500,14 @@ public static class ConfigurationManager
             return false;
         }
         if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)
+            || !ValidateRatio(rule.HorseArcherRatio, $"{ctx}.HorseArcherRatio", out reason)
             || !ValidateRatio(rule.InfantryRatio, $"{ctx}.InfantryRatio", out reason)
-            || !ValidateRatio(rule.ArcherRatio, $"{ctx}.ArcherRatio", out reason)
-            || !ValidateRatio(rule.CrossbowRatio, $"{ctx}.CrossbowRatio", out reason)
-            || !ValidateRatio(rule.ThrowerRatio, $"{ctx}.ThrowerRatio", out reason))
+            || !ValidateRatio(rule.RangedRatio, $"{ctx}.RangedRatio", out reason))
         {
             return false;
         }
 
-        float troopSum = rule.CavalryRatio + rule.InfantryRatio + rule.ArcherRatio + rule.CrossbowRatio + rule.ThrowerRatio;
+        float troopSum = rule.CavalryRatio + rule.HorseArcherRatio + rule.InfantryRatio + rule.RangedRatio;
         if (troopSum < RatioSumMin || troopSum > RatioSumMax)
         {
             reason = $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
@@ -501,6 +529,7 @@ public static class ConfigurationManager
         reason = "";
         return true;
     }
+
 
 
 

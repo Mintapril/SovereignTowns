@@ -63,10 +63,10 @@ public sealed class TransferPartyComponent : CustomPartyComponent
                 return _cachedName;
             }
 
-            var sourceName = _source?.Name?.ToString() ?? "Unknown";
-            var destName   = _destination?.Name?.ToString() ?? "Unknown";
+            var sourceName = _source?.Name?.ToString() ?? "未知";
+            var destName   = _destination?.Name?.ToString() ?? "未知";
             _cachedName = new TextObject(
-                "{=ST_TransferPartyName}Garrison Transfer " + sourceName + " -> " + destName);
+                "{=ST_TransferPartyName}调拨队 " + sourceName + " → " + destName);
             return _cachedName;
         }
     }
@@ -159,7 +159,7 @@ public sealed class TransferPartyComponent : CustomPartyComponent
                 emptyPrisoners);
 
             var nameObj = new TextObject(
-                "{=ST_TransferPartyName}Garrison Transfer " + source.Name + " -> " + destination.Name);
+                "{=ST_TransferPartyName}调拨队 " + source.Name + " → " + destination.Name);
 
             var component = new TransferPartyComponent(
                 source: source,
@@ -188,6 +188,8 @@ public sealed class TransferPartyComponent : CustomPartyComponent
                     $"TransferPartyComponent.CreateForRoute: MobileParty.CreateParty returned null for '{stringId}'");
                 return null;
             }
+            // B7.22：0 攻击性，避免自家调拨队主动战斗 / 与玩家冲突
+            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
 
             Logger.Info(
                 $"TransferPartyComponent: created '{stringId}' (source='{source.StringId}', dest='{destination.StringId}', troops={transferRoster.TotalManCount})");

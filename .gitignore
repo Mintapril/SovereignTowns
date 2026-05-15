@@ -5,5 +5,6 @@
 *.suo
 .vs/
 
-# Decompiled vanilla & 3rd-party mod sources are evidence (read-only reference).
-# They are large but useful — track them. Override here if local copy gets too noisy.
+# Decompiled vanilla & 3rd-party mod sources — kept locally as reference,
+# but excluded from git (third-party copyright + repo bloat).
+**/_research/

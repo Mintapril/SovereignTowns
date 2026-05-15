@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
+using SovereignTowns.Common;
 using SovereignTowns.Configuration;
 using SovereignTowns.Decisions;
+using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Parties;
@@ -23,8 +25,9 @@ namespace SovereignTowns.Recruitment;
 /// MVP 2 业务核心 — 多目标巡回 + 兵种匹配 + 冷却 + 出发护卫。
 ///
 /// 工作流：
-///   1. 派遣：仅当 homeTown == 当前首府 时；从首府 garrison 抽 <see cref="GlobalConfig.RecruiterEscortSize"/>
-///      个低 Tier 兵作基础护卫；规划首个目标村庄；<see cref="SetMoveGoToSettlement"/> 出发。
+///   1. 派遣：仅当 homeTown == 当前首府 时；从首府 garrison 按 <see cref="EscortRatio"/>
+///      抽低 Tier 兵作基础护卫（征兵队不受 50 floor 限制 — 算多少抽多少，0 也派遣）；
+///      规划首个目标村庄；<see cref="MobileParty.SetMoveGoToSettlement"/> 出发。
 ///   2. HourlyTick：
 ///      - 抵达 home → TransferAndDisband
 ///      - 抵达任一非 home village → RecruitFromTargetVillage + 标记冷却 → 检查阈值/规划下一站
@@ -44,16 +47,19 @@ public sealed class RecruitmentManager
     /// <summary>规划候选时的最大距离（与原值一致）。</summary>
     private const float PlanMaxDistance = 100f;
 
+    // B7.24/B7.25：征兵队基础护卫按 garrison 百分比抽（10%）；不受 50 floor 限制 — 算多少抽多少，0 也派遣。
+    private const float EscortRatio = 0.10f;
+
     private readonly PartyLifecycleManager _lifecycle;
-    private readonly CapitalManager? _capitalManager;
+    private readonly CapitalRegistry? _capitalRegistry;
 
     /// <summary>每支招募队本次旅程已访问过的 village（避免立即回头）。瞬态。</summary>
     private readonly Dictionary<MobileParty, HashSet<Settlement>> _visitedPerParty = new();
 
-    public RecruitmentManager(PartyLifecycleManager lifecycle, CapitalManager? capitalManager = null)
+    public RecruitmentManager(PartyLifecycleManager lifecycle, CapitalRegistry? capitalRegistry = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
-        _capitalManager = capitalManager;
+        _capitalRegistry = capitalRegistry;
 
         // 订阅销毁事件，确保 _visitedPerParty 不会因招募队战斗死亡 / 被俘而泄漏。
         try
@@ -98,19 +104,26 @@ public sealed class RecruitmentManager
                 return false;
             }
 
-            // 首府校验：仅首府能派征兵队。CapitalManager 缺失时回退（兼容旧调用），但记录 Warn。
-            if (_capitalManager != null)
+            // B7.15 multi-clan：仅该 town 所属 clan 的当前首府能派征兵队。
+            // 玩家 + AI 各走各的 CapitalManager；不在 registry 的 clan（如 AI 未接管）直接拒绝。
+            if (_capitalRegistry != null)
             {
-                var capitalSettlement = _capitalManager.GetCapitalSettlement();
+                var mgr = _capitalRegistry.GetForSettlement(homeTown.Settlement);
+                if (mgr is null)
+                {
+                    Logger.Debug($"  RecruitmentManager: '{homeTown.Name}' 不在受管 clan 名单，跳过派遣");
+                    return false;
+                }
+                var capitalSettlement = mgr.GetCapitalSettlement();
                 if (capitalSettlement == null || homeTown.Settlement != capitalSettlement)
                 {
-                    Logger.Debug($"  RecruitmentManager: '{homeTown.Name}' 非当前首府，跳过派遣");
+                    Logger.Debug($"  RecruitmentManager: '{homeTown.Name}' 非该 clan 当前首府，跳过派遣");
                     return false;
                 }
             }
             else
             {
-                Logger.Warn($"  RecruitmentManager: capitalManager == null，跳过首府校验（兼容模式）");
+                Logger.Warn($"  RecruitmentManager: capitalRegistry == null，跳过首府校验（兼容模式）");
             }
 
             var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
@@ -125,6 +138,7 @@ public sealed class RecruitmentManager
                 return false;
             }
 
+            // B7.23：撤紧急模式 — mod 不应自作主张突破玩家配置的 Tier 过滤。
             var candidates = RecruitmentPlanner.RankCandidates(
                 homeTown,
                 maxDistance: PlanMaxDistance,
@@ -133,27 +147,56 @@ public sealed class RecruitmentManager
                 matchingRule: rule);
             if (candidates.Count == 0)
             {
-                Logger.Info($"  RecruitmentManager: '{homeTown.Name}' 无可招募村庄候选");
+                Logger.Warn($"  RecruitmentManager: '{homeTown.Name}' 无可招募村庄候选 — 周边 village notable 没有符合规则 (Tier {rule.MinTier}-{rule.MaxTier} / 比例非零兵种) 的兵。考虑放宽 MinTier。");
                 return false;
             }
             var target = candidates[0];
 
-            // 基础护卫：从首府 GarrisonParty 抽 RecruiterEscortSize 个低 Tier 兵
-            int escortRequested = Math.Max(0, ConfigurationManager.Current?.RecruiterEscortSize ?? 0);
+            // B7.25：征兵队不受 50 floor 限制 — garrison × 10% 算多少抽多少，0 也允许派遣裸车。
+            int garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+            int escortRequested = (int)Math.Round(garrisonForEscort * EscortRatio);
             TroopRoster? escortRoster = null;
             int escortActual = 0;
             if (escortRequested > 0)
             {
                 escortRoster = TroopRoster.CreateDummyTroopRoster();
-                escortActual = ExtractLowTierEscort(homeTown, escortRoster, escortRequested, rule);
+                escortActual = ExtractLowTierEscort(homeTown, escortRoster, escortRequested);
                 if (escortActual <= 0)
                 {
                     escortRoster = null;
-                    Logger.Info($"  RecruitmentManager: '{homeTown.Name}' 首府兵力不足抽护卫，0 护卫出发");
+                    Logger.Info($"  RecruitmentManager: '{homeTown.Name}' 抽不到护卫（garrison={garrisonForEscort}），0 护卫派遣");
                 }
                 else
                 {
-                    Logger.Info($"  RecruitmentManager: 抽 {escortActual} 名低 Tier 护卫从 '{homeTown.Name}'");
+                    Logger.Info($"  RecruitmentManager: 抽 {escortActual} 名低 Tier 护卫从 '{homeTown.Name}' (garrison {garrisonForEscort} × {EscortRatio:P0})");
+                }
+            }
+            else
+            {
+                Logger.Info($"  RecruitmentManager: '{homeTown.Name}' garrison={garrisonForEscort}，escort 计算为 0，裸车派遣");
+            }
+
+            // B7.27：派出征兵队前先预检玩家金币 + 扣初始本钱。AI clan 跳过扣费（保留 AI 阵营战役经济不被破坏）。
+            bool isPlayerClanDispatch = homeTown.OwnerClan == Clan.PlayerClan;
+            if (isPlayerClanDispatch)
+            {
+                if (!ModTreasury.CanAfford(DefaultInitialGold))
+                {
+                    Logger.Info($"  RecruitmentManager: '{homeTown.Name}' 玩家金币不足 ({Hero.MainHero?.Gold ?? 0} < {DefaultInitialGold})，跳过派遣");
+                    if (escortRoster != null && escortActual > 0)
+                    {
+                        TryRestoreEscort(homeTown, escortRoster);
+                    }
+                    return false;
+                }
+                if (!ModTreasury.Charge(ExpenseCategory.RecruiterSeed, DefaultInitialGold, $"recruiter_seed home={homeTown.Settlement.StringId}"))
+                {
+                    Logger.Info($"  RecruitmentManager: '{homeTown.Name}' ModTreasury.Charge 拒绝，跳过派遣");
+                    if (escortRoster != null && escortActual > 0)
+                    {
+                        TryRestoreEscort(homeTown, escortRoster);
+                    }
+                    return false;
                 }
             }
 
@@ -166,12 +209,34 @@ public sealed class RecruitmentManager
                 {
                     TryRestoreEscort(homeTown, escortRoster);
                 }
+                // 注：扣费已发生但 party 没创建出来 → 损失 1000 denar；记 Warn 让玩家可查日志
+                if (isPlayerClanDispatch)
+                {
+                    Logger.Warn($"  RecruitmentManager: 1000 denar 已扣但 party 创建失败 — 玩家损失");
+                }
                 return false;
             }
 
             party.SetMoveGoToSettlement(target.VillageSettlement, MobileParty.NavigationType.Default, false);
             _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);
             _visitedPerParty[party] = new HashSet<Settlement>();
+
+            // B7.27：通知 scheduler "刚派遣，首站已选"。后续招到人后由 OnHourlyTickParty 流程接管。
+            try
+            {
+                var dispatchCapitalMgr = _capitalRegistry?.GetForSettlement(homeTown.Settlement);
+                if (dispatchCapitalMgr != null)
+                {
+                    dispatchCapitalMgr.RecruiterScheduler.RecordVisit(homeTown.Settlement);  // 标记首府"刚出门"
+                    // target 已由 RankCandidates 选过，预占让其他征兵队知道
+                    float etaHours = ((party.GetPosition2D - target.VillageSettlement.GetPosition2D).Length) / Math.Max(party.Speed, 0.1f);
+                    dispatchCapitalMgr.RecruiterScheduler.PreemptiveBook(target.VillageSettlement, party, etaHours);
+                }
+            }
+            catch (Exception schedEx)
+            {
+                Logger.Warn("RecruiterScheduler first-hop bookkeeping failed: " + schedEx.Message);
+            }
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchRecruiter",
@@ -284,13 +349,21 @@ public sealed class RecruitmentManager
     }
 
     /// <summary>
-    /// 规划巡回的下一站：排除已 visited（本趟）以及当前在路上的 target（避免重复路径）。
-    /// 兵种匹配 + 冷却由 RecruitmentPlanner 内部完成。返回 null = 候选枯竭。
+    /// 规划巡回的下一站。B7.27：优先走 ClanRecruiterScheduler（多队互补）；失败回退原 RankCandidates 路径。
     /// </summary>
     private Settlement? PlanNextHop(MobileParty party, Settlement home)
     {
         try
         {
+            // B7.27：优先用 scheduler（统一管理多队预占）
+            var capitalMgr = _capitalRegistry?.GetForSettlement(home);
+            if (capitalMgr != null)
+            {
+                var next = capitalMgr.RecruiterScheduler.PickNextVillage(party);
+                if (next != null) return next;
+            }
+
+            // 回退：scheduler 返回 null（或 registry 不可用） → 走原 RankCandidates 路径，但同样应用本趟 visited 排除
             var homeTown = home.Town;
             if (homeTown == null) return null;
             var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
@@ -336,11 +409,34 @@ public sealed class RecruitmentManager
             int budgetRemaining = Math.Max(0, rule?.BudgetLimit ?? 5000);
             int leaderGold = ownerHero.Gold;
 
+            // B7.20：单兵金币折扣硬编码 0.5（半价）—— 不再可配置，避免破坏游戏数值平衡。
+            // AI 招兵强制免费（AI 领主金币本来就紧张，按玩家公式扣会让 AI 阵营破产）。
+            const float CostDiscount = 0.5f;
+            bool isAiClan = home.OwnerClan != Clan.PlayerClan;
+            int costPerRecruit = isAiClan ? 0 : Math.Max(1, (int)Math.Round(DefaultGoldPerRecruit * CostDiscount));
+
+            // B7.20：volunteer 倍率硬编码 2.0 —— vanilla maxIdx 通常 0–2（1–3 个 slot），
+            // ×2 后扩大可拉取的 slot 范围（最多 = volunteerTypes.Length - 1 即 5，全 6 slot）。
+            const float VolunteerMul = 2.0f;
+
             int spent = 0;
             int candidatesScanned = 0;
             var scoredCandidates = new List<(CharacterObject Troop, CharacterObject[] Slots, int SlotIndex, float Score)>();
             var garrisonRoster = home.Town?.GarrisonParty?.MemberRoster;
             int targetTotal = Math.Max(1, rule?.TargetTotalCount ?? 1);
+
+            // B7.23：撤紧急模式 — 不绕过 Tier。
+
+            // B7.22 Fix per-role 饱和：预测「征兵队回家合并后」各 role 总人数。
+            // 公式：projected_role = garrison.role + recruiter.role(已有) + gainedThisCall
+            // 若 projected_role >= target_role → 跳过该 role 候选。
+            var snapGarrison = SovereignTowns.Evaluators.GenericTroopMatcher.Snapshot(garrisonRoster);
+            var snapRecruiter = SovereignTowns.Evaluators.GenericTroopMatcher.Snapshot(recruitingParty.MemberRoster);
+            int rTargetCav = (int)Math.Round((rule?.CavalryRatio  ?? 0f) * targetTotal);
+            int rTargetHa  = (int)Math.Round((rule?.HorseArcherRatio ?? 0f) * targetTotal);
+            int rTargetInf = (int)Math.Round((rule?.InfantryRatio ?? 0f) * targetTotal);
+            int rTargetRng = (int)Math.Round((rule?.RangedRatio ?? 0f) * targetTotal);
+            int rGainCav = 0, rGainHa = 0, rGainInf = 0, rGainRng = 0;
 
             foreach (var notable in village.Notables)
             {
@@ -362,12 +458,19 @@ public sealed class RecruitmentManager
                 }
                 if (maxIdx < 0) continue;
 
-                for (int i = 0; i < volunteerTypes.Length && i <= maxIdx; i++)
+                // B7.14: 把 vanilla 的 slot 上限按倍率扩大，但永远不超过 volunteerTypes 实际长度。
+                // maxIdx 是 inclusive 索引，所以 slotCount = maxIdx + 1；× 倍率后再 -1 得新 inclusive 上限。
+                int effectiveMaxIdx = Math.Min(
+                    volunteerTypes.Length - 1,
+                    Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
+
+                for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
                 {
                     var troop = volunteerTypes[i];
                     if (troop == null) continue;
 
                     candidatesScanned++;
+                    // B7.21 Fix B：紧急模式用放宽 tier 的副本判定，但 score 仍按原 rule 计算（避免分桶失真）
                     if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
                     float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
                     if (float.IsNegativeInfinity(score)) continue;
@@ -379,15 +482,35 @@ public sealed class RecruitmentManager
 
             foreach (var candidate in scoredCandidates)
             {
-                int cost = DefaultGoldPerRecruit;
+                int cost = costPerRecruit; // B7.20：硬编码 50% 折扣（5 denar/兵），AI 免费
                 if (budgetRemaining < cost) break;
                 if (leaderGold < cost) break;
                 if (candidate.Slots[candidate.SlotIndex] == null) continue;
+
+                // B7.22 Fix per-role 饱和检查
+                var roleOfCand = SovereignTowns.Evaluators.GenericTroopMatcher.GetRole(candidate.Troop);
+                int projected, target;
+                switch (roleOfCand)
+                {
+                    case SovereignTowns.Evaluators.GenericTroopRole.Cavalry:  projected = snapGarrison.Cavalry  + snapRecruiter.Cavalry  + rGainCav; target = rTargetCav; break;
+                    case SovereignTowns.Evaluators.GenericTroopRole.HorseArcher: projected = snapGarrison.HorseArcher + snapRecruiter.HorseArcher + rGainHa; target = rTargetHa; break;
+                    case SovereignTowns.Evaluators.GenericTroopRole.Infantry: projected = snapGarrison.Infantry + snapRecruiter.Infantry + rGainInf; target = rTargetInf; break;
+                    case SovereignTowns.Evaluators.GenericTroopRole.Ranged: projected = snapGarrison.Ranged + snapRecruiter.Ranged + rGainRng; target = rTargetRng; break;
+                    default: continue;
+                }
+                if (projected >= target) continue;
 
                 try
                 {
                     recruitingParty.AddElementToMemberRoster(candidate.Troop, 1, false);
                     candidate.Slots[candidate.SlotIndex] = null!;
+                    switch (roleOfCand)
+                    {
+                        case SovereignTowns.Evaluators.GenericTroopRole.Cavalry:  rGainCav++; break;
+                        case SovereignTowns.Evaluators.GenericTroopRole.HorseArcher: rGainHa++; break;
+                        case SovereignTowns.Evaluators.GenericTroopRole.Infantry: rGainInf++; break;
+                        case SovereignTowns.Evaluators.GenericTroopRole.Ranged: rGainRng++; break;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -395,14 +518,12 @@ public sealed class RecruitmentManager
                     continue;
                 }
 
-                try
+                // B7.27：玩家氏族走 ModTreasury 统一记账；AI clan 已在上方设 cost = 0，跳过扣费
+                if (!isAiClan)
                 {
-                    ownerHero.ChangeHeroGold(-cost);
+                    ModTreasury.Charge(ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}");
                 }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"  RecruitFromTargetVillage: ChangeHeroGold(-{cost}) threw: {ex.Message}");
-                }
+                // AI clan：保持原行为（不扣费），cost 已是 0
 
                 budgetRemaining -= cost;
                 leaderGold -= cost;
@@ -416,6 +537,16 @@ public sealed class RecruitmentManager
                 decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
                 accepted: recruited > 0);
 
+            // B7.27：通知 scheduler 本次访问，更新该 village 的 LastRecruitedAt
+            if (recruited > 0)
+            {
+                try
+                {
+                    var visitCapitalMgr = _capitalRegistry?.GetForSettlement(home);
+                    visitCapitalMgr?.RecruiterScheduler.RecordVisit(village);
+                }
+                catch (Exception ex) { Logger.Warn("RecruiterScheduler.RecordVisit (per-village) failed: " + ex.Message); }
+            }
             Logger.Info($"  Recruiter '{recruitingParty.Name}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar）");
         }
         catch (Exception ex)
@@ -426,89 +557,30 @@ public sealed class RecruitmentManager
     }
 
     /// <summary>
-    /// 从首府 GarrisonParty 抽 <paramref name="want"/> 个低 Tier 兵进入 <paramref name="escortRoster"/>，
-    /// 但严格保留 <c>rule.MinimumDefenders</c> 不被击穿；返回实际抽出的人数。
-    /// 与 <see cref="GarrisonTransferManager"/> 相同的"低 Tier 优先"策略（高 Tier 留守）。
+    /// 从首府 GarrisonParty 抽 <paramref name="want"/> 个低 Tier 兵进入 <paramref name="escortRoster"/>。
+    /// 返回实际抽出的人数。低 Tier 优先（高 Tier 留守）。
+    /// B7.24：不受 MinDef 限制；调用方决定 want（按 garrison 百分比，征兵队不设 50 floor）。
+    ///
+    /// B2 重构（2026-05-14）：实现搬运至 SovereignTowns.Common.TroopTransferHelper（LowestTierFirst）。
+    /// 注：原实现用 sourceRoster.RemoveTroop + escortRoster.AddToCounts(+take)；
+    ///     helper 改用对称的 AddToCounts(-take)/AddToCounts(+take)，对非 Hero / 0-Xp / 0-Wounded
+    ///     的基础兵种 net 效果等价。
     /// </summary>
-    private static int ExtractLowTierEscort(Town homeTown, TroopRoster escortRoster, int want, TownGarrisonRule rule)
+    private static int ExtractLowTierEscort(Town homeTown, TroopRoster escortRoster, int want)
     {
-        int extracted = 0;
-        try
-        {
-            var garrison = homeTown?.GarrisonParty;
-            var sourceRoster = garrison?.MemberRoster;
-            if (sourceRoster == null) return 0;
-
-            int minDefenders = Math.Max(0, rule?.MinimumDefenders ?? 0);
-            int total = sourceRoster.TotalManCount;
-            if (total <= minDefenders) return 0;
-
-            List<TroopRosterElement> elements;
-            try
-            {
-                elements = sourceRoster.GetTroopRoster()
-                    .Where(e => e.Character != null && !e.Character.IsHero && e.Number > 0)
-                    .OrderBy(e => e.Character.Tier)
-                    .ToList();
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("ExtractLowTierEscort: GetTroopRoster/sort failed", ex);
-                return 0;
-            }
-
-            foreach (var elem in elements)
-            {
-                if (extracted >= want) break;
-                var ch = elem.Character;
-                if (ch == null) continue;
-
-                int currentSourceTotal = sourceRoster.TotalManCount;
-                int floor = currentSourceTotal - minDefenders;
-                if (floor <= 0) break;
-
-                int needed = want - extracted;
-                int take = Math.Min(elem.Number, Math.Min(needed, floor));
-                if (take <= 0) break;
-
-                try
-                {
-                    sourceRoster.RemoveTroop(ch, take, default, 0);
-                    escortRoster.AddToCounts(ch, take, false, 0, 0);
-                    extracted += take;
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"ExtractLowTierEscort: per-element transfer failed for '{ch.StringId}' take={take}", ex);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("ExtractLowTierEscort failed", ex);
-        }
-        return extracted;
+        var sourceRoster = homeTown?.GarrisonParty?.MemberRoster;
+        if (sourceRoster == null || escortRoster == null) return 0;
+        return TroopTransferHelper.TransferFromGarrison(
+            sourceRoster, escortRoster, want, TroopTransferHelper.SortStrategy.LowestTierFirst);
     }
 
-    /// <summary>派遣失败时把已抽离的护卫还回首府 garrison。</summary>
+    /// <summary>派遣失败时把已抽离的护卫还回首府 garrison。
+    /// B2 重构（2026-05-14）：实现搬运至 SovereignTowns.Common.TroopTransferHelper。</summary>
     private static void TryRestoreEscort(Town homeTown, TroopRoster escortRoster)
     {
-        try
-        {
-            var garrison = homeTown?.GarrisonParty;
-            var sourceRoster = garrison?.MemberRoster;
-            if (sourceRoster == null || escortRoster == null) return;
-            foreach (var elem in escortRoster.GetTroopRoster())
-            {
-                if (elem.Character == null || elem.Character.IsHero) continue;
-                sourceRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-            }
-            escortRoster.RemoveIf(e => e.Character != null && !e.Character.IsHero);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("TryRestoreEscort failed", ex);
-        }
+        var sourceRoster = homeTown?.GarrisonParty?.MemberRoster;
+        if (sourceRoster == null || escortRoster == null) return;
+        TroopTransferHelper.TransferBackToGarrison(escortRoster, sourceRoster);
     }
 
     private void TransferAndDisband(MobileParty recruiter, Settlement home)

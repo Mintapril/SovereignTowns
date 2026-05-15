@@ -118,16 +118,18 @@ public static class RecruitmentPlanner
                 }
             }
 
-            // 2) 其它玩家自有 town 的村庄（仅当 ≤ maxDistance）
-            var playerClan = Clan.PlayerClan;
-            if (playerClan != null)
+            // 2) 其它 *同氏族* 自有 town 的村庄（仅当 ≤ maxDistance）。
+            // B7.15: 多 clan 化 — 用 homeTown.OwnerClan 而非硬编码 PlayerClan，让 AI clan
+            // 的征兵队也能跨自家其他城的辐射范围招兵（玩家走同样路径仍正确）。
+            var homeClan = homeTown.OwnerClan;
+            if (homeClan != null)
             {
                 foreach (var t in Town.AllTowns)
                 {
                     if (t == null) continue;
                     if (t == homeTown) continue;
                     if (!t.IsTown) continue;
-                    if (t.OwnerClan != playerClan) continue;
+                    if (t.OwnerClan != homeClan) continue;
 
                     var villages = t.Villages;
                     if (villages == null) continue;
@@ -229,7 +231,7 @@ public static class RecruitmentPlanner
     }
 
     /// <summary>
-    /// 该 village 的 Notables.VolunteerTypes 中是否存在至少一个兵种命中通用匹配模板。
+    /// 该 village 的 Notables.VolunteerTypes 中是否存在至少一个兵种命中当前招募规则。
     /// 用于"目标兵种在该村没有则不去"的剪枝。
     /// </summary>
     private static bool VillageHasMatchingTroops(Settlement villageSettlement, TownGarrisonRule rule)

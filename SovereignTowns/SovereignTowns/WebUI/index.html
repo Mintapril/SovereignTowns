@@ -191,6 +191,40 @@
     }
     .btn-action:hover { border-color: #c8a165; background: linear-gradient(180deg, #262019 0%, #1c1813 100%); box-shadow: 0 0 10px rgba(200, 161, 101, 0.15); }
 
+    /* 兵种名录 -> 已选名单 加入 / 已加按钮 */
+    .btn-add {
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      padding: 4px 12px;
+      background: linear-gradient(180deg, #2a2017 0%, #1c1510 100%);
+      color: #f4e4bc;
+      border: 1px solid #c8a165;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .btn-add:hover {
+      background: linear-gradient(180deg, #c8a165 0%, #a8843f 100%);
+      color: #0e0c0b;
+      box-shadow: 0 0 12px rgba(200, 161, 101, 0.35);
+    }
+    .btn-added {
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      padding: 4px 12px;
+      background: rgba(120, 165, 130, 0.12);
+      color: #92b89e;
+      border: 1px solid rgba(120, 165, 130, 0.45);
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .btn-added:hover {
+      background: rgba(200, 90, 90, 0.12);
+      color: #d97373;
+      border-color: rgba(200, 90, 90, 0.55);
+    }
+
     .stat-pill {
       padding: 5px 14px;
       background: rgba(28, 24, 19, 0.6);
@@ -233,6 +267,12 @@
       from { opacity: 0; transform: translateY(6px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    .toggle-row-danger {
+      border-left: 3px solid #c34a4a;
+      background: rgba(195, 74, 74, 0.04);
+    }
+    .toggle-row-danger:hover { background: rgba(195, 74, 74, 0.12); }
 
     .toggle-row {
       transition: background 0.15s ease;
@@ -400,12 +440,17 @@
 
             <div class="space-y-1">
               <template x-for="t in toggleSpecs" :key="t.key">
-                <label class="toggle-row flex items-center gap-4 px-3 py-3 cursor-pointer">
+                <label class="toggle-row flex items-center gap-4 px-3 py-3 cursor-pointer"
+                       :class="t.danger ? 'toggle-row-danger' : ''">
                   <input type="checkbox" class="gold-check shrink-0"
                          :checked="getToggleValue(t)" @change="setToggleValue(t, $event.target.checked)" />
                   <div class="flex-1 min-w-0">
-                    <div class="text-[15px] text-parchment-50 font-medium" x-text="t.label"></div>
-                    <div class="text-[13px] text-parchment-300 mt-0.5" x-text="t.hint"></div>
+                    <div class="text-[15px] font-medium"
+                         :class="t.danger ? 'text-danger-500' : 'text-parchment-50'"
+                         x-text="t.label"></div>
+                    <div class="text-[13px] mt-0.5"
+                         :class="t.danger ? 'text-danger-500/85' : 'text-parchment-300'"
+                         x-text="t.hint"></div>
                   </div>
                 </label>
               </template>
@@ -447,7 +492,7 @@
           <div x-show="activeTab === 2" class="tab-content p-8">
             <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">兵种 编制</h2>
             <p class="text-parchment-200 text-sm mb-6">
-              <strong class="text-gold-200">通用匹配开启时</strong>：按 5 类兵种比例 + Tier 范围招募；忽略文化、阵营。<br/>
+              <strong class="text-gold-200">通用匹配开启时</strong>：只按 4 类兵种比例（骑兵 / 骑射 / 步兵 / 远程）+ Tier 范围招募；忽略文化、阵营和具体兵员模板。<br/>
               <strong class="text-gold-200">通用匹配关闭时</strong>：完全按「兵员模板」tab 中具体勾选的兵种 stringId 招募。
             </p>
 
@@ -464,7 +509,7 @@
                           x-text="config.GlobalDefaults.UseGenericMatching ? '· 当前开启 — 下方比例 + Tier 范围生效' : '· 当前关闭 — 「兵员模板」tab 生效'"></span>
                   </div>
                   <div class="text-[13px] text-parchment-300 mt-1">
-                    切换会影响 mod 如何挑选要招募的兵。不会触动比例或模板里的数据。
+                    切换会影响 mod 如何挑选要招募的兵。通用匹配只读取下方滑条和 Tier 范围，不读取具体兵员模板。
                   </div>
                 </div>
               </label>
@@ -502,7 +547,7 @@
                 </template>
               </div>
               <div class="text-[13px] text-parchment-300 mt-3">
-                拖动任一比例，其余四项会按当前相对比例自动缩放使 Σ 保持 1.00。
+                拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。
               </div>
             </div>
 
@@ -542,60 +587,30 @@
               <div class="font-mono text-sm text-parchment-200">
                 <span class="text-parchment-300">已选 </span>
                 <span class="text-gold-100 font-semibold" x-text="Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length"></span>
-                <span class="text-parchment-300"> 兵种 · 共 </span>
+                <span class="text-parchment-300"> 兵种 · 估算 </span>
                 <span class="text-gold-100 font-semibold" x-text="exactTroopTotal"></span>
-                <span class="text-parchment-300"> 人</span>
+                <span class="text-parchment-300"> 人 (按目标驻军 </span>
+                <span class="text-gold-100 font-semibold" x-text="config.GlobalDefaults?.TargetTotalCount || 0"></span>
+                <span class="text-parchment-300">)</span>
                 <button @click="clearTroops()" x-show="Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length > 0"
                         class="ml-4 text-danger-500 hover:text-danger-600 text-xs underline">清空</button>
               </div>
             </div>
             <p class="text-parchment-200 text-sm mb-4">
-              ImprovedGarrisons 风格的具体兵员名单。
+              按 stringId 指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。
               <span :class="!config.GlobalDefaults.UseGenericMatching ? 'text-sage-400 font-semibold' : 'text-danger-500'"
-                    x-text="config.GlobalDefaults.UseGenericMatching ? '当前通用匹配开启 — 此模板暂未生效（去兵种编制 tab 关闭通用匹配以激活）' : '当前通用匹配关闭 — 此模板生效'"></span>
+                    x-text="config.GlobalDefaults.UseGenericMatching ? '当前通用匹配开启 — 招募只看兵种滑条和 Tier 范围，此模板仅保留备用' : '当前通用匹配关闭 — 此模板生效'"></span>
             </p>
             <div class="diamond-divider mb-5"></div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
 
-              <!-- LEFT: selected -->
-              <div class="lg:col-span-5 card p-5">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200">已 选 名 单</div>
-                  <div class="text-[11px] text-parchment-400 font-mono">点 ✕ 移除 · 编辑数字调整数量</div>
-                </div>
-                <div class="space-y-1 max-h-[36rem] overflow-y-auto pr-1">
-                  <template x-for="[id, count] in Object.entries(config.GlobalDefaults.ExactTroopTemplate || {})" :key="id">
-                    <div class="flex items-center gap-3 px-2 py-2.5 border-b border-ink-700/60 hover:bg-ink-800/40 transition-colors">
-                      <span class="tier-dot shrink-0" :class="`tier-${(troopById[id]?.tier || 1)}`"></span>
-                      <div class="flex-1 min-w-0">
-                        <div class="text-[14px] text-parchment-50 truncate" x-text="troopById[id]?.name || id"></div>
-                        <div class="text-[11px] text-parchment-300 flex gap-2 items-center mt-0.5">
-                          <span class="culture-badge" x-text="cultureLabel(troopById[id]?.culture)"></span>
-                          <span class="font-mono" x-text="`T${troopById[id]?.tier || '?'}`"></span>
-                          <span x-text="typeLabel(troopById[id]?.type)"></span>
-                        </div>
-                      </div>
-                      <div class="flex items-center gap-1 shrink-0">
-                        <button @click="updateTroopCount(id, count - 5)" class="btn-action w-7 h-7 text-sm leading-none">−</button>
-                        <input type="number" class="w-16 bg-ink-900 border border-gold-600/40 text-gold-100 px-1.5 py-1 text-center focus:border-gold-300 focus:outline-none"
-                               min="0" :value="count"
-                               @input="updateTroopCount(id, $event.target.value)" />
-                        <button @click="updateTroopCount(id, count + 5)" class="btn-action w-7 h-7 text-sm leading-none">+</button>
-                        <button @click="removeTroop(id)" class="text-danger-500 hover:text-danger-600 ml-1 text-base leading-none px-1">✕</button>
-                      </div>
-                    </div>
-                  </template>
-                  <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
-                       class="text-[13px] text-parchment-300 italic py-10 text-center">
-                    名单为空。从右栏「兵种名录」挑兵加入。
-                  </div>
-                </div>
-              </div>
-
-              <!-- RIGHT: catalog -->
+              <!-- LEFT: catalog (browse + filter + add) -->
               <div class="lg:col-span-7 card p-5">
-                <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200 mb-3">兵 种 名 录</div>
+                <div class="flex items-center justify-between mb-3">
+                  <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200">兵 种 名 录</div>
+                  <div class="text-[11px] text-parchment-400 font-mono">点 ＋ 加入名单</div>
+                </div>
 
                 <input type="text" placeholder="搜索兵种（中文 / 英文 id 都支持）"
                        class="w-full bg-ink-900 border border-gold-600/40 text-parchment-50 px-3 py-2.5 focus:border-gold-300 focus:outline-none mb-3"
@@ -618,7 +633,7 @@
                     <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12">兵种</span>
                     <button @click="troopTypeFilter = ''"
                             :class="troopTypeFilter === '' ? 'chip-filter active' : 'chip-filter'">全部</button>
-                    <template x-for="t in [['cavalry','骑兵'],['infantry','步兵'],['archer','弓手'],['crossbow','弩手'],['thrower','投掷']]" :key="t[0]">
+                    <template x-for="t in [['cavalry','骑兵'],['horsearcher','骑射'],['infantry','步兵'],['ranged','远程']]" :key="t[0]">
                       <button @click="troopTypeFilter = (troopTypeFilter === t[0] ? '' : t[0])"
                               :class="troopTypeFilter === t[0] ? 'chip-filter active' : 'chip-filter'"
                               x-text="t[1]"></button>
@@ -645,7 +660,7 @@
                   <span x-show="filteredTroops.length > 200" class="text-parchment-400 ml-2">· 仅显示前 200 条，继续输入收缩</span>
                 </div>
 
-                <div class="space-y-0.5 max-h-[28rem] overflow-y-auto pr-1">
+                <div class="space-y-0.5 max-h-[36rem] overflow-y-auto pr-1">
                   <template x-for="tr in filteredTroops.slice(0, 200)" :key="tr.id">
                     <div @click="addTroop(tr.id)"
                          class="card-clickable flex items-center gap-3 px-2 py-2 border-b border-ink-700/40 transition-colors">
@@ -654,8 +669,12 @@
                       <span class="flex-1 truncate text-[14px] text-parchment-50" x-html="highlight(tr.name, troopSearch)"></span>
                       <span class="culture-badge" x-text="tr.cultureName || tr.culture"></span>
                       <span class="type-glyph shrink-0" :title="typeLabel(tr.type)" x-text="typeGlyph(tr.type)"></span>
-                      <span x-show="tr.id in (config.GlobalDefaults.ExactTroopTemplate || {})" class="text-sage-400 text-sm shrink-0">✓</span>
-                      <span x-show="!(tr.id in (config.GlobalDefaults.ExactTroopTemplate || {}))" class="text-gold-300 text-base leading-none shrink-0">＋</span>
+                      <button x-show="!(tr.id in (config.GlobalDefaults.ExactTroopTemplate || {}))"
+                              @click.stop="addTroop(tr.id)"
+                              class="btn-add shrink-0">＋ 加入</button>
+                      <button x-show="tr.id in (config.GlobalDefaults.ExactTroopTemplate || {})"
+                              @click.stop="removeTroop(tr.id)"
+                              class="btn-added shrink-0" title="已加入，点击移除">✓ 已加</button>
                     </div>
                   </template>
                   <div x-show="filteredTroops.length === 0" class="text-[13px] text-parchment-300 italic py-10 text-center">
@@ -663,62 +682,56 @@
                   </div>
                 </div>
               </div>
+
+              <!-- RIGHT: selected template -->
+              <div class="lg:col-span-5 card p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200">已 选 名 单</div>
+                  <div class="text-[11px] text-parchment-400 font-mono">
+                    Σ =
+                    <span :class="ratioSumOk(troopRatioSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
+                          x-text="(troopRatioSum * 100).toFixed(0) + '%'"></span>
+                    （自动归一化）
+                  </div>
+                </div>
+                <div class="space-y-1 max-h-[44rem] overflow-y-auto pr-1">
+                  <template x-for="[id, ratio] in Object.entries(config.GlobalDefaults.ExactTroopTemplate || {})" :key="id">
+                    <div class="px-2 py-2 border-b border-ink-700/60 hover:bg-ink-800/40 transition-colors">
+                      <div class="flex items-center gap-3 mb-1.5">
+                        <span class="tier-dot shrink-0" :class="`tier-${(troopById[id]?.tier || 1)}`"></span>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-[14px] text-parchment-50 truncate" x-text="troopById[id]?.name || id"></div>
+                          <div class="text-[11px] text-parchment-300 flex gap-2 items-center mt-0.5">
+                            <span class="culture-badge" x-text="cultureLabel(troopById[id]?.culture)"></span>
+                            <span class="font-mono" x-text="`T${troopById[id]?.tier || '?'}`"></span>
+                            <span x-text="typeLabel(troopById[id]?.type)"></span>
+                          </div>
+                        </div>
+                        <div class="text-[11px] font-mono shrink-0 text-right">
+                          <div class="text-gold-100" x-text="(ratio * 100).toFixed(0) + '%'"></div>
+                          <div class="text-parchment-300" x-text="`≈ ${estimatedTroopCount(ratio)} 人`"></div>
+                        </div>
+                        <button @click="removeTroop(id)" class="text-danger-500 hover:text-danger-600 text-base leading-none px-1 shrink-0">✕</button>
+                      </div>
+                      <input type="range" class="w-full"
+                             min="0" max="1" step="0.01"
+                             :value="ratio"
+                             @input="updateTroopRatio(id, $event.target.value)" />
+                    </div>
+                  </template>
+                  <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
+                       class="text-[13px] text-parchment-300 italic py-10 text-center">
+                    名单为空。从左侧「兵种名录」点 ＋ 加入。
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- =========== TAB 5: 模板与资源 =========== -->
+          <!-- =========== TAB 5: 资源与调度 =========== -->
           <div x-show="activeTab === 4" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">模板 与 资源</h2>
-            <p class="text-parchment-200 text-sm mb-6">一键应用预设规则（覆盖 GlobalDefaults 的数值与比例，保留具体兵员模板）。</p>
-            <div class="diamond-divider mb-6"></div>
-
-            <!-- Presets -->
-            <div class="mb-10">
-              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-4">预 设 应 用</h3>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <template x-for="t in templates" :key="t.TemplateId">
-                  <div class="card p-5 flex flex-col">
-                    <div class="font-display text-lg text-gold-100 tracking-wider" x-text="presetInfo(t).name"></div>
-                    <div class="text-[13px] text-parchment-200 mt-2" x-text="presetInfo(t).desc"></div>
-
-                    <div class="gold-rule my-4"></div>
-
-                    <div class="space-y-1.5 text-[13px]">
-                      <div class="flex justify-between"><span class="text-parchment-300">目标人数</span><span class="font-mono text-gold-100" x-text="t.Rule.TargetTotalCount"></span></div>
-                      <div class="flex justify-between"><span class="text-parchment-300">最少防守</span><span class="font-mono text-gold-100" x-text="t.Rule.MinimumDefenders"></span></div>
-                      <div class="flex justify-between"><span class="text-parchment-300">Tier 范围</span><span class="font-mono text-gold-100" x-text="`T${t.Rule.MinTier} – T${t.Rule.MaxTier}`"></span></div>
-                      <div class="flex justify-between"><span class="text-parchment-300">战时倍率</span><span class="font-mono text-gold-100" x-text="`×${t.Rule.WartimeMultiplier.toFixed(1)}`"></span></div>
-                      <div class="flex justify-between"><span class="text-parchment-300">招募预算</span><span class="font-mono text-gold-100" x-text="`${t.Rule.BudgetLimit}d`"></span></div>
-                    </div>
-
-                    <div class="mt-3">
-                      <div class="text-[11px] text-parchment-300 font-display tracking-wider uppercase mb-1">兵种构成</div>
-                      <div class="comp-bar">
-                        <div :style="`width: ${(t.Rule.CavalryRatio*100).toFixed(0)}%; background: #c8a165;`"   :title="`骑兵 ${(t.Rule.CavalryRatio*100).toFixed(0)}%`"></div>
-                        <div :style="`width: ${(t.Rule.InfantryRatio*100).toFixed(0)}%; background: #856836;`"  :title="`步兵 ${(t.Rule.InfantryRatio*100).toFixed(0)}%`"></div>
-                        <div :style="`width: ${(t.Rule.ArcherRatio*100).toFixed(0)}%; background: #b8924f;`"   :title="`弓手 ${(t.Rule.ArcherRatio*100).toFixed(0)}%`"></div>
-                        <div :style="`width: ${(t.Rule.CrossbowRatio*100).toFixed(0)}%; background: #e6c585;`" :title="`弩手 ${(t.Rule.CrossbowRatio*100).toFixed(0)}%`"></div>
-                        <div :style="`width: ${(t.Rule.ThrowerRatio*100).toFixed(0)}%; background: #7a6a52;`"  :title="`投掷 ${(t.Rule.ThrowerRatio*100).toFixed(0)}%`"></div>
-                      </div>
-                      <div class="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-parchment-200 mt-2 font-mono">
-                        <div><span class="legend-dot" style="background:#c8a165"></span>骑 <span x-text="(t.Rule.CavalryRatio*100).toFixed(0)+'%'"></span></div>
-                        <div><span class="legend-dot" style="background:#856836"></span>步 <span x-text="(t.Rule.InfantryRatio*100).toFixed(0)+'%'"></span></div>
-                        <div><span class="legend-dot" style="background:#b8924f"></span>弓 <span x-text="(t.Rule.ArcherRatio*100).toFixed(0)+'%'"></span></div>
-                        <div><span class="legend-dot" style="background:#e6c585"></span>弩 <span x-text="(t.Rule.CrossbowRatio*100).toFixed(0)+'%'"></span></div>
-                        <div><span class="legend-dot" style="background:#7a6a52"></span>投 <span x-text="(t.Rule.ThrowerRatio*100).toFixed(0)+'%'"></span></div>
-                      </div>
-                    </div>
-
-                    <button @click="applyTemplate(t)"
-                            class="btn-action mt-4 px-3 py-2 text-[12px] font-display tracking-widest uppercase">
-                      应用此预设
-                    </button>
-                  </div>
-                </template>
-                <div x-show="templates.length === 0" class="col-span-3 text-[13px] text-parchment-300">无预设。</div>
-              </div>
-            </div>
-
+            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">资源 与 调度</h2>
+            <p class="text-parchment-200 text-sm mb-6">招募节奏 / XP 注入 / 俘虏教化 等运行时调度参数。改完点上方「保存到游戏」生效。</p>
             <div class="diamond-divider mb-6"></div>
 
             <!-- Resources -->
@@ -805,6 +818,109 @@
             </div>
           </div>
 
+          <!-- =========== TAB 7: 财务 =========== -->
+          <div x-show="activeTab === 6" class="tab-content p-8">
+            <h2 class="font-display text-xl text-gold-200 mb-4 tracking-wider">财 务 报 告</h2>
+            <p class="text-parchment-200 text-sm mb-6">
+              本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。
+            </p>
+
+            <div x-show="financeError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="financeError"></div>
+
+            <div x-show="!finance && !financeError" class="text-parchment-400 italic text-sm">加载中…</div>
+
+            <div x-show="finance" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <!-- 今日 -->
+              <div class="ornate-frame p-5">
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">今 日</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <template x-for="(amt, cat) in (finance?.Today || {})" :key="cat">
+                      <tr class="border-b border-ink-700 last:border-0">
+                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
+                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                  <tfoot>
+                    <tr class="font-bold border-t-2 border-gold-700">
+                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.TodayTotal || 0) + 'd'"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <!-- 本周 -->
+              <div class="ornate-frame p-5">
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">本 周</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <template x-for="(amt, cat) in (finance?.Week || {})" :key="cat">
+                      <tr class="border-b border-ink-700 last:border-0">
+                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
+                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                  <tfoot>
+                    <tr class="font-bold border-t-2 border-gold-700">
+                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.WeekTotal || 0) + 'd'"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <!-- 全部 -->
+              <div class="ornate-frame p-5">
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">全 部</h3>
+                <table class="w-full text-sm">
+                  <tbody>
+                    <template x-for="(amt, cat) in (finance?.AllTime || {})" :key="cat">
+                      <tr class="border-b border-ink-700 last:border-0">
+                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
+                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                  <tfoot>
+                    <tr class="font-bold border-t-2 border-gold-700">
+                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.AllTimeTotal || 0) + 'd'"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <!-- 近期流水 -->
+            <div x-show="finance" class="ornate-frame p-5">
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">近 期 流 水（最近 50 条）</h3>
+              <div x-show="(finance?.RecentEntries || []).length === 0" class="text-parchment-400 italic text-sm">尚无支出记录</div>
+              <table x-show="(finance?.RecentEntries || []).length > 0" class="w-full text-sm">
+                <thead>
+                  <tr class="border-b-2 border-gold-700 text-parchment-200">
+                    <th class="py-2 text-left">时间</th>
+                    <th class="py-2 text-left">类别</th>
+                    <th class="py-2 text-right">金额</th>
+                    <th class="py-2 text-left">备注</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(e, idx) in (finance?.RecentEntries || [])" :key="idx">
+                    <tr class="border-b border-ink-700 last:border-0">
+                      <td class="py-1.5 text-parchment-300 font-mono text-xs" x-text="new Date(e.TimestampMs).toLocaleString('zh-CN')"></td>
+                      <td class="py-1.5 text-parchment-100" x-text="e.Category"></td>
+                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + e.Amount + 'd'"></td>
+                      <td class="py-1.5 text-parchment-300 text-xs" x-text="e.Note || ''"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div><!-- /ornate-frame -->
 
       </section>
@@ -822,17 +938,19 @@
           { label: '数量预算' },
           { label: '兵种编制' },
           { label: '兵员模板' },
-          { label: '模板资源' },
+          { label: '资源调度' },
           { label: '按城堡覆盖' },
+          { label: '财务' },
         ],
         config: null,
         status: null,
         troops: [],
         settlements: [],
-        templates: [],
         warning: '',
         saving: false,
         logEntries: [],
+        finance: null,
+        financeError: '',
 
         troopSearch: '',
         troopCultureFilter: '',
@@ -846,22 +964,6 @@
         // that supplies its own L10N. cultureLabel() does an stringId → localized lookup
         // off the dumped troop list.
 
-        // i18n descriptions for the three built-in TrainingTemplates.
-        presetMap: {
-          'frontier-defense': {
-            name: '边疆 防御',
-            desc: '前线领地用：堆叠驻军规模、提高战时倍率，步兵+弓手为主防御阵型。',
-          },
-          'trade-hub': {
-            name: '贸易 枢纽',
-            desc: '后方富庶领地用：低驻军规模、低战时倍率、低招募预算，把资源留给经济。',
-          },
-          'elite-noble': {
-            name: '精锐 贵族',
-            desc: '高消耗顶级驻军：仅 T4-T6 高 Tier 兵、允许贵族兵、骑兵占比偏高、预算翻倍。',
-          },
-        },
-
         toggleSpecs: [
           { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount' },
           { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军' },
@@ -873,11 +975,13 @@
           { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军' },
           { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town' },
           { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town' },
+          { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭玩家拥有城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
+          { key: 'ApplyToAiSettlementsToo', root: 'EnabledFeatures', label: 'AI 城镇纳入 ST 规则', hint: '把有首府的 AI 氏族纳入首府、驻军评估、招募、调拨、主动出击和俘虏转化等 ST 路径；AI 只招同文化兵，巡逻仍保持玩家专属。AI 招兵免费，不会让 AI 领主破产。' },
         ],
 
         budgetSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true },
-          { key: 'MinimumDefenders', label: '最少防守人数', hint: '至少保留的硬下限，被围时不会被自动调走', min: 0, max: 300, discrete: true },
+          { key: 'MinimumDefenders', label: '最少防守人数', hint: '仅约束「主动出击」：出击队不会让驻军跌破此值。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 300, discrete: true },
           { key: 'BudgetLimit', label: '招募预算上限', hint: '单日招募预算 denar', min: 0, max: 50000, discrete: true },
           { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '战争状态时目标人数倍数', min: 0.5, max: 2.0, discrete: false },
           { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '和平时期目标人数倍数', min: 0.5, max: 2.0, discrete: false },
@@ -885,18 +989,14 @@
 
         troopRatioSpecs: [
           { key: 'CavalryRatio', label: '骑兵' },
+          { key: 'HorseArcherRatio', label: '骑射' },
           { key: 'InfantryRatio', label: '步兵' },
-          { key: 'ArcherRatio', label: '弓手' },
-          { key: 'CrossbowRatio', label: '弩手' },
-          { key: 'ThrowerRatio', label: '投掷' },
+          { key: 'RangedRatio', label: '远程' },
         ],
-        ratioKeys: ['CavalryRatio','InfantryRatio','ArcherRatio','CrossbowRatio','ThrowerRatio'],
+        ratioKeys: ['CavalryRatio','HorseArcherRatio','InfantryRatio','RangedRatio'],
 
         resourceSpecs: [
           { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5 },
-          { key: 'DailyTroopXpBonus', root: 'GlobalDefaults', label: '每日驻军 XP 奖励', hint: '每日给非 hero 兵员注入 XP (0–30)', min: 0, max: 30, discrete: true },
-          { key: 'DailyPrisonerConformityAmount', root: '', label: '每日俘虏 Conformity', hint: '每日给驻军俘虏累加 conformity (0–30)', min: 0, max: 30, discrete: true },
-          { key: 'RecruiterEscortSize', root: '', label: '征兵护卫数', hint: '征兵队从首府抽取的低 Tier 兵 (0–50)', min: 0, max: 50, discrete: true },
           { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
           { key: 'RecruiterReturnThreshold', root: '', label: '征兵队回首府阈值', hint: '征兵队总人数达此值立即回首府 (10–200)', min: 10, max: 200, discrete: true },
         ],
@@ -934,9 +1034,21 @@
           for (const t of this.troops) map[t.id] = t;
           return map;
         },
-        get exactTroopTotal() {
+        // B7.20：占比之和（应约 = 1.0），用于 UI 显示 Σ 指示
+        get troopRatioSum() {
           if (!this.config?.GlobalDefaults?.ExactTroopTemplate) return 0;
-          return Object.values(this.config.GlobalDefaults.ExactTroopTemplate).reduce((a, b) => a + (parseInt(b)||0), 0);
+          return Object.values(this.config.GlobalDefaults.ExactTroopTemplate).reduce((a, b) => a + (parseFloat(b)||0), 0);
+        },
+        // 估算转换为人数（ratio × TargetTotalCount，与后端口径一致）
+        get exactTroopTotal() {
+          if (!this.config?.GlobalDefaults) return 0;
+          const target = parseInt(this.config.GlobalDefaults.TargetTotalCount) || 0;
+          return Math.round(this.troopRatioSum * target);
+        },
+        // 单个 troop 的估算人数
+        estimatedTroopCount(ratio) {
+          const target = parseInt(this.config?.GlobalDefaults?.TargetTotalCount) || 0;
+          return Math.round((parseFloat(ratio) || 0) * target);
         },
         get filteredTroops() {
           const q = this.troopSearch.toLowerCase().trim();
@@ -967,13 +1079,15 @@
             return;
           }
           await this.reloadAll();
+          this.loadFinance();
+          setInterval(() => { this.loadFinance(); }, 5000);
         },
 
         async reloadAll() {
           this.warning = '';
           await Promise.all([
             this.fetchConfig(), this.fetchStatus(), this.fetchTroops(),
-            this.fetchSettlements(), this.fetchTemplates(),
+            this.fetchSettlements(),
           ]);
         },
 
@@ -1009,7 +1123,22 @@
         async fetchStatus()      { const r = await this.http('GET', '/api/status');             this.status = r.ok ? r.body : null; },
         async fetchTroops()      { const r = await this.http('GET', '/api/troops');             this.troops = r.ok ? (r.body.troops || []) : []; },
         async fetchSettlements() { const r = await this.http('GET', '/api/settlements');        this.settlements = r.ok ? (r.body.settlements || []) : []; },
-        async fetchTemplates()   { const r = await this.http('GET', '/api/training-templates'); this.templates = r.ok ? (r.body.templates || []) : []; },
+
+        async loadFinance() {
+          // Mirrors loadConfig/loadSettlements: uses the shared http() helper (X-ST-Token header).
+          // Soft-fail: never throw out of the 5s interval; surface a banner via financeError instead.
+          try {
+            const r = await this.http('GET', '/api/finance');
+            if (r.ok) {
+              this.finance = r.body;
+              this.financeError = '';
+            } else {
+              this.financeError = `加载失败 HTTP ${r.status}: ${r.body?.message || '?'}`;
+            }
+          } catch (e) {
+            this.financeError = '加载失败：' + (e?.message || String(e));
+          }
+        },
 
         async save() {
           if (!this.config) return;
@@ -1018,7 +1147,7 @@
           const r = await this.http('PUT', '/api/config', this.config);
           this.saving = false;
           if (r.ok) {
-            this.log('保存成功', 'ok');
+            this.log('保存成功，运行时同步将在下一次游戏 tick 生效', 'ok');
             await this.fetchStatus();
           } else {
             this.warning = `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`;
@@ -1031,7 +1160,7 @@
         setToggleValue(t, v) { this.config[t.root][t.key] = v; },
 
         // ============ ratio with proportional auto-normalize ============
-        // Dragging one slider rescales the other four so Σ stays at 1.0.
+        // Dragging one slider rescales the other role sliders so Σ stays at 1.0.
         // Edge case: when others are all zero, distribute the remaining evenly.
         adjustRatio(key, raw) {
           let v = parseFloat(raw);
@@ -1075,37 +1204,84 @@
           root[s.key] = v;
         },
 
-        // ============ ExactTroopTemplate ============
+        // ============ ExactTroopTemplate (B7.20: 占比模式 0..1，自动归一化) ============
+        // 总和约 = 1.0；新增/删除/调整时按比例 rescale 其他条目让 Σ 保持 1.0。
+        // 实际人数 = ratio × TargetTotalCount，由后端计算（前端只显示估算）。
         addTroop(id) {
           const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
-          if (!(id in tmpl)) tmpl[id] = 10;
+          if (id in tmpl) return;
+          // 新条目分得 1/(N+1) 份，其他条目按比例缩 N/(N+1)
+          const ids = Object.keys(tmpl);
+          const newRatio = ids.length === 0 ? 1.0 : 1.0 / (ids.length + 1);
+          const factor = ids.length === 0 ? 0 : (1.0 - newRatio) / Math.max(1e-6, ids.reduce((s, k) => s + (tmpl[k] || 0), 0));
+          for (const k of ids) tmpl[k] = Math.max(0, (tmpl[k] || 0) * factor);
+          tmpl[id] = newRatio;
+          this._snapTroopSumTo1(id);
         },
-        updateTroopCount(id, raw) {
-          const n = parseInt(raw);
-          if (Number.isFinite(n) && n >= 0) this.config.GlobalDefaults.ExactTroopTemplate[id] = n;
+        updateTroopRatio(id, raw) {
+          const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
+          if (!(id in tmpl)) return;
+          let v = parseFloat(raw);
+          if (!Number.isFinite(v)) v = 0;
+          v = Math.max(0, Math.min(1, v));
+          tmpl[id] = v;
+          // 把剩余 (1 - v) 在其他条目上按原占比 rescale
+          const others = Object.keys(tmpl).filter(k => k !== id);
+          const remaining = 1 - v;
+          let otherSum = 0;
+          for (const k of others) otherSum += (tmpl[k] || 0);
+          if (others.length === 0) {
+            tmpl[id] = 1.0; // 唯一条目强制独占 100%
+            return;
+          }
+          if (otherSum > 1e-6) {
+            const factor = remaining / otherSum;
+            for (const k of others) tmpl[k] = Math.max(0, (tmpl[k] || 0) * factor);
+          } else {
+            const each = Math.max(0, remaining / others.length);
+            for (const k of others) tmpl[k] = each;
+          }
+          this._snapTroopSumTo1(id);
         },
-        removeTroop(id) { delete this.config.GlobalDefaults.ExactTroopTemplate[id]; },
+        removeTroop(id) {
+          const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
+          if (!(id in tmpl)) return;
+          delete tmpl[id];
+          // 把空出的份额按原占比分给剩余条目
+          const ids = Object.keys(tmpl);
+          if (ids.length === 0) return;
+          let s = 0;
+          for (const k of ids) s += (tmpl[k] || 0);
+          if (s < 1e-6) {
+            const each = 1.0 / ids.length;
+            for (const k of ids) tmpl[k] = each;
+          } else {
+            const factor = 1.0 / s;
+            for (const k of ids) tmpl[k] = Math.max(0, (tmpl[k] || 0) * factor);
+          }
+        },
         clearTroops() {
           if (!confirm('清空全部已选兵种？')) return;
           this.config.GlobalDefaults.ExactTroopTemplate = {};
           this.log('兵员模板已清空（未保存）', 'ok');
         },
-
-        // ============ TrainingTemplate Apply ============
-        presetInfo(t) {
-          return this.presetMap[t.TemplateId] || { name: t.DisplayName, desc: t.Description };
-        },
-        applyTemplate(t) {
-          const info = this.presetInfo(t);
-          if (!confirm(`将「${info.name}」应用到 GlobalDefaults？\n\n会覆盖：目标人数 / 兵种比例 / Tier 范围 / 倍率 / 食物 / XP\n保留：功能开关 / 具体兵员模板 / 按城堡覆盖`)) return;
-          const src = t.Rule;
-          const fields = [
-            'TargetTotalCount','MinimumDefenders','BudgetLimit','MinTier','MaxTier',
-            'CavalryRatio','InfantryRatio','ArcherRatio','CrossbowRatio','ThrowerRatio',
-            'WartimeMultiplier','PeacetimeMultiplier','FoodSafetyThreshold','DailyTroopXpBonus'
-          ];
-          for (const k of fields) if (src[k] !== undefined) this.config.GlobalDefaults[k] = src[k];
-          this.log(`已应用预设：${info.name}（未保存）`, 'ok');
+        // 修浮点漂移：通过调整除 lockedKey 外占比最大的条目，让 Σ 精确等于 1
+        _snapTroopSumTo1(lockedKey) {
+          const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
+          const ids = Object.keys(tmpl);
+          if (ids.length === 0) return;
+          let total = 0;
+          for (const k of ids) total += (tmpl[k] || 0);
+          const drift = 1 - total;
+          if (Math.abs(drift) < 1e-4) return;
+          const others = ids.filter(k => k !== lockedKey);
+          if (others.length === 0) {
+            tmpl[lockedKey] = Math.max(0, Math.min(1, (tmpl[lockedKey] || 0) + drift));
+            return;
+          }
+          let biggest = others[0];
+          for (const k of others) if ((tmpl[k] || 0) > (tmpl[biggest] || 0)) biggest = k;
+          tmpl[biggest] = Math.max(0, Math.min(1, (tmpl[biggest] || 0) + drift));
         },
 
         // ============ Per-settlement ============
@@ -1125,10 +1301,10 @@
         // ============ helpers ============
         ratioSumOk(sum) { return sum >= 0.9 && sum <= 1.1; },
         typeGlyph(type) {
-          return ({ cavalry: '♞', infantry: '⚔', archer: '⤧', crossbow: '✚', thrower: '◈' })[type] || '·';
+          return ({ cavalry: '♞', horsearcher: '↝', infantry: '⚔', ranged: '⤧' })[type] || '·';
         },
         typeLabel(type) {
-          return ({ cavalry: '骑兵', infantry: '步兵', archer: '弓手', crossbow: '弩手', thrower: '投掷' })[type] || type || '';
+          return ({ cavalry: '骑兵', horsearcher: '骑射', infantry: '步兵', ranged: '远程' })[type] || type || '';
         },
         cultureLabel(stringId) {
           // Look up the localized name from any dumped troop with that culture id;
