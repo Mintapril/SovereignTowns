@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using SovereignTowns.Audit;
+using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
@@ -16,7 +17,7 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Transfer;
 
 /// <summary>
-/// MVP 3 业务核心：消费 <see cref="CastleSupportManager"/> 产出的 <see cref="TransferTask"/>，
+/// 驻军调拨执行器：消费首府级调度器产出的 <see cref="TransferTask"/>，
 /// 从源城驻军抽兵，创建真实 <see cref="TransferPartyComponent"/> 调拨队伍并护送到目的地，
 /// 到达后把兵员注入目的地驻军并解散队伍。
 ///
@@ -24,18 +25,19 @@ namespace SovereignTowns.Transfer;
 ///   - 抽兵策略：低 Tier 优先（高 Tier 留守源城防御），并强制源城最终人数 &gt;= MinimumDefenders。
 ///   - 队伍跟踪：通过 <see cref="PartyLifecycleManager"/> 注册 kind="transfer"，
 ///     由 lifecycle manager 负责上限 / 空闲检测。
-///   - 风险中断：HourlyTick 检测目的地危险（High+），改返回 Source（不转兵）。
-///   - 不修改任何已有文件；TransferTask 由 <see cref="CastleSupportManager"/> 提供。
+///   - 风险中断：HourlyTick 检测目的地极端危险（Critical），改返回 Source（不转兵）。
 /// </summary>
 public sealed class GarrisonTransferManager
 {
     private const string PartyKind = PartyLifecycleManager.KindTransfer;
 
     private readonly PartyLifecycleManager _lifecycle;
+    private readonly PartyMergeService _mergeService;
 
     public GarrisonTransferManager(PartyLifecycleManager lifecycle)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _mergeService = new PartyMergeService(_lifecycle);
     }
 
     /// <summary>
@@ -66,10 +68,20 @@ public sealed class GarrisonTransferManager
                 Logger.Debug($"  GarrisonTransferManager: requested={requested} <= 0, skip ({source.StringId} -> {destination.StringId})");
                 return false;
             }
-
-            if (!ConfigurationManager.Current.EnabledFeatures.CastleSupport)
+            if (source == destination)
             {
-                Logger.Debug($"  GarrisonTransferManager: skipped '{source.Name}' -> '{destination.Name}' — CastleSupport disabled");
+                Logger.Debug($"  GarrisonTransferManager: source == destination '{source.Name}', skip");
+                return false;
+            }
+            if (source.OwnerClan == null || source.OwnerClan != destination.OwnerClan)
+            {
+                Logger.Warn($"  GarrisonTransferManager: cross-clan transfer rejected ({source.Name} -> {destination.Name})");
+                return false;
+            }
+
+            if (!ConfigurationManager.Current.EnabledFeatures.TroopTransfers)
+            {
+                Logger.Debug($"  GarrisonTransferManager: skipped '{source.Name}' -> '{destination.Name}' — TroopTransfers disabled");
                 return false;
             }
 
@@ -121,8 +133,15 @@ public sealed class GarrisonTransferManager
                 return false;
             }
 
-            party.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false);
             _lifecycle.RegisterTrackedParty(party, source, PartyKind);
+            try
+            {
+                party.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false);
+            }
+            catch (Exception moveEx)
+            {
+                Logger.Error($"  GarrisonTransferManager: SetMoveGoToSettlement failed ({source.Name} -> {destination.Name})", moveEx);
+            }
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchTransfer",
@@ -154,6 +173,30 @@ public sealed class GarrisonTransferManager
 
             var dest = tp.Destination;
             if (dest == null) return;
+            var partyClan = party.ActualClan ?? tp.Source?.OwnerClan ?? dest.OwnerClan;
+            if (partyClan != null && dest.OwnerClan != partyClan)
+            {
+                var fallback = ResolveSafeFallback(tp, partyClan);
+                if (fallback != null)
+                {
+                    if (party.LastVisitedSettlement == fallback)
+                    {
+                        Logger.Warn($"  TransferParty '{party.Name}': destination '{dest.Name}' owner changed; merging into fallback '{fallback.Name}'");
+                        DeliverAndDisband(party, fallback);
+                    }
+                    else if (party.TargetSettlement != fallback)
+                    {
+                        Logger.Warn($"  TransferParty '{party.Name}': destination '{dest.Name}' owner changed; rerouting to '{fallback.Name}'");
+                        party.SetMoveGoToSettlement(fallback, MobileParty.NavigationType.Default, false);
+                    }
+                }
+                else
+                {
+                    Logger.Warn($"  TransferParty '{party.Name}': destination '{dest.Name}' owner changed and no safe fallback; disbanding");
+                    _mergeService.DisbandAndUntrack(party, "GarrisonTransferManager destination lost");
+                }
+                return;
+            }
 
             // 1) 已经到达目的地 → 注入驻军 + 解散
             if (party.LastVisitedSettlement == dest)
@@ -162,9 +205,9 @@ public sealed class GarrisonTransferManager
                 return;
             }
 
-            // 2) 目的地危险 → 改返回 Source（不转兵；等下个 tick 抵达 Source 时由分支 3 解散）
+            // 2) 目的地极端危险 → 改返回 Source（不转兵；等下个 tick 抵达 Source 时由分支 3 解散）
             var risk = RiskAssessmentService.Assess(dest);
-            if (risk.Level >= RiskLevel.High)
+            if (risk.Level >= RiskLevel.Critical)
             {
                 var src = tp.Source;
                 if (src != null && party.TargetSettlement != src)
@@ -179,13 +222,45 @@ public sealed class GarrisonTransferManager
             var sourceSettlement = tp.Source;
             if (sourceSettlement != null && party.LastVisitedSettlement == sourceSettlement)
             {
-                DeliverAndDisband(party, sourceSettlement);
+                if (partyClan == null || sourceSettlement.OwnerClan == partyClan)
+                {
+                    DeliverAndDisband(party, sourceSettlement);
+                }
+                else
+                {
+                    var fallback = ResolveSafeFallback(tp, partyClan);
+                    if (fallback != null && fallback != sourceSettlement)
+                    {
+                        Logger.Warn($"  TransferParty '{party.Name}': source '{sourceSettlement.Name}' owner changed; rerouting to '{fallback.Name}'");
+                        party.SetMoveGoToSettlement(fallback, MobileParty.NavigationType.Default, false);
+                    }
+                    else
+                    {
+                        Logger.Warn($"  TransferParty '{party.Name}': source '{sourceSettlement.Name}' owner changed and no safe fallback; disbanding");
+                        _mergeService.DisbandAndUntrack(party, "GarrisonTransferManager source lost");
+                    }
+                }
                 return;
             }
         }
         catch (Exception ex)
         {
             Logger.Error("OnHourlyTickParty failed", ex);
+        }
+    }
+
+    private static Settlement? ResolveSafeFallback(TransferPartyComponent transfer, Clan? partyClan)
+    {
+        try
+        {
+            if (partyClan == null) return null;
+            var source = transfer.Source;
+            if (source != null && source.OwnerClan == partyClan) return source;
+            return CapitalRegistry.Instance?.GetCapitalForClan(partyClan);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -264,27 +339,10 @@ public sealed class GarrisonTransferManager
     {
         try
         {
-            var town = targetSettlement?.Town;
-            var garrison = town?.GarrisonParty;
-            var transferRoster = party.MemberRoster;
-            int delivered = 0;
-
-            if (garrison != null && transferRoster != null)
-            {
-                var elements = transferRoster.GetTroopRoster();
-                foreach (var elem in elements)
-                {
-                    if (elem.Character == null || elem.Character.IsHero) continue;
-                    garrison.MemberRoster.AddToCounts(
-                        elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                    delivered += elem.Number;
-                }
-                transferRoster.RemoveIf(e => e.Character != null && !e.Character.IsHero);
-            }
-            else
-            {
-                Logger.Warn($"  TransferParty '{party.Name}': target '{targetSettlement?.Name}' 无 GarrisonParty，直接解散（兵员丢失={transferRoster?.TotalManCount ?? 0}）");
-            }
+            int delivered = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                party,
+                targetSettlement,
+                "GarrisonTransferManager.DeliverAndDisband");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DeliverTransfer",
@@ -294,15 +352,7 @@ public sealed class GarrisonTransferManager
 
             Logger.Info($"  TransferParty '{party.Name}': 注入 {delivered} 名兵员到 '{targetSettlement?.Name}' 驻军，解散队伍");
 
-            try
-            {
-                DisbandPartyAction.StartDisband(party);
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"DisbandPartyAction.StartDisband failed for '{party.Name}'", ex);
-            }
-            _lifecycle.UntrackParty(party);
+            _mergeService.DisbandAndUntrack(party, "GarrisonTransferManager");
         }
         catch (Exception ex)
         {

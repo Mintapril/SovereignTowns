@@ -11,7 +11,7 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Ui;
 
 /// <summary>
-/// B7.22：拦截玩家与本 mod 自家队伍（征兵队 / 调拨队 / 出击队 / 退伍队 / Patrol）的 encounter。
+/// B7.22：拦截玩家与本 mod 自家队伍（征兵队 / 调拨队 / 出击队 / Patrol）的 encounter。
 /// 在 vanilla 对话图的 "start" 根节点上注册一条高优先级对话：
 ///   - 条件：encountered party 属于本 mod 自家 component 类型
 ///   - NPC 文本：「[城名] 的 X 队伍向你致意。」
@@ -71,8 +71,7 @@ internal static class STPartyDialogRegistration
             if (comp is null) return false;
             if (comp is RecruitingPartyComponent
                 || comp is TransferPartyComponent
-                || comp is SallyForthPartyComponent
-                || comp is DismissPartyComponent)
+                || comp is SallyForthPartyComponent)
             {
                 // 设置 NPC 文本变量（{ST_PARTY_GREETING}）
                 string kindZh = comp switch
@@ -80,7 +79,6 @@ internal static class STPartyDialogRegistration
                     RecruitingPartyComponent => "征兵队",
                     TransferPartyComponent   => "调拨队",
                     SallyForthPartyComponent => "出击队",
-                    DismissPartyComponent    => "退伍队伍",
                     _                        => "队伍"
                 };
                 string homeName;

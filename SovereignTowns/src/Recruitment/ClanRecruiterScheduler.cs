@@ -34,8 +34,8 @@ public sealed class ClanRecruiterScheduler : BaseSettlementVisitScheduler
     protected override IEnumerable<Settlement> EnumerateCandidates(MobileParty party)
     {
         // 取首府 Town 用于 RankCandidates 输入
-        var capitalMgr = CapitalRegistry.Instance?.GetForClan(_clan);
-        var capitalTown = capitalMgr?.GetCapital();
+        var capitalSettlement = CapitalRegistry.Instance?.GetCapitalForClan(_clan);
+        var capitalTown = capitalSettlement?.Town;
         if (capitalTown == null) return System.Array.Empty<Settlement>();
 
         var rule = ConfigurationManager.GetRuleFor(capitalTown);

@@ -57,6 +57,12 @@ public sealed class GlobalConfig
     /// </summary>
     public ClanRecruiterConfig ClanRecruiter { get; set; } = new ClanRecruiterConfig();
 
+    /// <summary>
+    /// 把原先散落在各 Manager 内的"人数 / 比例"硬编码常量统一抽出来，让玩家在网页面板调。
+    /// 默认值保持与改造前一致 — 不调整面板的玩家不会感知差别。
+    /// </summary>
+    public PartyThresholds Thresholds { get; set; } = new PartyThresholds();
+
     /// <summary>构造一份纯默认配置（用于首次安装 / 配置丢失回退）。</summary>
     public static GlobalConfig CreateDefault() => new GlobalConfig
     {
@@ -66,7 +72,8 @@ public sealed class GlobalConfig
         PerSettlementOverrides = new Dictionary<string, TownGarrisonRule>(),
         EnabledFeatures = new EnabledFeatures(),
         ClanPatrol = new ClanPatrolConfig(),
-        ClanRecruiter = new ClanRecruiterConfig()
+        ClanRecruiter = new ClanRecruiterConfig(),
+        Thresholds = new PartyThresholds(),
     };
 }
 
@@ -85,15 +92,8 @@ public sealed class EnabledFeatures
     /// <summary>MVP 4：自动派出巡逻队。</summary>
     public bool AutoPatrol { get; set; } = false;
 
-    /// <summary>MVP 3.5：对玩家归属城堡的同等支持（跨城调拨给城堡补充兵力）。
-    /// B7.18：默认 true — 城堡不能自己招募，关闭后城堡兵力永远不增长。</summary>
-    public bool CastleSupport { get; set; } = true;
-
-    /// <summary>MVP 5.5：启用 LLM 推理建议（仅出主意，不动手）。</summary>
-    public bool LlmReasoning { get; set; } = false;
-
-    /// <summary>MVP 6：允许 LLM 直接执行决策（动手）。</summary>
-    public bool LlmAutoExecute { get; set; } = false;
+    /// <summary>跨城镇/城堡调拨兵力。关闭后非首府 settlement 只能依赖已有驻军。</summary>
+    public bool TroopTransfers { get; set; } = true;
 
     /// <summary>无巡逻队时附近有敌对势力则出城攻击。默认关闭以保稳。</summary>
     public bool SallyForth { get; set; } = false;
@@ -108,7 +108,7 @@ public sealed class EnabledFeatures
     public bool AutoSellLoot { get; set; } = true;
 
     /// <summary>
-    /// B7.14：在玩家拥有的城镇/城堡上把 vanilla 的 <c>Town.GarrisonAutoRecruitmentIsEnabled</c>
+    /// B7.14：在受管氏族拥有的城镇/城堡上把 vanilla 的 <c>Town.GarrisonAutoRecruitmentIsEnabled</c>
     /// 设为 false。仅在 <see cref="AutoRecruitment"/> 同时开启时生效。生效后 vanilla 不再自己从 notable VolunteerTypes 拉兵进 GarrisonParty，
     /// 也不再自动升级 GarrisonParty 兵种。本 Mod 的 RecruitingParty 是唯一招兵来源。
     /// Notable 自身的 VolunteerTypes slot 仍正常刷新（这是玩家手动招兵 + RecruitingParty 的供给）。
@@ -118,8 +118,8 @@ public sealed class EnabledFeatures
 
     /// <summary>
     /// B7.14：抑制范围扩到已由 ST 接管且有可用首府的 AI clan 的城镇 + 城堡。
-    /// 开启后这些 AI clan 的城镇不再由 vanilla 自动补兵，改走 ST 的首府/驻军/招募/调拨/出击/俘虏路径；
-    /// 巡逻仍保持玩家专属。慎用：会改变 AI 阵营驻军增长速度，影响战役平衡。默认 false。
+    /// 开启后这些 AI clan 的城镇不再由 vanilla 自动补兵，改走 ST 的首府/驻军/招募/调拨/出击/俘虏/巡逻路径。
+    /// 慎用：会改变 AI 阵营驻军增长速度和野外防卫行为，影响战役平衡。默认 false。
     /// </summary>
     public bool ApplyToAiSettlementsToo { get; set; } = false;
 
@@ -176,4 +176,47 @@ public sealed class ClanRecruiterConfig
 
     /// <summary>距离评分权重（小时/Vec2 unit）。</summary>
     public float DistanceWeightHoursPerTile { get; set; } = 0.5f;
+}
+
+/// <summary>
+/// 队伍创建相关的人数 / 比例阈值。所有字段都对应原先散落在各 Manager 内的硬编码常量，
+/// 默认值与历史值等价；玩家可通过网页面板调整。
+/// </summary>
+public sealed class PartyThresholds
+{
+    // ── 巡逻队（PatrolManager） ─────────────────────────────────────────────
+    /// <summary>首府驻军达到此值才允许创建新巡逻队（避免抽空驻军）。原硬编码 = 40。</summary>
+    public int PatrolMinCapitalGarrison { get; set; } = 40;
+
+    /// <summary>新建巡逻队时从首府驻军抽走的兵员数。原硬编码 = 15。</summary>
+    public int PatrolTroopBatchSize { get; set; } = 15;
+
+    /// <summary>巡逻队兵员低于此值时回首府合并入驻军。原硬编码 = 5。</summary>
+    public int PatrolMinMembersBeforeMerge { get; set; } = 5;
+
+    /// <summary>巡逻队兵员低于此值且健康比例不佳时回首府治疗。原硬编码 = 8。</summary>
+    public int PatrolMinMembersForHeal { get; set; } = 8;
+
+    /// <summary>巡逻队健康兵员比例阈值（低于此值触发 Heal）。原硬编码 = 0.6。</summary>
+    public float PatrolHealHealthyRatio { get; set; } = 0.6f;
+
+    // ── 征兵队（RecruitmentManager） ────────────────────────────────────────
+    /// <summary>派出征兵队时从首府驻军抽取的护卫比例（0–1）。原硬编码 = 0.10（10%）。</summary>
+    public float RecruiterEscortRatio { get; set; } = 0.10f;
+
+    // ── 调拨 / 调度（CapitalLogisticsManager） ─────────────────────────────
+    /// <summary>驻军 &lt; MinimumDefenders × 此乘数 → 视为危急缺口（优先级最高）。原硬编码 = 1.2。</summary>
+    public float TransferCriticalDeficitMultiplier { get; set; } = 1.2f;
+
+    /// <summary>从源城驻军中按此比例抽取（再受 dest demand 与 MaxTroopsPerTask 钳制）。原硬编码 = 0.30。</summary>
+    public float TransferRatio { get; set; } = 0.30f;
+
+    /// <summary>单次调拨任务最多搬运多少兵员。原硬编码 = 100。</summary>
+    public int TransferMaxTroopsPerTask { get; set; } = 100;
+
+    /// <summary>算出来的调拨人数 &lt; 此值则放弃任务（除非缺口已临界）。原硬编码 = 20。</summary>
+    public int TransferMinTroops { get; set; } = 20;
+
+    /// <summary>派征兵队的缺口下限（剩余缺口 &lt; 此值不再派）。原硬编码 = 10。</summary>
+    public int RecruitmentMinDemand { get; set; } = 10;
 }

@@ -67,10 +67,10 @@ public static class RecruitmentPlanner
 
     /// <summary>
     /// 给定 <paramref name="homeTown"/>，返回按 <see cref="VillageRecruitOption.PriorityScore"/> 倒序的候选村庄。
-    /// 候选范围：homeTown 直接隶属村庄 + 其它玩家自有 town 的村庄（仅当与 home town 距离 ≤ <paramref name="maxDistance"/>）。
-    /// 不扫描全图全部 settlement —— 仅遍历玩家自有 town 的 villages 集合。
+    /// 候选范围：homeTown 直接隶属村庄 + 其它同氏族自有 town 的村庄（仅当与 home town 距离 ≤ <paramref name="maxDistance"/>）。
+    /// 不扫描全图全部 settlement —— 仅遍历本氏族自有 town 的 villages 集合。
     /// </summary>
-    /// <param name="homeTown">发起招募的玩家自有城镇。null 时返回空数组。</param>
+    /// <param name="homeTown">发起招募的受管城镇。null 时返回空数组。</param>
     /// <param name="maxDistance">最大允许的二维地图距离（默认 100f）。</param>
     /// <param name="maxResults">最多返回的候选数（默认 10）。</param>
     public static IReadOnlyList<VillageRecruitOption> RankCandidates(

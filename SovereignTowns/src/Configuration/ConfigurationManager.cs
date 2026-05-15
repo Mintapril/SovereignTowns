@@ -22,8 +22,9 @@ namespace SovereignTowns.Configuration;
 /// </remarks>
 public static class ConfigurationManager
 {
-    /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。</summary>
-    public const int CurrentConfigVersion = 11;
+    /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。
+    /// B12：抽出 PartyThresholds（巡逻队 / 调拨阈值原硬编码可配置）。</summary>
+    public const int CurrentConfigVersion = 12;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -368,6 +369,7 @@ public static class ConfigurationManager
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
+            parsed.Thresholds ??= new PartyThresholds();
             parsed.LastModified ??= "";
 
             // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
@@ -449,10 +451,49 @@ public static class ConfigurationManager
             reason = "RecruiterReturnThreshold < 1";
             return false;
         }
+        if (config.Thresholds != null && !ValidateThresholds(config.Thresholds, out reason))
+        {
+            return false;
+        }
 
         reason = "";
         return true;
     }
+
+    private static bool ValidateThresholds(PartyThresholds t, out string reason)
+    {
+        if (t.PatrolMinCapitalGarrison < 0)
+        { reason = "Thresholds.PatrolMinCapitalGarrison < 0"; return false; }
+        if (t.PatrolTroopBatchSize < 1)
+        { reason = "Thresholds.PatrolTroopBatchSize < 1"; return false; }
+        if (t.PatrolMinMembersBeforeMerge < 0)
+        { reason = "Thresholds.PatrolMinMembersBeforeMerge < 0"; return false; }
+        if (t.PatrolMinMembersForHeal < 0)
+        { reason = "Thresholds.PatrolMinMembersForHeal < 0"; return false; }
+        if (!IsRatio(t.PatrolHealHealthyRatio))
+        { reason = $"Thresholds.PatrolHealHealthyRatio invalid ({t.PatrolHealHealthyRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.RecruiterEscortRatio))
+        { reason = $"Thresholds.RecruiterEscortRatio invalid ({t.RecruiterEscortRatio}); must be in [0,1]"; return false; }
+        if (!IsNonNegativeFloat(t.TransferCriticalDeficitMultiplier))
+        { reason = $"Thresholds.TransferCriticalDeficitMultiplier invalid ({t.TransferCriticalDeficitMultiplier})"; return false; }
+        if (!IsRatio(t.TransferRatio))
+        { reason = $"Thresholds.TransferRatio invalid ({t.TransferRatio}); must be in [0,1]"; return false; }
+        if (t.TransferMaxTroopsPerTask < 1)
+        { reason = "Thresholds.TransferMaxTroopsPerTask < 1"; return false; }
+        if (t.TransferMinTroops < 0)
+        { reason = "Thresholds.TransferMinTroops < 0"; return false; }
+        if (t.RecruitmentMinDemand < 1)
+        { reason = "Thresholds.RecruitmentMinDemand < 1"; return false; }
+
+        reason = "";
+        return true;
+    }
+
+    private static bool IsRatio(float v)
+        => !float.IsNaN(v) && !float.IsInfinity(v) && v >= 0f && v <= 1f;
+
+    private static bool IsNonNegativeFloat(float v)
+        => !float.IsNaN(v) && !float.IsInfinity(v) && v >= 0f;
 
     private static bool ValidateRule(TownGarrisonRule rule, string ctx, out string reason)
     {

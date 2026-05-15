@@ -79,6 +79,9 @@ internal static class WebConfigEndpoints
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
             parsed.PerSettlementOverrides ??= new Dictionary<string, TownGarrisonRule>();
             parsed.EnabledFeatures ??= new EnabledFeatures();
+            parsed.ClanPatrol ??= new ClanPatrolConfig();
+            parsed.ClanRecruiter ??= new ClanRecruiterConfig();
+            parsed.Thresholds ??= new PartyThresholds();
             parsed.LastModified ??= "";
 
             // 原子 validate + replace + write。失败时 in-memory 不动。

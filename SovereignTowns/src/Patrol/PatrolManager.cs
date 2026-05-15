@@ -7,8 +7,6 @@ using SovereignTowns.Common;
 using SovereignTowns.Configuration;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.CampaignSystem.Actions;
-using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
@@ -49,33 +47,39 @@ public enum PatrolOrder
 /// </summary>
 public sealed class PatrolManager
 {
-    private const int MinPatrolGarrisonRequired = 40;
-    private const int PatrolTroopBatchSize = 15;
+    // 人数 / 比例阈值改读 ConfigurationManager.Current.Thresholds（玩家可在网页面板调）。
+    // 通过封装属性 + 兜底默认值访问，避免 config 加载失败时 NRE。
+    private static int MinPatrolGarrisonRequired
+        => ConfigurationManager.Current?.Thresholds?.PatrolMinCapitalGarrison ?? 40;
+    private static int PatrolTroopBatchSize
+        => ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchSize ?? 15;
+    private static int MinPartyMembersBeforeMerge
+        => ConfigurationManager.Current?.Thresholds?.PatrolMinMembersBeforeMerge ?? 5;
+    private static int MinPartyMembersForHeal
+        => ConfigurationManager.Current?.Thresholds?.PatrolMinMembersForHeal ?? 8;
+    private static float HealHealthyRatioThreshold
+        => ConfigurationManager.Current?.Thresholds?.PatrolHealHealthyRatio ?? 0.6f;
 
     /// <summary>Defense / Patrol 模式应用 SetInitiative 时的有效时长（小时）。</summary>
     private const float InitiativeResetHours = 4f;
 
-    /// <summary>兵员不足触发 MergeGarrison 的阈值。</summary>
-    private const int MinPartyMembersBeforeMerge = 5;
-
-    /// <summary>Heal 状态触发的兵员阈值（&lt; 此值且伤兵比例 &gt; 1-HealHealthyRatioThreshold 时回家治疗）。</summary>
-    private const int MinPartyMembersForHeal = 8;
-
-    /// <summary>Heal 触发的健康兵员比例阈值（低于此值视为需要治疗）。</summary>
-    private const float HealHealthyRatioThreshold = 0.6f;
-
     private readonly PartyLifecycleManager _lifecycle;
+    private readonly PartyMergeService _mergeService;
     private readonly CapitalRegistry? _capitalRegistry;
     private readonly SovereignTowns.SallyForth.SallyForthManager? _sallyForthManager;  // B7.27：用于支援判定
+    private readonly BattleLootManager? _battleLootManager;
 
     public PatrolManager(
         PartyLifecycleManager lifecycle,
         CapitalRegistry? capitalRegistry = null,
-        SovereignTowns.SallyForth.SallyForthManager? sallyForthManager = null)
+        SovereignTowns.SallyForth.SallyForthManager? sallyForthManager = null,
+        BattleLootManager? battleLootManager = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _mergeService = new PartyMergeService(_lifecycle);
         _capitalRegistry = capitalRegistry;
         _sallyForthManager = sallyForthManager;
+        _battleLootManager = battleLootManager;
     }
 
     /// <summary>
@@ -91,13 +95,10 @@ public sealed class PatrolManager
             if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
                 return;
 
-            // 当前 AI 接管不包含巡逻；避免 ApplyToAiSettlementsToo + AutoPatrol 时给 AI 生成 ST patrol。
-            if (settlement.OwnerClan != Clan.PlayerClan) return;
-
             // B7.26：派遣集中在首府 — 只在 settlement == 首府时评估
             var capitalMgr = _capitalRegistry?.GetForSettlement(settlement);
             if (capitalMgr == null) return;  // 该 settlement 不属任何受管 clan
-            var capital = capitalMgr.GetCapitalSettlement();
+            var capital = _capitalRegistry?.GetCapitalForClan(capitalMgr.OwnerClan);
             if (capital == null || settlement != capital) return;  // 不是该 clan 的首府 → 跳过
 
             TryCreatePatrolParty(settlement);
@@ -129,12 +130,39 @@ public sealed class PatrolManager
 
             var home = pp.HomeSettlement;
             if (home == null) return;
-            if (home.OwnerClan != Clan.PlayerClan) return;
 
-            var capitalMgr = _capitalRegistry?.GetForSettlement(home);
-            if (capitalMgr == null) return;  // home 已易主或不再受管
+            // partyClan 必须以 party.ActualClan 为准 — 不能用 home.OwnerClan 兜底。
+            // 原因：home 易主后 OwnerClan 立即指向新主，若 ActualClan 为 null（早期 tick 等）
+            // 就会把这支 patrol 错误归入新 owner 氏族、被派去防御对方的城。
+            // ActualClan 为 null 时直接 disband — 失去合法归属的 patrol 无需再活。
+            var partyClan = party.ActualClan;
+            if (_capitalRegistry == null) return;
+            if (partyClan == null)
+            {
+                Logger.Warn($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' has null ActualClan; disbanding");
+                _mergeService.DisbandAndUntrack(party, "PatrolManager null ActualClan");
+                return;
+            }
+
+            var capital = _capitalRegistry.GetCapitalForClan(partyClan);
+            if (home.OwnerClan != partyClan)
+            {
+                if (capital != null)
+                {
+                    Logger.Warn($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' home '{home.Name}' lost; merging at capital '{capital.Name}'");
+                    HandleMergeGarrison(party, capital);
+                }
+                else
+                {
+                    Logger.Warn($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' home '{home.Name}' lost and no fallback capital; disbanding");
+                    _mergeService.DisbandAndUntrack(party, "PatrolManager lost home");
+                }
+                return;
+            }
+
+            var capitalMgr = _capitalRegistry.GetForClan(partyClan);
+            if (capitalMgr == null || capital == null) return;  // home 已易主、不再受管或无首府
             var scheduler = capitalMgr.PatrolScheduler;
-            var capital = capitalMgr.GetCapitalSettlement();
 
             int members = PartyNameFormatter.SafeMemberCount(party);
 
@@ -222,61 +250,6 @@ public sealed class PatrolManager
         }
     }
 
-    // ────────── MapEventEnded：战后立即处置战利品（层 A） ──────────
-
-    /// <summary>
-    /// 战斗结束回调：扫 attacker / defender 两侧，找到玩家自有的 <see cref="PatrolPartyComponent"/> party，
-    /// 立即调 <see cref="BattleLootHandler.ProcessPartyLoot"/> 处置战利品。
-    /// 与 SallyForthManager.OnMapEventEnded 结构对称；try-catch 包裹避免影响 vanilla 事件链。
-    /// </summary>
-    public void OnMapEventEnded(MapEvent mapEvent)
-    {
-        if (mapEvent == null) return;
-        try
-        {
-            HandleSideLoot(mapEvent.AttackerSide);
-            HandleSideLoot(mapEvent.DefenderSide);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("PatrolManager.OnMapEventEnded failed", ex);
-        }
-    }
-
-    private void HandleSideLoot(MapEventSide? side)
-    {
-        if (side == null) return;
-        try
-        {
-            var parties = side.Parties;
-            if (parties == null) return;
-
-            foreach (var uop in parties)
-            {
-                MobileParty? mp = null;
-                try { mp = uop.Party?.MobileParty; }
-                catch { continue; }
-                if (mp == null) continue;
-                if (!mp.IsActive) continue;
-                if (mp.ActualClan != Clan.PlayerClan) continue;
-                if (mp.PartyComponent is not PatrolPartyComponent) continue;
-
-                try
-                {
-                    BattleLootHandler.ProcessPartyLoot(mp, _capitalRegistry);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error($"PatrolManager: BattleLootHandler.ProcessPartyLoot threw for '{PartyNameFormatter.SafeName(mp)}'", ex);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("PatrolManager.HandleSideLoot iteration failed", ex);
-        }
-    }
-
     // ────────── 内部辅助：根据 Order 在 party tick 中下达指令 ──────────
 
     private void ApplyOrderToParty(MobileParty party, Settlement target, PatrolOrder order)
@@ -333,32 +306,21 @@ public sealed class PatrolManager
         try
         {
             // 兜底层 B：disband 前先处置战利品（捕捉 MapEventEnded 路径漏网情况）
-            try { BattleLootHandler.ProcessPartyLoot(patrol, _capitalRegistry); }
-            catch (Exception lootEx) { Logger.Error($"PatrolManager.TransferAndDisband: ProcessPartyLoot threw for '{PartyNameFormatter.SafeName(patrol)}'", lootEx); }
+            try { _battleLootManager?.ProcessPartyIfEligible(patrol); }
+            catch (Exception lootEx) { Logger.Error($"PatrolManager.TransferAndDisband: loot processing threw for '{PartyNameFormatter.SafeName(patrol)}'", lootEx); }
 
             var town = home.Town;
             if (town == null)
             {
                 Logger.Warn($"PatrolManager: '{PartyNameFormatter.SafeName(patrol)}' at non-town '{home.Name}', direct disband");
-                SafeDisband(patrol);
+                _mergeService.DisbandAndUntrack(patrol, "PatrolManager");
                 return;
             }
 
-            var garrison = town.GarrisonParty;
-            var patrolRoster = patrol.MemberRoster;
-            var transferred = 0;
-
-            if (garrison?.MemberRoster != null && patrolRoster != null)
-            {
-                var elements = patrolRoster.GetTroopRoster();
-                foreach (var elem in elements)
-                {
-                    if (elem.Character == null || elem.Character.IsHero) continue;
-                    garrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                    transferred += elem.Number;
-                }
-                patrolRoster.RemoveIf(e => e.Character != null && !e.Character.IsHero);
-            }
+            var transferred = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                patrol,
+                home,
+                "PatrolManager.TransferAndDisband");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "merge_patrol_into_garrison",
@@ -367,24 +329,11 @@ public sealed class PatrolManager
                 accepted: true);
             Logger.Info($"PatrolManager: '{PartyNameFormatter.SafeName(patrol)}' merged {transferred} troops into '{home.Name}' garrison, disbanding");
 
-            SafeDisband(patrol);
+            _mergeService.DisbandAndUntrack(patrol, "PatrolManager");
         }
         catch (Exception ex)
         {
             Logger.Error($"TransferAndDisband failed for '{PartyNameFormatter.SafeName(patrol)}'", ex);
-        }
-    }
-
-    private void SafeDisband(MobileParty party)
-    {
-        try
-        {
-            DisbandPartyAction.StartDisband(party);
-            _lifecycle.UntrackParty(party);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"SafeDisband failed for '{PartyNameFormatter.SafeName(party)}'", ex);
         }
     }
 
@@ -451,6 +400,12 @@ public sealed class PatrolManager
 
             // 从 garrison 抽 PatrolTroopBatchSize 名兵员（skip heroes）
             var moved = TransferTroopsFromGarrison(garrison!, created, PatrolTroopBatchSize);
+            if (moved <= 0)
+            {
+                Logger.Warn($"PatrolManager: '{settlement.Name}' created patrol but moved 0 troops; destroying empty patrol");
+                _mergeService.DestroyAndUntrack(created, "PatrolManager empty patrol rollback", deferIfInMapEvent: false);
+                return;
+            }
 
             _lifecycle.RegisterTrackedParty(created, settlement, PartyLifecycleManager.KindPatrol);
 
@@ -498,9 +453,11 @@ public sealed class PatrolManager
             int count = 0;
             var all = MobileParty.AllPatrolParties;
             if (all == null) return 0;
+            var ownerClan = settlement.OwnerClan;
             foreach (var p in all)
             {
                 if (p == null || !p.IsActive) continue;
+                if (ownerClan != null && p.ActualClan != null && p.ActualClan != ownerClan) continue;
                 var pp = p.PartyComponent as PatrolPartyComponent;
                 if (pp == null) continue;
                 if (pp.HomeSettlement == settlement) count++;

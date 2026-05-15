@@ -5,7 +5,6 @@ using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
-using SovereignTowns.Decisions;
 using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
@@ -47,10 +46,13 @@ public sealed class RecruitmentManager
     /// <summary>规划候选时的最大距离（与原值一致）。</summary>
     private const float PlanMaxDistance = 100f;
 
-    // B7.24/B7.25：征兵队基础护卫按 garrison 百分比抽（10%）；不受 50 floor 限制 — 算多少抽多少，0 也派遣。
-    private const float EscortRatio = 0.10f;
+    /// <summary>征兵队基础护卫比例。改为读 PartyThresholds（玩家可在网页面板调）。
+    /// 原硬编码 0.10 — 不动面板的玩家不会感知差别。</summary>
+    private static float EscortRatio
+        => ConfigurationManager.Current?.Thresholds?.RecruiterEscortRatio ?? 0.10f;
 
     private readonly PartyLifecycleManager _lifecycle;
+    private readonly PartyMergeService _mergeService;
     private readonly CapitalRegistry? _capitalRegistry;
 
     /// <summary>每支招募队本次旅程已访问过的 village（避免立即回头）。瞬态。</summary>
@@ -59,6 +61,7 @@ public sealed class RecruitmentManager
     public RecruitmentManager(PartyLifecycleManager lifecycle, CapitalRegistry? capitalRegistry = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _mergeService = new PartyMergeService(_lifecycle);
         _capitalRegistry = capitalRegistry;
 
         // 订阅销毁事件，确保 _visitedPerParty 不会因招募队战斗死亡 / 被俘而泄漏。
@@ -89,14 +92,14 @@ public sealed class RecruitmentManager
     }
 
     /// <summary>
-    /// 处理一条 RequestRecruitment 决策：仅在 homeTown 是当前首府时派遣。
+    /// 由首府调度器请求派出征兵队。仅在 <paramref name="homeTown"/> 是当前首府时派遣。
     /// </summary>
-    public bool TryDispatchRecruiter(Town homeTown, GarrisonDecision decision)
+    public bool TryDispatchRecruiter(Town homeTown, int requestedMagnitude, string reason)
     {
         try
         {
             if (homeTown?.Settlement == null) return false;
-            if (decision.Kind != GarrisonActionKind.RequestRecruitment) return false;
+            if (requestedMagnitude <= 0) return false;
 
             if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment)
             {
@@ -114,7 +117,7 @@ public sealed class RecruitmentManager
                     Logger.Debug($"  RecruitmentManager: '{homeTown.Name}' 不在受管 clan 名单，跳过派遣");
                     return false;
                 }
-                var capitalSettlement = mgr.GetCapitalSettlement();
+                var capitalSettlement = _capitalRegistry.GetCapitalForClan(mgr.OwnerClan);
                 if (capitalSettlement == null || homeTown.Settlement != capitalSettlement)
                 {
                     Logger.Debug($"  RecruitmentManager: '{homeTown.Name}' 非该 clan 当前首府，跳过派遣");
@@ -177,8 +180,8 @@ public sealed class RecruitmentManager
             }
 
             // B7.27：派出征兵队前先预检玩家金币 + 扣初始本钱。AI clan 跳过扣费（保留 AI 阵营战役经济不被破坏）。
-            bool isPlayerClanDispatch = homeTown.OwnerClan == Clan.PlayerClan;
-            if (isPlayerClanDispatch)
+            bool shouldChargeDispatch = CapitalRegistry.ShouldChargeClan(homeTown.OwnerClan);
+            if (shouldChargeDispatch)
             {
                 if (!ModTreasury.CanAfford(DefaultInitialGold))
                 {
@@ -210,16 +213,24 @@ public sealed class RecruitmentManager
                     TryRestoreEscort(homeTown, escortRoster);
                 }
                 // 注：扣费已发生但 party 没创建出来 → 损失 1000 denar；记 Warn 让玩家可查日志
-                if (isPlayerClanDispatch)
+                if (shouldChargeDispatch)
                 {
                     Logger.Warn($"  RecruitmentManager: 1000 denar 已扣但 party 创建失败 — 玩家损失");
                 }
                 return false;
             }
 
-            party.SetMoveGoToSettlement(target.VillageSettlement, MobileParty.NavigationType.Default, false);
             _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);
             _visitedPerParty[party] = new HashSet<Settlement>();
+
+            try
+            {
+                party.SetMoveGoToSettlement(target.VillageSettlement, MobileParty.NavigationType.Default, false);
+            }
+            catch (Exception moveEx)
+            {
+                Logger.Error($"  RecruitmentManager: SetMoveGoToSettlement failed for '{party.Name}' -> '{target.VillageSettlement.Name}'", moveEx);
+            }
 
             // B7.27：通知 scheduler "刚派遣，首站已选"。后续招到人后由 OnHourlyTickParty 流程接管。
             try
@@ -240,8 +251,8 @@ public sealed class RecruitmentManager
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchRecruiter",
-                inputSummary: $"home={homeTown.Settlement.StringId} candidates={candidates.Count} target={target.VillageSettlement.StringId} escort={escortActual}",
-                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"target\":\"{target.VillageSettlement.StringId}\",\"priority\":{target.PriorityScore:F2},\"estimatedTroops\":{target.EstimatedAvailableTroops},\"escort\":{escortActual}}}",
+                inputSummary: $"home={homeTown.Settlement.StringId} requested={requestedMagnitude} candidates={candidates.Count} target={target.VillageSettlement.StringId} escort={escortActual}",
+                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"target\":\"{target.VillageSettlement.StringId}\",\"priority\":{target.PriorityScore:F2},\"estimatedTroops\":{target.EstimatedAvailableTroops},\"escort\":{escortActual},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
                 accepted: true);
 
             Logger.Info($"  RecruitmentManager: 派出征兵队 '{homeTown.Name}' → '{target.VillageSettlement.Name}' (priority={target.PriorityScore:F1}, escort={escortActual})");
@@ -266,6 +277,33 @@ public sealed class RecruitmentManager
 
             var home = rp.HomeSettlement;
             if (home == null) return;
+            var partyClan = party.ActualClan ?? home.OwnerClan;
+            if (_capitalRegistry != null
+                && (partyClan == null
+                    || !_capitalRegistry.IsManagedClanWithCapital(partyClan)
+                    || home.OwnerClan != partyClan))
+            {
+                var fallback = partyClan != null ? _capitalRegistry.GetCapitalForClan(partyClan) : null;
+                if (fallback != null)
+                {
+                    if (party.LastVisitedSettlement == fallback)
+                    {
+                        TransferAndDisband(party, fallback);
+                    }
+                    else
+                    {
+                        Logger.Warn($"  Recruiter '{party.Name}' home '{home.Name}' lost; rerouting to capital '{fallback.Name}'");
+                        party.SetMoveGoToSettlement(fallback, MobileParty.NavigationType.Default, false);
+                    }
+                }
+                else
+                {
+                    Logger.Warn($"  Recruiter '{party.Name}' home '{home.Name}' lost and no fallback capital; disbanding");
+                    _mergeService.DisbandAndUntrack(party, "RecruitmentManager lost home");
+                    _visitedPerParty.Remove(party);
+                }
+                return;
+            }
 
             // 1. 已经回到 home
             if (party.LastVisitedSettlement == home)
@@ -283,6 +321,18 @@ public sealed class RecruitmentManager
                 && currentSettlement.IsVillage
                 && (targetSettlement == null || currentSettlement == targetSettlement))
             {
+                if (!IsRecruitmentTargetStillValid(currentSettlement, home))
+                {
+                    Logger.Warn($"  Recruiter '{party.Name}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，重新规划");
+                    if (_visitedPerParty.TryGetValue(party, out var invalidVisited))
+                    {
+                        invalidVisited.Add(currentSettlement);
+                    }
+                    var replacement = PlanNextHop(party, home);
+                    party.SetMoveGoToSettlement(replacement ?? home, MobileParty.NavigationType.Default, false);
+                    return;
+                }
+
                 int recruited = RecruitFromTargetVillage(party, currentSettlement, home);
                 if (recruited > 0)
                 {
@@ -334,6 +384,13 @@ public sealed class RecruitmentManager
             // 4. 目标村庄风险高 → 回城
             if (targetSettlement != null && targetSettlement != home)
             {
+                if (targetSettlement.IsVillage && !IsRecruitmentTargetStillValid(targetSettlement, home))
+                {
+                    Logger.Warn($"  Recruiter '{party.Name}': 目标 '{targetSettlement.Name}' 已失效，回 '{home.Name}'");
+                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    return;
+                }
+
                 var risk = RiskAssessmentService.Assess(targetSettlement);
                 if (risk.Level >= RiskLevel.High)
                 {
@@ -345,6 +402,24 @@ public sealed class RecruitmentManager
         catch (Exception ex)
         {
             Logger.Error("OnHourlyTickParty failed", ex);
+        }
+    }
+
+    private static bool IsRecruitmentTargetStillValid(Settlement village, Settlement home)
+    {
+        try
+        {
+            if (village == null || home == null) return false;
+            if (!village.IsVillage || !village.IsActive) return false;
+            if (village.MapFaction != home.MapFaction) return false;
+            var v = village.Village;
+            if (v == null) return false;
+            return v.VillageState != Village.VillageStates.BeingRaided
+                && v.VillageState != Village.VillageStates.Looted;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -412,8 +487,8 @@ public sealed class RecruitmentManager
             // B7.20：单兵金币折扣硬编码 0.5（半价）—— 不再可配置，避免破坏游戏数值平衡。
             // AI 招兵强制免费（AI 领主金币本来就紧张，按玩家公式扣会让 AI 阵营破产）。
             const float CostDiscount = 0.5f;
-            bool isAiClan = home.OwnerClan != Clan.PlayerClan;
-            int costPerRecruit = isAiClan ? 0 : Math.Max(1, (int)Math.Round(DefaultGoldPerRecruit * CostDiscount));
+            bool shouldChargeRecruit = CapitalRegistry.ShouldChargeClan(home.OwnerClan);
+            int costPerRecruit = shouldChargeRecruit ? Math.Max(1, (int)Math.Round(DefaultGoldPerRecruit * CostDiscount)) : 0;
 
             // B7.20：volunteer 倍率硬编码 2.0 —— vanilla maxIdx 通常 0–2（1–3 个 slot），
             // ×2 后扩大可拉取的 slot 范围（最多 = volunteerTypes.Length - 1 即 5，全 6 slot）。
@@ -484,7 +559,6 @@ public sealed class RecruitmentManager
             {
                 int cost = costPerRecruit; // B7.20：硬编码 50% 折扣（5 denar/兵），AI 免费
                 if (budgetRemaining < cost) break;
-                if (leaderGold < cost) break;
                 if (candidate.Slots[candidate.SlotIndex] == null) continue;
 
                 // B7.22 Fix per-role 饱和检查
@@ -500,10 +574,49 @@ public sealed class RecruitmentManager
                 }
                 if (projected >= target) continue;
 
+                if (shouldChargeRecruit && cost > 0 && !ModTreasury.CanAfford(cost))
+                {
+                    Logger.Info($"  RecruitFromTargetVillage: 玩家金币不足，停止招募（已招 {recruited} 人）");
+                    break;
+                }
+
+                bool added = false;
                 try
                 {
                     recruitingParty.AddElementToMemberRoster(candidate.Troop, 1, false);
-                    candidate.Slots[candidate.SlotIndex] = null!;
+                    added = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}': {ex.Message}");
+                    continue;
+                }
+
+                // B7.27：玩家氏族走 ModTreasury 统一记账；AI clan 已在上方设 cost = 0，跳过扣费。
+                // 扣费失败时撤回刚加入的兵，避免出现免费招募。
+                if (shouldChargeRecruit && cost > 0)
+                {
+                    if (!ModTreasury.Charge(ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}"))
+                    {
+                        try
+                        {
+                            if (added)
+                            {
+                                recruitingParty.MemberRoster?.RemoveTroop(candidate.Troop, 1, default(UniqueTroopDescriptor), 0);
+                            }
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            Logger.Warn($"  RecruitFromTargetVillage: rollback failed after charge refusal for '{candidate.Troop.StringId}': {rollbackEx.Message}");
+                        }
+                        Logger.Info($"  RecruitFromTargetVillage: ModTreasury.Charge 拒绝，停止招募（已招 {recruited} 人）");
+                        break;
+                    }
+                }
+
+                candidate.Slots[candidate.SlotIndex] = null!;
+                try
+                {
                     switch (roleOfCand)
                     {
                         case SovereignTowns.Evaluators.GenericTroopRole.Cavalry:  rGainCav++; break;
@@ -514,16 +627,8 @@ public sealed class RecruitmentManager
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}': {ex.Message}");
-                    continue;
+                    Logger.Warn($"  RecruitFromTargetVillage: role counter update failed for '{candidate.Troop.StringId}': {ex.Message}");
                 }
-
-                // B7.27：玩家氏族走 ModTreasury 统一记账；AI clan 已在上方设 cost = 0，跳过扣费
-                if (!isAiClan)
-                {
-                    ModTreasury.Charge(ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}");
-                }
-                // AI clan：保持原行为（不扣费），cost 已是 0
 
                 budgetRemaining -= cost;
                 leaderGold -= cost;
@@ -591,27 +696,15 @@ public sealed class RecruitmentManager
             if (town == null)
             {
                 Logger.Warn($"  Recruiter '{recruiter.Name}' 回到非 Town settlement '{home.Name}'，直接解散");
-                DisbandPartyAction.StartDisband(recruiter);
-                _lifecycle.UntrackParty(recruiter);
+                _mergeService.DisbandAndUntrack(recruiter, "RecruitmentManager");
                 _visitedPerParty.Remove(recruiter);
                 return;
             }
 
-            var garrison = town.GarrisonParty;
-            var recruiterRoster = recruiter.MemberRoster;
-            int transferred = 0;
-
-            if (garrison != null && recruiterRoster != null)
-            {
-                var elements = recruiterRoster.GetTroopRoster();
-                foreach (var elem in elements)
-                {
-                    if (elem.Character == null || elem.Character.IsHero) continue;
-                    garrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                    transferred += elem.Number;
-                }
-                recruiterRoster.RemoveIf(e => e.Character != null && !e.Character.IsHero);
-            }
+            int transferred = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                recruiter,
+                home,
+                "RecruitmentManager.TransferAndDisband");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "TransferRecruitedTroops",
@@ -621,8 +714,7 @@ public sealed class RecruitmentManager
 
             Logger.Info($"  Recruiter '{recruiter.Name}': 转入 {transferred} 名兵员到 '{home.Name}' 驻军，解散队伍");
 
-            DisbandPartyAction.StartDisband(recruiter);
-            _lifecycle.UntrackParty(recruiter);
+            _mergeService.DisbandAndUntrack(recruiter, "RecruitmentManager");
             _visitedPerParty.Remove(recruiter);
         }
         catch (Exception ex)

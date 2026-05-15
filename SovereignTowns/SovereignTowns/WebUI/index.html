@@ -761,6 +761,37 @@
                 </template>
               </div>
             </div>
+
+            <div class="diamond-divider my-8"></div>
+
+            <!-- Party Thresholds -->
+            <div>
+              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-2">队 伍 创 建 阈 值</h3>
+              <p class="text-parchment-200 text-[13px] mb-4">原先散落在代码里的硬编码人数 / 比例。默认值不变，调整后立即影响下一次 tick。</p>
+              <div class="space-y-5">
+                <template x-for="s in thresholdSpecs" :key="s.key">
+                  <div class="grid grid-cols-12 gap-4 items-center">
+                    <div class="col-span-12 md:col-span-4">
+                      <div class="text-[15px] text-parchment-50" x-text="s.label"></div>
+                      <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
+                    </div>
+                    <div class="col-span-9 md:col-span-6">
+                      <input type="range" class="w-full"
+                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                             :value="getResourceValue(s)"
+                             @input="setResourceValue(s, $event.target.value)" />
+                    </div>
+                    <div class="col-span-3 md:col-span-2">
+                      <input type="number"
+                             class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
+                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                             :value="getResourceValue(s)"
+                             @input="setResourceValue(s, $event.target.value)" />
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
           </div>
 
           <!-- =========== TAB 6: 按城堡覆盖 =========== -->
@@ -968,15 +999,13 @@
           { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount' },
           { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军' },
           { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地' },
-          { key: 'CastleSupport', root: 'EnabledFeatures', label: '城堡支持', hint: '对玩家归属城堡同等启用上述功能' },
-          { key: 'LlmReasoning', root: 'EnabledFeatures', label: 'LLM 推理建议', hint: '启用 LLM 提供决策建议（仅建议，不动手）' },
-          { key: 'LlmAutoExecute', root: 'EnabledFeatures', label: 'LLM 自动执行', hint: '允许 LLM 直接执行决策（高风险）' },
+          { key: 'TroopTransfers', root: 'EnabledFeatures', label: '兵力调拨', hint: '由首府统一协调自有城镇与城堡之间的补兵' },
           { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '无巡逻队时附近有敌对势力则出城攻击' },
           { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军' },
           { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town' },
           { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town' },
-          { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭玩家拥有城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
-          { key: 'ApplyToAiSettlementsToo', root: 'EnabledFeatures', label: 'AI 城镇纳入 ST 规则', hint: '把有首府的 AI 氏族纳入首府、驻军评估、招募、调拨、主动出击和俘虏转化等 ST 路径；AI 只招同文化兵，巡逻仍保持玩家专属。AI 招兵免费，不会让 AI 领主破产。' },
+          { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
+          { key: 'ApplyToAiSettlementsToo', root: 'EnabledFeatures', label: 'AI 城镇纳入 ST 规则', hint: '把有首府的 AI 氏族纳入首府、驻军评估、招募、调拨、主动出击、俘虏转化和巡逻等 ST 路径；AI 只招同文化兵，且招兵免费。' },
         ],
 
         budgetSpecs: [
@@ -999,6 +1028,22 @@
           { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5 },
           { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
           { key: 'RecruiterReturnThreshold', root: '', label: '征兵队回首府阈值', hint: '征兵队总人数达此值立即回首府 (10–200)', min: 10, max: 200, discrete: true },
+        ],
+
+        // 原先散落在 PatrolManager / RecruitmentManager / CapitalLogisticsManager 内的硬编码人数 / 比例。
+        // 默认值与历史 const 一致；面板调整后下次 tick 生效（无须重启）。
+        thresholdSpecs: [
+          { key: 'PatrolMinCapitalGarrison', root: 'Thresholds', label: '巡逻队：首府驻军最低人数', hint: '首府驻军达到此值才允许创建新巡逻队（默认 40）', min: 0, max: 300, discrete: true },
+          { key: 'PatrolTroopBatchSize', root: 'Thresholds', label: '巡逻队：每次抽兵数', hint: '新建巡逻队时从首府驻军抽走的兵员数（默认 15）', min: 1, max: 100, discrete: true },
+          { key: 'PatrolMinMembersBeforeMerge', root: 'Thresholds', label: '巡逻队：合并阈值', hint: '巡逻队兵员低于此值回首府合并入驻军（默认 5）', min: 0, max: 50, discrete: true },
+          { key: 'PatrolMinMembersForHeal', root: 'Thresholds', label: '巡逻队：治疗阈值', hint: '巡逻队兵员低于此值且健康差时回首府治疗（默认 8）', min: 0, max: 50, discrete: true },
+          { key: 'PatrolHealHealthyRatio', root: 'Thresholds', label: '巡逻队：健康比例下限', hint: '健康兵员比例低于此值视为需要治疗（默认 0.6）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: '征兵队：护卫比例', hint: '派出征兵队时从首府驻军抽取的护卫比例（默认 0.10）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'TransferCriticalDeficitMultiplier', root: 'Thresholds', label: '调拨：危急缺口乘数', hint: '驻军 < MinimumDefenders × 此值 → 视为危急（默认 1.2）', min: 1.0, max: 3.0, discrete: false, step: 0.1 },
+          { key: 'TransferRatio', root: 'Thresholds', label: '调拨：源城抽取比例', hint: '从源城驻军中按此比例抽取（默认 0.30）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'TransferMaxTroopsPerTask', root: 'Thresholds', label: '调拨：单次上限', hint: '单次调拨任务最多搬运多少兵员（默认 100）', min: 1, max: 500, discrete: true },
+          { key: 'TransferMinTroops', root: 'Thresholds', label: '调拨：单次下限', hint: '算出来的调拨人数低于此值放弃任务（默认 20）', min: 0, max: 200, discrete: true },
+          { key: 'RecruitmentMinDemand', root: 'Thresholds', label: '征兵：派遣缺口下限', hint: '剩余缺口低于此值不再派征兵队（默认 10）', min: 1, max: 200, discrete: true },
         ],
 
         perSettlementNumericSpecs: [

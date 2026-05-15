@@ -9,13 +9,12 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Audit;
 
 /// <summary>
-/// 决策来源：规则引擎、LLM 或玩家。
+/// 决策来源：规则引擎或玩家。
 /// </summary>
 public enum DecisionSource
 {
     Rule = 0,
-    Llm = 1,
-    User = 2
+    User = 1
 }
 
 /// <summary>

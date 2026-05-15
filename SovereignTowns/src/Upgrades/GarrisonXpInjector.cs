@@ -13,7 +13,7 @@ namespace SovereignTowns.Upgrades;
 /// 每日 XP 注入服务。
 /// <para>
 /// 背景：vanilla 给 town GarrisonParty 的兵种 XP 极少，导致驻军兵种无法触发自然升级。
-/// 本服务在 DailyTickSettlement 给每个玩家所属 Town 的驻军逐兵种注入一定 XP，使
+/// 本服务在 DailyTickSettlement 给每个受管氏族所属 Town 的驻军逐兵种注入一定 XP，使
 /// <see cref="TroopUpgradeService.TryUpgradeGarrison"/> 在下一次评估时能读到足以升级的 XP。
 /// </para>
 /// <para>
@@ -28,14 +28,14 @@ namespace SovereignTowns.Upgrades;
 public static class GarrisonXpInjector
 {
     /// <summary>
-    /// 当日给单个玩家 Town 驻军注入 XP。非玩家 Town / 围攻中 / 功能关闭时直接跳过。
+    /// 当日给单个受管 Town 驻军注入 XP。非受管 Town / 围攻中 / 功能关闭时直接跳过。
     /// </summary>
     /// <param name="settlement">来自 DailyTickSettlement 的 settlement；可能为 null。</param>
     public static void GiveDailyXpToGarrison(Settlement? settlement)
     {
         try
         {
-            // 用户明确："xp注入应只在首府进行"。非首府的 town/castle 走 CastleSupport 调拨而非本城训练。
+            // 用户明确："xp注入应只在首府进行"。非首府的 town/castle 走首府级兵力调拨而非本城训练。
             // B7.15 multi-clan：广义到任意受管 clan；外层 OnDailyTickSettlement 已按 "settlement == 该 clan 首府"
             // 进行了路由，所以这里只需校验 clan 在 registry 中即可（玩家 / AI 都允许）。
             if (settlement == null) return;
@@ -43,7 +43,7 @@ public static class GarrisonXpInjector
             var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
             if (registry != null)
             {
-                if (!registry.IsManagedClan(settlement.OwnerClan)) return;
+                if (!registry.IsManagedClanWithCapital(settlement.OwnerClan)) return;
             }
             else if (settlement.OwnerClan != Clan.PlayerClan) return;
 
@@ -159,7 +159,7 @@ public static class GarrisonXpInjector
 
             // 2026-05-12 差距 2 修复：原 TryUpgradeGarrison 仅在 capital-only 路径触发，
             // 导致非首府 town 与所有 castle 累积 XP 却"卡 tier"。XP 注入后立即触发本城升级，
-            // 让玩家自有的每个城/堡都能正常升级兵种。
+            // 让受管氏族自有的每个城/堡都能正常升级兵种。
             try
             {
                 int budgetCap = Math.Max(0, rule?.BudgetLimit ?? 5000);

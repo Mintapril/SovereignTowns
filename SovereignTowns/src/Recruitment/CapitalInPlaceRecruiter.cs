@@ -3,6 +3,7 @@ using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using Logger = SovereignTowns.Logging.Logger;
@@ -16,10 +17,11 @@ namespace SovereignTowns.Recruitment;
 /// 同步将 <c>VolunteerTypes[i]</c> 置 null（与 vanilla 玩家手动从 notable 招兵后的清 slot 行为一致）。
 ///
 /// 与 <see cref="RecruitmentManager"/> 派去 village 招募不同：
-///   - 不创建 MobileParty / 不寻路 / 不扣金（auto 模式无 UI 入口扣钱）
-///   - 不收 BudgetLimit 约束（不花钱）
+///   - 不创建 MobileParty / 不寻路
+///   - 玩家氏族按固定单兵费用扣款，AI 氏族免费
+///   - 不收 BudgetLimit 约束
 ///   - 受 PartySizeLimit + rule.TargetTotalCount 钳制
-///   - 仅在 OnDailyTickSettlement(capital) 触发；与 village notable 24h 刷新节奏一致
+///   - 由 CapitalLogisticsManager 在每日首府调度中触发；与 village notable 24h 刷新节奏一致
 ///
 /// 兵种归类：优先使用 vanilla <see cref="CharacterObject.DefaultFormationClass"/>；骑射独立，
 /// 投掷兵按游戏默认编队归入步兵 / 射手 / 骑兵 / 骑射。
@@ -30,24 +32,25 @@ public static class CapitalInPlaceRecruiter
     /// 在 daily tick 上对首府执行一次"本城招募"。失败、被围、未启用 → no-op。
     /// 全方法 try-catch，绝不抛。
     /// </summary>
-    public static void RecruitFromCapitalNotables(Settlement? capital)
+    public static int RecruitFromCapitalNotables(Settlement? capital, int? desiredTotalCount = null, string reason = "")
     {
+        int recruited = 0;
         try
         {
-            if (capital == null || !capital.IsTown) { Logger.Info("CapitalInPlace: 跳过 — null/non-town"); return; }
+            if (capital == null || !capital.IsTown) { Logger.Info("CapitalInPlace: 跳过 — null/non-town"); return recruited; }
             // B7.15 multi-clan：广义到受管 clan；外层 OnDailyTickSettlement 已按"settlement == 该 clan 首府"路由
             var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
             if (registry != null)
             {
-                if (!registry.IsManagedClan(capital.OwnerClan)) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — clan {capital.OwnerClan?.StringId} 不在 registry"); return; }
+                if (!registry.IsManagedClan(capital.OwnerClan)) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — clan {capital.OwnerClan?.StringId} 不在 registry"); return recruited; }
             }
-            else if (capital.OwnerClan != Clan.PlayerClan) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 非玩家 + registry 未就绪"); return; }
-            if (capital.IsUnderSiege) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — IsUnderSiege"); return; }
+            else if (capital.OwnerClan != Clan.PlayerClan) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 非玩家 + registry 未就绪"); return recruited; }
+            if (capital.IsUnderSiege) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — IsUnderSiege"); return recruited; }
 
-            if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — AutoRecruitment 已关闭"); return; }
+            if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — AutoRecruitment 已关闭"); return recruited; }
 
             var town = capital.Town;
-            if (town == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — town==null"); return; }
+            if (town == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — town==null"); return recruited; }
             var garrison = town.GarrisonParty;
             // B7.21 Fix A：vanilla 在 garrison 清 0 后会移除 GarrisonParty，导致后续 tick 永远走不到招募路径。
             // 主动调 AddGarrisonParty 重建（与 PrisonerRecruitmentManager 同套路）。
@@ -59,30 +62,31 @@ public static class CapitalInPlaceRecruiter
                     garrison = town.GarrisonParty;
                     Logger.Info($"CapitalInPlace '{capital.Name}': 检测到 GarrisonParty==null，已重建空 party");
                 }
-                catch (Exception ex) { Logger.Error($"CapitalInPlace '{capital.Name}': AddGarrisonParty 失败", ex); return; }
+                catch (Exception ex) { Logger.Error($"CapitalInPlace '{capital.Name}': AddGarrisonParty 失败", ex); return recruited; }
             }
-            if (garrison == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — AddGarrisonParty 后仍 null"); return; }
+            if (garrison == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — AddGarrisonParty 后仍 null"); return recruited; }
             var memberRoster = garrison.MemberRoster;
-            if (memberRoster == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — MemberRoster==null"); return; }
+            if (memberRoster == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — MemberRoster==null"); return recruited; }
 
             int partySizeLimit = garrison.Party?.PartySizeLimit ?? int.MaxValue;
             int currentMen = memberRoster.TotalManCount;
-            if (currentMen >= partySizeLimit) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — currentMen({currentMen}) >= partySizeLimit({partySizeLimit})"); return; }
+            if (currentMen >= partySizeLimit) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — currentMen({currentMen}) >= partySizeLimit({partySizeLimit})"); return recruited; }
 
             var rule = ConfigurationManager.GetRuleFor(town);
-            if (rule == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — rule==null"); return; }
+            if (rule == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — rule==null"); return recruited; }
             // B1 #7: pause when food trend below threshold
             if (FoodGuard.IsRecruitmentPausedForFood(town, rule, "CapitalInPlaceRecruiter"))
-            { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — FoodGuard 触发（FoodChange={town.FoodChange:F1} threshold={rule.FoodSafetyThreshold:F1}）"); return; }
-            if (currentMen >= rule.TargetTotalCount) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 已达目标 {currentMen}/{rule.TargetTotalCount}"); return; }
+            { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — FoodGuard 触发（FoodChange={town.FoodChange:F1} threshold={rule.FoodSafetyThreshold:F1}）"); return recruited; }
 
             var ownerHero = capital.OwnerClan?.Leader;
-            if (ownerHero == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — ownerClan.Leader==null"); return; }
+            if (ownerHero == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — ownerClan.Leader==null"); return recruited; }
 
             var volunteerModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.VolunteerModel;
-            if (volunteerModel == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — volunteerModel==null"); return; }
+            if (volunteerModel == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — volunteerModel==null"); return recruited; }
 
-            int cap = Math.Min(partySizeLimit, rule.TargetTotalCount);
+            int desired = Math.Max(1, desiredTotalCount ?? rule.TargetTotalCount);
+            int cap = Math.Min(partySizeLimit, desired);
+            if (currentMen >= cap) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 已达调度目标 {currentMen}/{cap} reason='{reason}'"); return recruited; }
 
             // B7.23：撤紧急模式 — mod 不应自作主张突破玩家配置的 Tier 过滤。
             // 招不到合规候选时只 Warn 提示玩家放宽规则。
@@ -96,14 +100,13 @@ public static class CapitalInPlaceRecruiter
             int targetRng = (int)Math.Round(rule.RangedRatio * cap);
             int gainedCav = 0, gainedHa = 0, gainedInf = 0, gainedRng = 0;
 
-            int recruited = 0;
             int candidatesScanned = 0;
             int notablesScanned = 0;
             int notablesEligible = 0;
 
             var notables = capital.Notables;
-            if (notables == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — Notables==null"); return; }
-            Logger.Info($"CapitalInPlace '{capital.Name}': 开始扫描 {notables.Count} 个 notable，garrison={currentMen}/{cap}, owner.Gold={ownerHero.Gold}, role 配额 cav/ha/inf/rng={targetCav}/{targetHa}/{targetInf}/{targetRng}");
+            if (notables == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — Notables==null"); return recruited; }
+            Logger.Info($"CapitalInPlace '{capital.Name}': 开始扫描 {notables.Count} 个 notable，garrison={currentMen}/{cap}, owner.Gold={ownerHero.Gold}, role 配额 cav/ha/inf/rng={targetCav}/{targetHa}/{targetInf}/{targetRng}, reason='{reason}'");
 
             foreach (var notable in notables)
             {
@@ -136,7 +139,7 @@ public static class CapitalInPlaceRecruiter
                     candidatesScanned++;
 
                     // 容量钳制：每招一个重新读 TotalManCount，避免漂移
-                    if (memberRoster.TotalManCount + 1 > cap) return;
+                    if (memberRoster.TotalManCount + 1 > cap) return recruited;
 
                     // 通用匹配：按规则过滤文化/贵族/禁用项，再看兵种桶 + Tier 范围 + 比例。
                     if (!TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
@@ -155,35 +158,43 @@ public static class CapitalInPlaceRecruiter
                     if (currentRole >= targetRole) continue; // 该 role 已饱和 → 跳过此候选
 
                     // B7.27：原地招募也要扣费（与外派对齐）。玩家氏族扣 5 denar，AI clan 免费。
-                    if (capital.OwnerClan == Clan.PlayerClan)
+                    // 顺序：先 Charge → 再 AddToCounts。原来反向写在 rollback 抛异常时会留下
+                    // 已加进 garrison 的免费兵；颠倒后 Charge 失败直接放弃，AddToCounts 抛只损失
+                    // 这次的扣费（外部审计仍有记录），不会出现"扣费过 + 兵没进 garrison"的反向漏洞，
+                    // 因为 AddToCounts 失败时会 continue 跳过 volunteerTypes 清零 + recruited++。
+                    bool shouldCharge = SovereignTowns.Capital.CapitalRegistry.ShouldChargeClan(capital.OwnerClan);
+                    if (shouldCharge && !ModTreasury.CanAfford(5))
                     {
-                        if (!ModTreasury.Charge(ExpenseCategory.RecruiterWage, 5, $"in_place capital={capital.StringId} troop={troop.StringId}"))
-                        {
-                            // 扣费失败（金币不足且 PauseSpendingWhenBroke=true）→ 终止本次首府招募 tick
-                            Logger.Info($"CapitalInPlace '{capital.Name}': ModTreasury.Charge 失败 — 资金不足，终止本次招募（已招 {recruited} 人）");
-                            return;
-                        }
+                        Logger.Info($"CapitalInPlace '{capital.Name}': 玩家金币不足 — 终止本次招募（已招 {recruited} 人）");
+                        return recruited;
+                    }
+
+                    if (shouldCharge && !ModTreasury.Charge(ExpenseCategory.RecruiterWage, 5, $"in_place capital={capital.StringId} troop={troop.StringId}"))
+                    {
+                        Logger.Info($"CapitalInPlace '{capital.Name}': ModTreasury.Charge 失败 — 终止本次招募（已招 {recruited} 人）");
+                        return recruited;
                     }
 
                     try
                     {
                         memberRoster.AddToCounts(troop, 1, false, 0, 0);
-                        // 仅在成功 Add 后清 slot；过滤跳过的保留供下个 tick / 玩家手动招
-                        volunteerTypes[i] = null;
-                        recruited++;
-                        // 同步 per-role 计数，下个候选基于新值判定
-                        switch (roleOfTroop)
-                        {
-                            case GenericTroopRole.Cavalry:  gainedCav++; break;
-                            case GenericTroopRole.HorseArcher: gainedHa++; break;
-                            case GenericTroopRole.Infantry: gainedInf++; break;
-                            case GenericTroopRole.Ranged: gainedRng++; break;
-                        }
                     }
                     catch (Exception ex)
                     {
-                        Logger.Warn($"  CapitalInPlace '{capital.Name}': AddToCounts threw for '{troop.StringId}': {ex.Message}");
+                        Logger.Warn($"  CapitalInPlace '{capital.Name}': AddToCounts threw for '{troop.StringId}' after charge — charge persists for audit, troop dropped: {ex.Message}");
                         continue;
+                    }
+
+                    // 仅在成功 Add 后清 slot；过滤跳过的保留供下个 tick / 玩家手动招
+                    volunteerTypes[i] = null;
+                    recruited++;
+                    // 同步 per-role 计数，下个候选基于新值判定
+                    switch (roleOfTroop)
+                    {
+                        case GenericTroopRole.Cavalry:  gainedCav++; break;
+                        case GenericTroopRole.HorseArcher: gainedHa++; break;
+                        case GenericTroopRole.Infantry: gainedInf++; break;
+                        case GenericTroopRole.Ranged: gainedRng++; break;
                     }
                 }
             }
@@ -200,5 +211,6 @@ public static class CapitalInPlaceRecruiter
         {
             Logger.Error("CapitalInPlaceRecruiter.RecruitFromCapitalNotables failed", ex);
         }
+        return recruited;
     }
 }

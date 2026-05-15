@@ -179,6 +179,40 @@ public sealed class CapitalRegistry
         catch { return false; }
     }
 
+    /// <summary>查询某 clan 的当前首府 settlement；未接管或无首府返回 null。</summary>
+    public Settlement? GetCapitalForClan(Clan? clan)
+    {
+        try
+        {
+            var settlement = GetForClan(clan)?.GetCapitalSettlement();
+            if (settlement == null || !settlement.IsTown) return null;
+            if (clan != null && settlement.OwnerClan != clan) return null;
+            return settlement;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalRegistry.GetCapitalForClan failed (clan={clan?.StringId})", ex);
+            return null;
+        }
+    }
+
+    /// <summary>该 clan 是否已由 ST 接管且当前有可用首府。</summary>
+    public bool IsManagedClanWithCapital(Clan? clan)
+    {
+        try { return clan != null && GetCapitalForClan(clan) != null; }
+        catch { return false; }
+    }
+
+    /// <summary>该 settlement 是否属于一个有可用首府的 ST 受管 clan。</summary>
+    public bool IsManagedSettlementWithCapital(Settlement? settlement)
+    {
+        try { return IsManagedClanWithCapital(settlement?.OwnerClan); }
+        catch { return false; }
+    }
+
+    /// <summary>经济扣费策略：玩家氏族扣个人金币，AI 受管氏族免费。</summary>
+    public static bool ShouldChargeClan(Clan? clan) => clan == Clan.PlayerClan;
+
     /// <summary>
     /// 玩家 + 所有 AI managed clan 的快照枚举。
     /// 返回快照（ToList）而非 live view 作为防御性写法 —

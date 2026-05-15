@@ -131,11 +131,13 @@ public static class DiagnosticGameMenu
                     FileName = url,
                     UseShellExecute = true,
                 });
-                SafeDisplay($"[主权城镇] 已尝试启动浏览器：{url}", Colors.Green);
+                // 不把含 token 的 URL 写进 chat / log，避免玩家分享截图 / ModLogs 时 token 外泄。
+                SafeDisplay("[主权城镇] 已尝试启动浏览器打开网页控制面板。", Colors.Green);
             }
             catch (Exception procEx)
             {
                 Logger.Error("Process.Start for web config URL failed", procEx);
+                // 启动失败时玩家需要 URL 来手动访问，无可避免；但仅写聊天面板，不进 Logger。
                 SafeDisplay($"[主权城镇] 浏览器启动失败。请手动访问：{url}", Colors.Yellow);
             }
         }

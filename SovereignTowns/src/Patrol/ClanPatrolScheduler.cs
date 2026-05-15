@@ -92,7 +92,7 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
 
             // 找首府：首府被围 → 所有 patrol 直接 MergeGarrison（调用方据返回值判断）
             // 这里只负责"返回目标 settlement"；调用方据 settlement == 首府 来决定 Order
-            var capital = TryGetCapitalManager()?.GetCapitalSettlement();
+            var capital = CapitalRegistry.Instance?.GetCapitalForClan(_clan);
             if (capital != null)
             {
                 foreach (var s in besieged)
@@ -119,18 +119,6 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
         catch (Exception ex)
         {
             Logger.Error("ClanPatrolScheduler.GetDefenseTarget failed", ex);
-            return null;
-        }
-    }
-
-    private CapitalManager? TryGetCapitalManager()
-    {
-        try
-        {
-            return CapitalRegistry.Instance?.GetForClan(_clan);
-        }
-        catch
-        {
             return null;
         }
     }

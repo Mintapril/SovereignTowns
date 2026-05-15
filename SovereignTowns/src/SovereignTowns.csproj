@@ -8,12 +8,11 @@
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.0.1</Version>
-    <Description>Sovereign Towns - automated player-owned town garrison / recruitment / patrol management for Mount &amp; Blade II Bannerlord v1.3.15</Description>
+    <Description>Sovereign Towns - automated clan town garrison / recruitment / patrol management for Mount &amp; Blade II Bannerlord v1.3.15</Description>
   </PropertyGroup>
 
   <!-- net472 内置 GAC 程序集引用（不在 GameBinPath，由 .NET Framework 4.7.2 提供） -->
   <ItemGroup>
-    <Reference Include="System.Net.Http" />
     <Reference Include="System.Numerics.Vectors">
       <HintPath>$(GameBinPath)\System.Numerics.Vectors.dll</HintPath>
       <Private>false</Private>

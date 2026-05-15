@@ -38,8 +38,5 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
 
         // local id 3: 出击队伍组件
         AddClassDefinition(typeof(Parties.SallyForthPartyComponent), 3);
-
-        // local id 4: 退伍队伍组件 (B1 #6.B)
-        AddClassDefinition(typeof(Parties.DismissPartyComponent), 4);
     }
 }

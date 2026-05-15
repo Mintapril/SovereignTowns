@@ -69,12 +69,6 @@ public sealed class TownGarrisonRule
     /// <summary>允许自动升级低级兵种为高级兵种。</summary>
     public bool AllowAutoUpgrade { get; set; } = true;
 
-    /// <summary>true = 不解散玩家手动放入的兵；false = 强制以规则覆盖现有驻军。</summary>
-    public bool PreserveExisting { get; set; } = true;
-
-    /// <summary>true = 当驻军超过 TargetTotalCount 时自动遣散多余兵员。</summary>
-    public bool AutoDisbandExcess { get; set; } = false;
-
     /// <summary>无论目标人数为何，至少保留的最少防守人数（被围时硬下限）。</summary>
     public int MinimumDefenders { get; set; } = 30;
 
@@ -120,8 +114,6 @@ public sealed class TownGarrisonRule
         AllowNobleTroops = this.AllowNobleTroops,
         AllowPrisonerConversion = this.AllowPrisonerConversion,
         AllowAutoUpgrade = this.AllowAutoUpgrade,
-        PreserveExisting = this.PreserveExisting,
-        AutoDisbandExcess = this.AutoDisbandExcess,
         MinimumDefenders = this.MinimumDefenders,
         WartimeMultiplier = this.WartimeMultiplier,
         PeacetimeMultiplier = this.PeacetimeMultiplier,

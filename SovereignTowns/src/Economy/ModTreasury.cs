@@ -12,17 +12,19 @@ namespace SovereignTowns.Economy;
 /// 一律扣玩家个人金币（Hero.MainHero），并写 ledger + audit。
 ///
 /// 调用契约：
-///   - 派出新小队前先 CanAfford 预检，确认能付才派
+///   - 派出新小队前先 CanAfford 预检，按 PauseSpendingWhenBroke 策略确认是否允许支出
 ///   - Charge 返回 false 时调用方应跳过本次动作（不派遣 / 不升级），不要硬塞
 /// </summary>
 public static class ModTreasury
 {
-    /// <summary>仅查询玩家是否能承担 amount，不扣款。</summary>
+    /// <summary>按当前支出策略查询玩家是否允许承担 amount，不扣款。</summary>
     public static bool CanAfford(int amount)
     {
         try
         {
             if (amount <= 0) return true;
+            var feat = ConfigurationManager.Current?.EnabledFeatures;
+            if (feat?.PauseSpendingWhenBroke == false) return true;
             var hero = Hero.MainHero;
             if (hero == null) return false;
             return hero.Gold >= amount;

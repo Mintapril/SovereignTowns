@@ -141,18 +141,18 @@ public sealed class CapitalManager
                 _capitalStringId = null;
             }
 
-            // 2) 从玩家自有 Town 随机抽
+            // 2) 从本氏族自有 Town 随机抽
             var owned = ListPlayerOwnedTowns();
             if (owned.Count == 0)
             {
                 _capitalStringId = null;
-                Logger.Info("Capital: none (player owns 0 towns)");
+                Logger.Info($"Capital: none (clan '{_clan?.Name?.ToString() ?? "<null>"}' owns 0 towns)");
                 return;
             }
 
             var pick = owned[MBRandom.RandomInt(owned.Count)];
             _capitalStringId = pick.Settlement?.StringId;
-            Logger.Info($"Capital initialized: '{pick.Name}' (random pick from {owned.Count} player-owned town(s))");
+            Logger.Info($"Capital initialized: '{pick.Name}' (random pick from {owned.Count} clan-owned town(s))");
         }
         catch (Exception ex)
         {

@@ -4,9 +4,11 @@ using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
+using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
@@ -24,7 +26,7 @@ namespace SovereignTowns.Battle;
 ///     （巡逻队/出击队回家解散前再扫一遍，捕捉层 A 漏网情况，例如多场战斗后未到家）。
 ///
 /// 设计原则：
-///   - 严格过滤：仅 <c>IsActive</c> 且 <c>OwnerClan == Clan.PlayerClan</c> 的 party；
+///   - 严格过滤：仅 <c>IsActive</c> 且所属 clan 已被 <see cref="CapitalRegistry"/> 接管的 party；
 ///   - 三段独立 try-catch（俘虏 / 物品 / 金钱），单段失败不污染其他段；
 ///   - 用 <see cref="CapitalManager"/> 提供的 capital 作俘虏招募首选目的地；
 ///   - 出售目的地用"最近自家 town"（squared distance，避免 sqrt 开销）；
@@ -33,19 +35,20 @@ namespace SovereignTowns.Battle;
 public static class BattleLootHandler
 {
     /// <summary>
-    /// 处置一支胜方 party 的战利品。null / 非玩家 / 非活跃 / 三个 toggle 全关 → no-op。
+    /// 处置一支胜方 party 的战利品。null / 非受管 clan / 非活跃 / 三个 toggle 全关 → no-op。
     /// </summary>
-    /// <param name="winningParty">胜方 party（巡逻队 / 出击队 / 任意玩家 party 均可）。</param>
-    /// <param name="capitalRegistry">首府注册表（可空；空时俘虏招募跳过，仍处理物品 + 金钱）。
-    /// B7.15：本 handler 仅服务于玩家氏族（AI 战利品由 vanilla 处理），所以查 GetForPlayer()。</param>
+    /// <param name="winningParty">胜方 party（巡逻队 / 出击队等 ST 管理队伍）。</param>
+    /// <param name="capitalRegistry">首府注册表（可空时直接跳过）。</param>
     public static void ProcessPartyLoot(MobileParty? winningParty, CapitalRegistry? capitalRegistry)
     {
         if (winningParty == null) return;
 
+        Clan? partyClan = null;
         try
         {
             if (!winningParty.IsActive) return;
-            if (winningParty.ActualClan != Clan.PlayerClan) return;
+            partyClan = ResolvePartyClan(winningParty);
+            if (capitalRegistry == null || !capitalRegistry.IsManagedClanWithCapital(partyClan)) return;
         }
         catch (Exception filterEx)
         {
@@ -73,7 +76,7 @@ public static class BattleLootHandler
         }
 
         Settlement? capital = null;
-        try { capital = capitalRegistry?.GetForPlayer()?.GetCapitalSettlement(); }
+        try { capital = capitalRegistry?.GetCapitalForClan(partyClan); }
         catch (Exception capEx) { Logger.Error("BattleLootHandler: GetCapitalSettlement threw", capEx); }
 
         // ───── 1) 俘虏处理 ─────
@@ -89,7 +92,7 @@ public static class BattleLootHandler
         // ───── 2) 物品处理 ─────
         try
         {
-            ProcessItems(winningParty, features);
+            ProcessItems(winningParty, partyClan, features);
         }
         catch (Exception ex)
         {
@@ -128,10 +131,10 @@ public static class BattleLootHandler
             int remaining = SafeCount(prisonRoster);
             if (remaining > 0)
             {
-                var market = FindNearestPlayerTown(party);
+                var market = FindNearestOwnedTown(party, ResolvePartyClan(party));
                 if (market == null)
                 {
-                    Logger.Debug($"BattleLootHandler: '{SafeName(party)}' has {remaining} prisoners but no player-owned market town nearby, keeping in roster");
+                    Logger.Debug($"BattleLootHandler: '{SafeName(party)}' has {remaining} prisoners but no owned market town nearby, keeping in roster");
                 }
                 else
                 {
@@ -241,7 +244,7 @@ public static class BattleLootHandler
 
     // ─────────────────────── 物品 ───────────────────────
 
-    private static void ProcessItems(MobileParty party, EnabledFeatures features)
+    private static void ProcessItems(MobileParty party, Clan? ownerClan, EnabledFeatures features)
     {
         if (!features.AutoSellLoot) return;
         var itemRoster = party.ItemRoster;
@@ -260,10 +263,10 @@ public static class BattleLootHandler
         }
         if (snapshot.Count == 0) return;
 
-        var market = FindNearestPlayerTown(party);
+        var market = FindNearestOwnedTown(party, ownerClan);
         if (market == null)
         {
-            Logger.Debug($"BattleLootHandler: '{SafeName(party)}' has {snapshot.Count} loot stack(s) but no player-owned market, keeping items");
+            Logger.Debug($"BattleLootHandler: '{SafeName(party)}' has {snapshot.Count} loot stack(s) but no owned market, keeping items");
             return;
         }
 
@@ -390,14 +393,13 @@ public static class BattleLootHandler
     // ─────────────────────── 工具 ───────────────────────
 
     /// <summary>
-    /// 找到离 party 最近的玩家自有 town（用 Vec2.DistanceSquared，避免 sqrt）。无 → null。
+    /// 找到离 party 最近的本 clan 自有 town（用 Vec2.DistanceSquared，避免 sqrt）。无 → null。
     /// </summary>
-    private static Town? FindNearestPlayerTown(MobileParty party)
+    private static Town? FindNearestOwnedTown(MobileParty party, Clan? ownerClan)
     {
         try
         {
-            var playerClan = Clan.PlayerClan;
-            if (playerClan == null) return null;
+            if (ownerClan == null) return null;
 
             var partyPos = party.GetPosition2D;
             Town? best = null;
@@ -406,7 +408,7 @@ public static class BattleLootHandler
             foreach (var t in Town.AllTowns)
             {
                 if (t == null || !t.IsTown) continue;
-                if (t.OwnerClan != playerClan) continue;
+                if (t.OwnerClan != ownerClan) continue;
                 var s = t.Settlement;
                 if (s == null) continue;
                 try
@@ -424,7 +426,7 @@ public static class BattleLootHandler
         }
         catch (Exception ex)
         {
-            Logger.Error($"BattleLootHandler.FindNearestPlayerTown failed for '{SafeName(party)}'", ex);
+            Logger.Error($"BattleLootHandler.FindNearestOwnedTown failed for '{SafeName(party)}'", ex);
             return null;
         }
     }
@@ -433,6 +435,21 @@ public static class BattleLootHandler
     {
         try { return roster?.TotalManCount ?? 0; }
         catch { return 0; }
+    }
+
+    private static Clan? ResolvePartyClan(MobileParty party)
+    {
+        try
+        {
+            if (party.ActualClan != null) return party.ActualClan;
+            if (party.PartyComponent is SallyForthPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is PatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
+        }
+        catch
+        {
+            return null;
+        }
+        return null;
     }
 
     private static string SafeName(MobileParty? party)

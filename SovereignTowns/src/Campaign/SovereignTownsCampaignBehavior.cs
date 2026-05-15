@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using SovereignTowns.Audit;
+using SovereignTowns.Battle;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Lifecycle;
-using SovereignTowns.Llm;
 using SovereignTowns.Managers;
 using SovereignTowns.Models;
 using SovereignTowns.Patrol;
@@ -27,7 +27,7 @@ namespace SovereignTowns.Campaign;
 
 /// <summary>
 /// 主 CampaignBehavior — 事件分发中心。
-/// MVP 3.5 起包含：Lifecycle + Recruitment + TownGarrison + CastleSupport + GarrisonTransfer 5 个 Manager。
+/// Campaign 事件分发中心：首府、招募、调拨、巡逻、出击等 Manager 在此初始化并转发事件。
 /// </summary>
 public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 {
@@ -35,14 +35,12 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private CapitalRegistry? _capitalRegistry;
     private RecruitmentManager? _recruitmentManager;
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
-    private TownGarrisonManager? _townGarrisonManager;
-    private CastleSupportManager? _castleSupportManager;
+    private CapitalLogisticsManager? _capitalLogisticsManager;
+    private BattleLootManager? _battleLootManager;
     private GarrisonTransferManager? _transferManager;
     private PatrolManager? _patrolManager;
     private SallyForthManager? _sallyForthManager;
     private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
-    private LLMReasoningService? _llmService;
-    private LLMConfig _llmConfig = new LLMConfig();
 
     /// <summary>
     /// SyncData(load) → OnSessionLaunched 之间的暂存：clanStringId → settlementStringId。
@@ -163,18 +161,23 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _capitalRegistry.Initialize();
 
             _transferManager = new GarrisonTransferManager(_lifecycle);
-            _castleSupportManager = new CastleSupportManager(_capitalRegistry, _transferManager);
+            _battleLootManager = new BattleLootManager(_capitalRegistry);
             // B7.27：sally 先构造，patrol 接受 sally 引用以做支援判定
-            _sallyForthManager = new SallyForthManager(_lifecycle, _capitalRegistry);
-            _patrolManager = new PatrolManager(_lifecycle, _capitalRegistry, _sallyForthManager);
+            _sallyForthManager = new SallyForthManager(_lifecycle, _capitalRegistry, _battleLootManager);
+            _patrolManager = new PatrolManager(_lifecycle, _capitalRegistry, _sallyForthManager, _battleLootManager);
 
             // 2026-05-12 审查 B-WarPartyComponent.OnFinalize 修复：sally party 战场被歼灭时
             // 由 vanilla 直接 destroy → roster 残留兵员丢失；订阅 MobilePartyDestroyed 抢救存活兵回 home。
             // 注意：PartyLifecycleManager 内部已订阅同事件做 untrack（不冲突，事件支持多订阅）。
             try
             {
-                CampaignEvents.MobilePartyDestroyed.AddNonSerializedListener(this,
-                    (party, destroyer) => _sallyForthManager?.OnMobilePartyDestroyed(party, destroyer));
+                // Lambda 自带 try-catch 兜底，避免 vanilla MulticastDelegate 链因本订阅抛而中断后续订阅者
+                // （多个 mod / 内部 PartyLifecycleManager 都订阅同一事件）。
+                CampaignEvents.MobilePartyDestroyed.AddNonSerializedListener(this, (party, destroyer) =>
+                {
+                    try { _sallyForthManager?.OnMobilePartyDestroyed(party, destroyer); }
+                    catch (Exception lambdaEx) { Logger.Error("MobilePartyDestroyed sally rescue lambda threw", lambdaEx); }
+                });
             }
             catch (Exception ex) { Logger.Error("Failed to subscribe MobilePartyDestroyed for SallyForth rescue", ex); }
 
@@ -182,58 +185,45 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             DiagnosticGameMenu.Register(campaignGameStarter, _capitalRegistry);
             // B7.22：自家 party encounter 拦截 — 玩家碰到征兵队 / 调拨队等会进入对话而非战斗界面
             STPartyDialogRegistration.Register(campaignGameStarter);
-            SafeUninstallMenu.Register(campaignGameStarter);
 
             // B7: ribbon retired. Player config is now web-only via DiagnosticGameMenu's
             // "打开网页控制面板" town menu option + WebConfigServer.
 
-            _llmConfig = LoadLlmConfigOrDefault();
-            ILLMProvider provider = _llmConfig.Provider?.ToLowerInvariant() switch
-            {
-                "ollama" => new LocalOllamaProvider(_llmConfig),
-                "openai_compatible" => new RemoteOpenAICompatibleProvider(_llmConfig),
-                _ => new NoOpLLMProvider()
-            };
-            _llmService = new LLMReasoningService(provider, _llmConfig);
-
             _recruitmentManager = new RecruitmentManager(_lifecycle, _capitalRegistry);
             _prisonerRecruitmentManager = new PrisonerRecruitmentManager(_capitalRegistry);
-            _townGarrisonManager = new TownGarrisonManager(
-                recruitmentManager: _recruitmentManager,
-                llmService: _llmService,
-                capitalRegistry: _capitalRegistry,
-                castleSupportManager: _castleSupportManager,
-                lifecycle: _lifecycle);
+            _capitalLogisticsManager = new CapitalLogisticsManager(
+                _capitalRegistry,
+                _recruitmentManager,
+                _transferManager);
 
             // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
             // 时序：必须在 RecruitmentManager 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
             _vanillaSuppression = new SovereignTowns.SettlementManagement.VanillaSuppressionManager();
             _vanillaSuppression.Initialize();
 
-            Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (9 个, 含 Capital + SallyForth + VanillaSuppression) ConfigVersion={ConfigurationManager.Current.ConfigVersion} LLM=provider:{provider.Name} configured:{provider.IsConfigured}");
+            Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (含 Capital + SallyForth + VanillaSuppression) ConfigVersion={ConfigurationManager.Current.ConfigVersion}");
             Logger.Info($"  features: AutoGarrison={ConfigurationManager.Current.EnabledFeatures.AutoGarrison} " +
                         $"AutoRecruitment={ConfigurationManager.Current.EnabledFeatures.AutoRecruitment} " +
                         $"AutoPatrol={ConfigurationManager.Current.EnabledFeatures.AutoPatrol} " +
-                        $"CastleSupport={ConfigurationManager.Current.EnabledFeatures.CastleSupport}");
+                        $"TroopTransfers={ConfigurationManager.Current.EnabledFeatures.TroopTransfers}");
 
             if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment)
                 Logger.Info("  HINT: AutoRecruitment 已禁用。global.json 改为 true 启用");
-            if (!ConfigurationManager.Current.EnabledFeatures.CastleSupport)
-                Logger.Info("  HINT: CastleSupport 已禁用。global.json 改为 true 启用");
+            if (!ConfigurationManager.Current.EnabledFeatures.TroopTransfers)
+                Logger.Info("  HINT: TroopTransfers 已禁用。global.json 改为 true 启用");
             if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
                 Logger.Info("  HINT: AutoPatrol 已禁用。global.json 改为 true 启用");
 
-            // B7.5: announce web config endpoint to the player. URL contains the auth token —
-            // displayed once per session so they can copy it manually if needed, but the
-            // normal path is via the "打开网页控制面板" town menu option.
+            // B7.5: 提示玩家打开网页面板 — 但 URL 含 session token，不能写日志 / 聊天面板（玩家分享
+            // ModLogs 截图就会泄漏，攻击者可在 session 期间写任意配置）。改为只提示从城镇菜单进入。
             try
             {
                 if (SovereignTowns.WebConfig.WebConfigServer.IsRunning)
                 {
-                    string url = SovereignTowns.WebConfig.WebConfigServer.GetBrowserUrl();
+                    int port = SovereignTowns.WebConfig.WebConfigServer.Port;
                     InformationManager.DisplayMessage(new InformationMessage(
-                        $"[主权城镇] 网页控制面板：{url}", Colors.Green));
-                    Logger.Info($"WebConfigServer URL: {url}");
+                        "[主权城镇] 网页控制面板已启动。请进入任意城镇菜单点「打开网页控制面板」。", Colors.Green));
+                    Logger.Info($"WebConfigServer listening on 127.0.0.1:{port} (token withheld from logs/UI)");
                 }
                 else
                 {
@@ -271,28 +261,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            _townGarrisonManager?.EvaluateAll();
-
-            // CastleSupport 调拨决策
-            if (_castleSupportManager != null && _transferManager != null
-                && ConfigurationManager.Current.EnabledFeatures.CastleSupport)
-            {
-                var tasks = _castleSupportManager.EvaluateAll();
-                Logger.Info($"DailyTick: CastleSupport 产出 {tasks.Count} 个调拨任务");
-                foreach (var task in tasks)
-                {
-                    try
-                    {
-                        var dispatched = _transferManager.TryDispatchTransfer(task);
-                        if (!dispatched)
-                            Logger.Info($"  transfer task declined: {task.Source.Name} → {task.Destination.Name}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error("TryDispatchTransfer 单任务失败", ex);
-                    }
-                }
-            }
+            _capitalLogisticsManager?.EvaluateAll();
         }
         catch (Exception ex)
         {
@@ -341,10 +310,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             DrainWebConfigSync();
             _sallyForthManager?.OnHourlyTickSettlement(settlement);
-            // 用户明确：XP 注入 + 俘虏招募 + 升级触发 仅在首府进行；非首府/城堡走 CastleSupport 调拨。
+            // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨由 CapitalLogisticsManager 在 DailyTick 统一调度。
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
             var mgr = _capitalRegistry?.GetForSettlement(settlement);
-            var capitalSettlement = mgr?.GetCapitalSettlement();
+            var capitalSettlement = _capitalRegistry?.GetCapitalForClan(mgr?.OwnerClan);
             // B7.20：诊断日志 — 让玩家在 ModLogs 直接看到 daily tick 是否走到首府路径
             if (settlement != null && (settlement.IsTown || settlement.IsCastle) && settlement.OwnerClan == Clan.PlayerClan)
             {
@@ -355,7 +324,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             {
                 Upgrades.GarrisonXpInjector.GiveDailyXpToGarrison(settlement);
                 _prisonerRecruitmentManager?.OnDailyTickSettlement(settlement);
-                Recruitment.CapitalInPlaceRecruiter.RecruitFromCapitalNotables(settlement);
             }
         }
         catch (Exception ex)
@@ -372,8 +340,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            _battleLootManager?.OnMapEventEnded(mapEvent);
             _sallyForthManager?.OnMapEventEnded(mapEvent);
-            _patrolManager?.OnMapEventEnded(mapEvent);
         }
         catch (Exception ex)
         {
@@ -414,33 +382,4 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         }
     }
 
-    /// <summary>
-    /// 从 Modules/SovereignTowns/Configs/llm.json 读取 LLMConfig。
-    /// 文件不存在 / 解析失败 → 返回默认 NoOp 配置。
-    /// </summary>
-    private static LLMConfig LoadLlmConfigOrDefault()
-    {
-        try
-        {
-            var modulePath = TaleWorlds.ModuleManager.ModuleHelper.GetModuleFullPath("SovereignTowns");
-            var path = System.IO.Path.Combine(modulePath, "Configs", "llm.json");
-            if (!System.IO.File.Exists(path))
-            {
-                Logger.Info("LLM: llm.json 不存在，使用默认 NoOp 配置（路径：" + path + "）");
-                return new LLMConfig();
-            }
-            var txt = System.IO.File.ReadAllText(path);
-            var cfg = ParseLlmConfig(txt);
-            Logger.Info($"LLM: 已加载 {path} provider={cfg.Provider} enableLong={cfg.EnableForLongTermPlanning} enableUser={cfg.EnableForUserAdvice}");
-            return cfg;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn("LLM: llm.json 加载失败，退回 NoOp：" + ex.Message);
-            return new LLMConfig();
-        }
-    }
-
-    private static LLMConfig ParseLlmConfig(string json)
-        => Newtonsoft.Json.JsonConvert.DeserializeObject<LLMConfig>(json) ?? new LLMConfig();
 }

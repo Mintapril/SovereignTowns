@@ -32,7 +32,6 @@ public sealed class PartyLifecycleManager
     public const int MaxRecruitersPerTown = 1;
     public const int MaxTransfersPerTown  = 1;
     public const int MaxSallyForthPerTown = 1;
-    public const int MaxDismissPerTown    = 1;
 
     // ────────── 空闲检测阈值（小时） ──────────
     public const int IdleHoursBeforeForceReturn = 24;
@@ -43,7 +42,6 @@ public sealed class PartyLifecycleManager
     public const string KindTransfer   = "transfer";
     public const string KindPatrol     = "patrol";
     public const string KindSallyForth = "sallyforth";
-    public const string KindDismiss    = "dismiss";
 
     private readonly Dictionary<MobileParty, TrackedPartyMeta> _tracked = new Dictionary<MobileParty, TrackedPartyMeta>();
     private bool _initialized;
@@ -137,9 +135,11 @@ public sealed class PartyLifecycleManager
         try
         {
             if (home is null || string.IsNullOrEmpty(kind)) return 0;
+            var ownerClan = home.OwnerClan;
             return _tracked.Count(kv =>
                 kv.Value.Home == home &&
                 kv.Value.Kind == kind &&
+                kv.Value.OwnerClan == ownerClan &&
                 kv.Key != null &&
                 kv.Key.IsActive);
         }
@@ -155,8 +155,8 @@ public sealed class PartyLifecycleManager
     /// 已恢复的 <see cref="MobileParty"/> 列表重建索引。
     /// 必须的过滤（与各 Manager 创建端保持一致）：
     ///   - RecruitingPartyComponent / TransferPartyComponent：本 Mod 自有类型，直接收编；
-    ///   - vanilla PatrolPartyComponent：仅在 HomeSettlement.OwnerClan == Clan.PlayerClan
-    ///     时纳入（避免误抓 AI 领主的巡逻队）。
+    ///   - vanilla PatrolPartyComponent：仅在 HomeSettlement.OwnerClan 属于 ST 受管 clan
+    ///     时纳入（registry 尚未就绪时退回玩家氏族过滤）。
     /// 单 party 失败 try-catch，不影响整体；幂等：可多次调用。
     /// </summary>
     public void RebuildFromCampaign()
@@ -165,7 +165,7 @@ public sealed class PartyLifecycleManager
         {
             _tracked.Clear();
 
-            int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, dismisses = 0, skipped = 0;
+            int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             var now = CampaignTime.Now;
 
             // 1) RecruitingPartyComponent / TransferPartyComponent（均继承自 CustomPartyComponent）
@@ -201,15 +201,6 @@ public sealed class PartyLifecycleManager
                                 _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
                                 sallyforths++;
                             }
-                            else if (comp is DismissPartyComponent dp)
-                            {
-                                // Home = source town (DismissedFromSettlement), so MigrateByHomeSettlement
-                                // can sweep in-flight dismiss parties when source town falls.
-                                var home = dp.DismissedFromSettlement;
-                                if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindDismiss, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
-                                dismisses++;
-                            }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略
                         }
                         catch (Exception oneEx)
@@ -224,7 +215,7 @@ public sealed class PartyLifecycleManager
                 Logger.Error("RebuildFromCampaign: AllCustomParties enumeration failed", ex);
             }
 
-            // 2) vanilla PatrolPartyComponent — 仅玩家自家 town 的
+            // 2) vanilla PatrolPartyComponent — 仅 ST 受管 clan 的
             try
             {
                 var patrolList = MobileParty.AllPatrolParties;
@@ -239,8 +230,17 @@ public sealed class PartyLifecycleManager
                             if (pp == null) continue;
                             var home = pp.HomeSettlement;
                             if (home == null) continue;
-                            if (home.OwnerClan != Clan.PlayerClan) continue; // 关键过滤
-                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
+                            var ownerClan = SafeActualClan(party, home);
+                            var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
+                            if (registry != null)
+                            {
+                                if (!registry.IsManagedClan(ownerClan)) continue;
+                            }
+                            else if (ownerClan != Clan.PlayerClan)
+                            {
+                                continue;
+                            }
+                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), ownerClan);
                             patrols++;
                         }
                         catch (Exception oneEx)
@@ -255,7 +255,7 @@ public sealed class PartyLifecycleManager
                 Logger.Error("RebuildFromCampaign: AllPatrolParties enumeration failed", ex);
             }
 
-            Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} dismisses={dismisses} skipped={skipped} (total tracked={_tracked.Count})");
+            Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} skipped={skipped} (total tracked={_tracked.Count})");
         }
         catch (Exception ex)
         {
@@ -286,11 +286,11 @@ public sealed class PartyLifecycleManager
         }
         try
         {
-            var newGarrison = newCapital?.Town?.GarrisonParty;
             var newCapitalName = newCapital?.Name?.ToString() ?? "<none>";
             int migratedTroops = 0;
             int partiesDisbanded = 0;
             int skippedOtherClan = 0;
+            var mergeService = new PartyMergeService(this);
 
             // 拷贝 keys 快照，避免边迭代边修改
             var snapshot = new List<MobileParty>(_tracked.Keys);
@@ -309,39 +309,22 @@ public sealed class PartyLifecycleManager
                         continue;
                     }
 
-                    // B1 #6.B: dismiss parties evaporate — do not migrate roster to new garrison
-                    if (meta.Kind == KindDismiss)
+                    if (party.IsActive && newCapital != null)
                     {
-                        if (party.IsActive)
-                        {
-                            try { DestroyPartyAction.Apply(null, party); }
-                            catch (Exception destroyEx)
-                            {
-                                Logger.Error($"MigrateAllOrDisband: dismiss-party DestroyPartyAction failed for '{PartyNameFormatter.SafeName(party)}'", destroyEx);
-                            }
-                            partiesDisbanded++;
-                        }
-                        _tracked.Remove(party);
-                        continue;
-                    }
-
-                    if (party.IsActive && newGarrison?.MemberRoster != null && party.MemberRoster != null)
-                    {
-                        var elements = party.MemberRoster.GetTroopRoster();
-                        foreach (var elem in elements)
-                        {
-                            if (elem.Character == null || elem.Character.IsHero) continue;
-                            if (elem.Number <= 0) continue;
-                            newGarrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                            migratedTroops += elem.Number;
-                        }
+                        migratedTroops += mergeService.MergeNonHeroTroopsIntoGarrison(
+                            party,
+                            newCapital,
+                            "PartyLifecycleManager.MigrateAllOrDisband");
                     }
                     if (party.IsActive)
                     {
-                        DisbandPartyAction.StartDisband(party);
+                        mergeService.DisbandAndUntrack(party, "PartyLifecycleManager.MigrateAllOrDisband");
                         partiesDisbanded++;
                     }
-                    _tracked.Remove(party);
+                    else
+                    {
+                        UntrackParty(party);
+                    }
                 }
                 catch (Exception oneEx)
                 {
@@ -365,10 +348,10 @@ public sealed class PartyLifecycleManager
         if (lostSettlement == null) return;
         try
         {
-            var fallbackGarrison = fallback?.Town?.GarrisonParty;
             var fallbackName = fallback?.Name?.ToString() ?? "<none>";
             int migrated = 0;
             int disbanded = 0;
+            var mergeService = new PartyMergeService(this);
 
             var snapshot = new List<MobileParty>(_tracked.Keys);
             foreach (var party in snapshot)
@@ -379,39 +362,22 @@ public sealed class PartyLifecycleManager
                     if (!_tracked.TryGetValue(party, out var rec)) continue;
                     if (rec.Home != lostSettlement) continue; // 仅清理该 settlement 的 in-flight
 
-                    // B1 #6.B: dismiss parties evaporate, do not migrate roster
-                    if (rec.Kind == KindDismiss)
+                    if (party.IsActive && fallback != null)
                     {
-                        if (party.IsActive)
-                        {
-                            try { DestroyPartyAction.Apply(null, party); }
-                            catch (Exception destroyEx)
-                            {
-                                Logger.Error($"MigrateByHomeSettlement: dismiss-party DestroyPartyAction failed for '{PartyNameFormatter.SafeName(party)}'", destroyEx);
-                            }
-                            disbanded++;
-                        }
-                        _tracked.Remove(party);
-                        continue;
-                    }
-
-                    if (party.IsActive && fallbackGarrison?.MemberRoster != null && party.MemberRoster != null)
-                    {
-                        var elements = party.MemberRoster.GetTroopRoster();
-                        foreach (var elem in elements)
-                        {
-                            if (elem.Character == null || elem.Character.IsHero) continue;
-                            if (elem.Number <= 0) continue;
-                            fallbackGarrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                            migrated += elem.Number;
-                        }
+                        migrated += mergeService.MergeNonHeroTroopsIntoGarrison(
+                            party,
+                            fallback,
+                            "PartyLifecycleManager.MigrateByHomeSettlement");
                     }
                     if (party.IsActive)
                     {
-                        DisbandPartyAction.StartDisband(party);
+                        mergeService.DisbandAndUntrack(party, "PartyLifecycleManager.MigrateByHomeSettlement");
                         disbanded++;
                     }
-                    _tracked.Remove(party);
+                    else
+                    {
+                        UntrackParty(party);
+                    }
                 }
                 catch (Exception oneEx)
                 {
@@ -465,20 +431,6 @@ public sealed class PartyLifecycleManager
         // 首行过滤：非本 Mod 队伍立即返回
         if (party is null) return;
         if (!_tracked.TryGetValue(party, out var meta)) return;
-
-        // B1 #6.B: dismiss party reached its target village → evaporate
-        if (meta.Kind == KindDismiss && party.PartyComponent is DismissPartyComponent dp)
-        {
-            var homeVillage = dp.HomeVillage;
-            if (homeVillage != null && (party.CurrentSettlement == homeVillage || party.LastVisitedSettlement == homeVillage))
-            {
-                Logger.Info($"HourlyTick '{PartyNameFormatter.SafeName(party)}': dismiss arrived at '{homeVillage.Name}' → DestroyPartyAction.Apply");
-                try { DestroyPartyAction.Apply(null, party); }
-                catch (Exception destroyEx) { Logger.Error($"DestroyPartyAction failed for dismiss '{PartyNameFormatter.SafeName(party)}'", destroyEx); }
-                UntrackParty(party);
-                return;
-            }
-        }
 
         try
         {
@@ -582,7 +534,6 @@ public sealed class PartyLifecycleManager
         if (kind == KindRecruiter)  return ComputePatrolCapForHome(home);
         if (kind == KindTransfer)   return MaxTransfersPerTown;
         if (kind == KindSallyForth) return MaxSallyForthPerTown;
-        if (kind == KindDismiss)    return MaxDismissPerTown;
         if (kind == KindPatrol)     return ComputePatrolCapForHome(home);
         // 未知 kind：保守上限 1，避免失控创建
         return 1;

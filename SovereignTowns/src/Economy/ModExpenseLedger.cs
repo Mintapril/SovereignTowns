@@ -94,7 +94,7 @@ public static class ModExpenseLedger
         }
     }
 
-    /// <summary>SafeUninstall 时清空全部状态。</summary>
+    /// <summary>清空全部瞬态支出状态。</summary>
     public static void Clear()
     {
         try
@@ -188,4 +188,3 @@ public sealed class FinanceReport
     public long AllTimeTotal { get; set; }
     public List<ExpenseEntry> RecentEntries { get; set; } = new();
 }
-

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using SovereignTowns.Audit;
+using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
@@ -56,7 +57,7 @@ public static class TroopUpgradeService
     /// <summary>
     /// 在 home town 驻军内尝试升级一批兵种。
     /// </summary>
-    /// <param name="homeTown">玩家自有 Town；其 GarrisonParty 提供 MemberRoster。</param>
+    /// <param name="homeTown">受管氏族自有 Town；其 GarrisonParty 提供 MemberRoster。</param>
     /// <param name="budgetCap">本批次总金币预算上限。&lt;0 视为 0；0 表示禁止任何需付费的升级。</param>
     /// <param name="maxUpgradesPerCall">本批次最多执行多少次升级（每个 element 最多升 1 次）。</param>
     /// <returns>本批次升级统计。失败 / 无操作 → DidWork = false。</returns>
@@ -200,7 +201,7 @@ public static class TroopUpgradeService
 
                     // B7.27：升级金币改走玩家个人金币（不再从城金库），统一记账走 ModTreasury。
                     // AI clan 升级跳过扣费（AI 经济保持原 vanilla 行为）。
-                    if (goldCost > 0 && homeTown.OwnerClan == Clan.PlayerClan)
+                    if (goldCost > 0 && CapitalRegistry.ShouldChargeClan(homeTown.OwnerClan))
                     {
                         bool charged = ModTreasury.Charge(ExpenseCategory.Upgrade, goldCost, $"upgrade {ch.StringId}->{target.StringId} town={homeTown.Settlement.StringId}");
                         if (!charged)

@@ -9,10 +9,8 @@ using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
-using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Library;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
@@ -21,10 +19,10 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.SallyForth;
 
 /// <summary>
-/// MVP 5：监管玩家自有 town 的"主动出击队"（<see cref="SallyForthPartyComponent"/>）。
+/// MVP 5：监管受管氏族自有 town 的"主动出击队"（<see cref="SallyForthPartyComponent"/>）。
 ///
 /// 设计原则（仿 GDS，但避开 Harmony，并改进 GDS 的回程 bug）：
-///   - 仅触碰 OwnerClan == PlayerClan 且通过 PartyLifecycleManager 注册 kind="sallyforth" 的队伍；
+///   - 仅触碰 CapitalRegistry 接管且通过 PartyLifecycleManager 注册 kind="sallyforth" 的队伍；
 ///   - 所有方法 try-catch，绝不向调用方抛异常；
 ///   - 在 SettlementHourlyTick 评估是否应出击 + 选目标 + 创建出击队；
 ///   - 在 PartyHourlyTick 处理"在外 → 撤退 / 超时 → 回家 / 到家 → 转兵+销毁"状态机；
@@ -63,12 +61,19 @@ public sealed class SallyForthManager
     private readonly HashSet<MobileParty> _targetLostLogged = new();
 
     private readonly PartyLifecycleManager _lifecycle;
+    private readonly PartyMergeService _mergeService;
     private readonly CapitalRegistry? _capitalRegistry;
+    private readonly BattleLootManager? _battleLootManager;
 
-    public SallyForthManager(PartyLifecycleManager lifecycle, CapitalRegistry? capitalRegistry = null)
+    public SallyForthManager(
+        PartyLifecycleManager lifecycle,
+        CapitalRegistry? capitalRegistry = null,
+        BattleLootManager? battleLootManager = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _mergeService = new PartyMergeService(_lifecycle);
         _capitalRegistry = capitalRegistry;
+        _battleLootManager = battleLootManager;
     }
 
     // ────────── Settlement 小时 tick：评估并创建 ──────────
@@ -79,15 +84,20 @@ public sealed class SallyForthManager
         // B7.15 Phase C：拓宽到所有 registry 管理的 clan（player + 受管 AI）。
         if (settlement == null) return;
         if (!settlement.IsTown) return;
-        var owningMgr = _capitalRegistry?.GetForSettlement(settlement);
-        if (owningMgr is null) return;  // 该 clan 不在 registry 管理范围
 
         try
         {
+            // 所有可能抛异常的 registry / config 访问都纳入 try，避免逃逸到 vanilla
+            // HourlyTickSettlementEvent 链（违反硬不变量 #5）。
+            var owningMgr = _capitalRegistry?.GetForSettlement(settlement);
+            if (owningMgr is null) return;
+            var usableCapital = _capitalRegistry?.GetCapitalForClan(owningMgr.OwnerClan);
+            if (usableCapital == null) return;
+
             if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) return;
 
             // 系统开关：未设首府 → 系统关闭（该 clan 无 town）
-            if (owningMgr.GetCapital() == null) return;
+            if (usableCapital.Town == null) return;
 
             if (settlement.IsUnderSiege) return;
 
@@ -187,9 +197,13 @@ public sealed class SallyForthManager
                 EmergencyCleanup(party);
                 return;
             }
-            // 2026-05-12 审查 D-I3 修复：失守时不再静默 return 留下孤儿；改为紧急清理
-            // B7.15 Phase C：home 必须仍属于 registry 管理的 clan（玩家或受管 AI）
-            if (_capitalRegistry == null || !_capitalRegistry.IsManagedClan(home.OwnerClan))
+            // 2026-05-12 审查 D-I3 修复：失守时不再静默 return 留下孤儿；改为紧急清理。
+            // B7.28：归属必须看 party.ActualClan；home 易主后 home.OwnerClan 已是新主人。
+            var partyClan = party.ActualClan ?? home.OwnerClan;
+            if (_capitalRegistry == null
+                || partyClan == null
+                || !_capitalRegistry.IsManagedClanWithCapital(partyClan)
+                || home.OwnerClan != partyClan)
             {
                 Logger.Warn($"SallyForthManager: '{PartyNameFormatter.SafeName(party)}' home '{home.Name}' lost (owner={home.OwnerClan?.Name?.ToString() ?? "none"}), emergency cleanup");
                 EmergencyCleanup(party);
@@ -316,23 +330,17 @@ public sealed class SallyForthManager
                     EmergencyCleanup(mp);
                     continue;
                 }
-                // 2026-05-12 审查 D-I3 修复：战后若 home 已失守，不要 SetMoveGoToSettlement 一个敌方城市
-                // B7.15 Phase C：广义化到所有受管 clan
-                if (_capitalRegistry == null || !_capitalRegistry.IsManagedClan(home.OwnerClan))
+                // 2026-05-12 审查 D-I3 修复：战后若 home 已失守，不要 SetMoveGoToSettlement 一个敌方城市。
+                // B7.28：归属必须看 party.ActualClan；home 易主后 home.OwnerClan 已是新主人。
+                var partyClan = mp.ActualClan ?? home.OwnerClan;
+                if (_capitalRegistry == null
+                    || partyClan == null
+                    || !_capitalRegistry.IsManagedClanWithCapital(partyClan)
+                    || home.OwnerClan != partyClan)
                 {
                     Logger.Warn($"SallyForthManager.MapEventEnded: '{PartyNameFormatter.SafeName(mp)}' home '{home.Name}' fell during battle, emergency cleanup");
                     EmergencyCleanup(mp);
                     continue;
-                }
-
-                // 层 A：战后立即处置战利品（必须先于 ReleaseAiAndReturnHome — 否则 PrisonRoster 等仍在 party 上）
-                try
-                {
-                    BattleLootHandler.ProcessPartyLoot(mp, _capitalRegistry);
-                }
-                catch (Exception lootEx)
-                {
-                    Logger.Error($"SallyForthManager: BattleLootHandler.ProcessPartyLoot threw for '{PartyNameFormatter.SafeName(mp)}'", lootEx);
                 }
 
                 Logger.Info($"SallyForthManager: '{PartyNameFormatter.SafeName(mp)}' completed battle, returning to '{home.Name}'");
@@ -411,8 +419,8 @@ public sealed class SallyForthManager
             if (settlement.Town == null) return; // 不可能，但 nullable warn 安抚
 
             // B7.27：派出 sally 前先扣本钱（仅玩家氏族）
-            bool isPlayerClanSally = settlement.OwnerClan == Clan.PlayerClan;
-            if (isPlayerClanSally)
+            bool shouldChargeSally = CapitalRegistry.ShouldChargeClan(settlement.OwnerClan);
+            if (shouldChargeSally)
             {
                 if (!ModTreasury.CanAfford(InitialSallyGold))
                 {
@@ -444,8 +452,7 @@ public sealed class SallyForthManager
                 Logger.Warn($"SallyForthManager: '{settlement.Name}' transferred only {moved} troops < {MinPartyBeforeRetreat}, aborting sally");
                 // 把已抽走的兵塞回去 + 销毁空 sally
                 TransferTroopsBackToGarrison(sallyParty, garrison);
-                try { DestroyPartyAction.Apply(null, sallyParty); }
-                catch (Exception destroyEx) { Logger.Error("DestroyPartyAction.Apply (rollback) failed", destroyEx); }
+                _mergeService.DestroyAndUntrack(sallyParty, "SallyForthManager rollback", deferIfInMapEvent: false);
                 return;
             }
 
@@ -505,8 +512,8 @@ public sealed class SallyForthManager
         try
         {
             // 兜底层 B：destroy 前先处置战利品（捕捉 MapEventEnded 路径漏网情况）
-            try { BattleLootHandler.ProcessPartyLoot(sally, _capitalRegistry); }
-            catch (Exception lootEx) { Logger.Error($"SallyForthManager.TransferAndDestroy: ProcessPartyLoot threw for '{PartyNameFormatter.SafeName(sally)}'", lootEx); }
+            try { _battleLootManager?.ProcessPartyIfEligible(sally); }
+            catch (Exception lootEx) { Logger.Error($"SallyForthManager.TransferAndDestroy: loot processing threw for '{PartyNameFormatter.SafeName(sally)}'", lootEx); }
 
             var town = home.Town;
             if (town == null)
@@ -516,21 +523,10 @@ public sealed class SallyForthManager
                 return;
             }
 
-            var garrison = town.GarrisonParty;
-            var sRoster = sally.MemberRoster;
-            int transferred = 0;
-
-            if (garrison?.MemberRoster != null && sRoster != null)
-            {
-                var elements = sRoster.GetTroopRoster();
-                foreach (var elem in elements)
-                {
-                    if (elem.Character == null || elem.Character.IsHero) continue;
-                    garrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                    transferred += elem.Number;
-                }
-                sRoster.RemoveIf(e => e.Character != null && !e.Character.IsHero);
-            }
+            int transferred = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                sally,
+                home,
+                "SallyForthManager.TransferAndDestroy");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "merge_sally_into_garrison",
@@ -574,28 +570,16 @@ public sealed class SallyForthManager
             {
                 var spComp = sally.PartyComponent as SallyForthPartyComponent;
                 var origHome = spComp?.HomeSettlement;
-                var origClan = origHome?.OwnerClan;
-                var origMgr = _capitalRegistry?.GetForClan(origClan);
-                newCapital = origMgr?.GetCapitalSettlement();
+                var origClan = sally.ActualClan ?? origHome?.OwnerClan;
+                newCapital = _capitalRegistry?.GetCapitalForClan(origClan);
             }
             catch { newCapital = null; }
-            if (newCapital != null && newCapital.Town?.GarrisonParty != null && sally.MemberRoster != null)
+            if (newCapital != null && sally.MemberRoster != null)
             {
-                var gRoster = newCapital.Town.GarrisonParty.MemberRoster;
-                var sRoster = sally.MemberRoster;
-                int rescued = 0;
-                try
-                {
-                    var snapshot = new System.Collections.Generic.List<TroopRosterElement>(sRoster.GetTroopRoster());
-                    foreach (var elem in snapshot)
-                    {
-                        if (elem.Character == null || elem.Character.IsHero || elem.Number <= 0) continue;
-                        gRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                        sRoster.AddToCounts(elem.Character, -elem.Number, false, 0, 0);
-                        rescued += elem.Number;
-                    }
-                }
-                catch (Exception rEx) { Logger.Error("EmergencyCleanup: roster transfer to new capital failed", rEx); }
+                int rescued = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                    sally,
+                    newCapital,
+                    "SallyForthManager.EmergencyCleanup");
                 Logger.Info($"EmergencyCleanup: rescued {rescued} troops from '{PartyNameFormatter.SafeName(sally)}' to new capital '{newCapital.Name}'");
             }
             else
@@ -638,24 +622,7 @@ public sealed class SallyForthManager
         }
         catch { /* MapEvent 属性访问失败也直接降级到 Apply */ }
 
-        try
-        {
-            DestroyPartyAction.Apply(null, party);
-            _lifecycle.UntrackParty(party);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"SafeDestroy failed for '{PartyNameFormatter.SafeName(party)}', falling back to Disband", ex);
-            try
-            {
-                DisbandPartyAction.StartDisband(party);
-                _lifecycle.UntrackParty(party);
-            }
-            catch (Exception fbEx)
-            {
-                Logger.Error($"Fallback Disband also failed for '{PartyNameFormatter.SafeName(party)}'", fbEx);
-            }
-        }
+        _mergeService.DestroyAndUntrack(party, "SallyForthManager.SafeDestroy", deferIfInMapEvent: false);
     }
 
     /// <summary>
@@ -667,11 +634,13 @@ public sealed class SallyForthManager
     public void OnMobilePartyDestroyed(MobileParty party, PartyBase? destroyerParty)
     {
         if (party == null) return;
-        var sp = party.PartyComponent as SallyForthPartyComponent;
-        if (sp == null) return;
 
         try
         {
+            // 把 PartyComponent 访问也纳入 try：party.PartyComponent 是 vanilla 属性，
+            // 不应假设其访问无异常（vanilla 在 destroy 中途置 null 的场景可能存在）。
+            var sp = party.PartyComponent as SallyForthPartyComponent;
+            if (sp == null) return;
             var home = sp.HomeSettlement;
             // B7.22：销毁也算 sally 结束 — stamp 冷却时间，无论 home 状态如何 + 清 log 状态
             if (home != null)
@@ -681,37 +650,39 @@ public sealed class SallyForthManager
             }
             try { _forceReturnLogged.Remove(party); _targetLostLogged.Remove(party); } catch { }
 
-            // B7.15 Phase C：广义到所有受管 clan（player + AI）
-            if (home == null || _capitalRegistry == null || !_capitalRegistry.IsManagedClan(home.OwnerClan))
+            // B7.28：销毁救援也以 party.ActualClan 为原始归属；home 易主时改救到该 clan 当前首府。
+            var partyClan = party.ActualClan ?? home?.OwnerClan;
+            Settlement? rescueTarget = null;
+            if (_capitalRegistry != null && partyClan != null)
+            {
+                if (home != null && home.OwnerClan == partyClan && _capitalRegistry.IsManagedClanWithCapital(partyClan))
+                {
+                    rescueTarget = home;
+                }
+                else
+                {
+                    rescueTarget = _capitalRegistry.GetCapitalForClan(partyClan);
+                }
+            }
+
+            if (rescueTarget == null)
             {
                 Logger.Info($"OnMobilePartyDestroyed: '{PartyNameFormatter.SafeName(party)}' home unavailable, no rescue");
                 return;
             }
 
-            var garrison = home.Town?.GarrisonParty;
-            var sRoster = party.MemberRoster;
-            if (garrison?.MemberRoster == null || sRoster == null) return;
-
-            int rescued = 0;
-            try
-            {
-                var snapshot = new System.Collections.Generic.List<TroopRosterElement>(sRoster.GetTroopRoster());
-                foreach (var elem in snapshot)
-                {
-                    if (elem.Character == null || elem.Character.IsHero || elem.Number <= 0) continue;
-                    garrison.MemberRoster.AddToCounts(elem.Character, elem.Number, false, elem.WoundedNumber, elem.Xp);
-                    rescued += elem.Number;
-                }
-            }
-            catch (Exception rEx) { Logger.Error("OnMobilePartyDestroyed: roster rescue failed", rEx); }
+            int rescued = _mergeService.MergeNonHeroTroopsIntoGarrison(
+                party,
+                rescueTarget,
+                "SallyForthManager.OnMobilePartyDestroyed");
 
             if (rescued > 0)
             {
-                Logger.Info($"OnMobilePartyDestroyed: rescued {rescued} survivors from '{PartyNameFormatter.SafeName(party)}' to '{home.Name}' garrison");
+                Logger.Info($"OnMobilePartyDestroyed: rescued {rescued} survivors from '{PartyNameFormatter.SafeName(party)}' to '{rescueTarget.Name}' garrison");
                 DecisionAuditLogger.LogRule(
                     decisionType: "sally_destroyed_rescue",
-                    inputSummary: $"sally={party.StringId} home={home.StringId} rescued={rescued} destroyer={destroyerParty?.Name?.ToString() ?? "none"}",
-                    decisionJson: $"{{\"home\":\"{home.StringId}\",\"rescued\":{rescued}}}",
+                    inputSummary: $"sally={party.StringId} home={rescueTarget.StringId} rescued={rescued} destroyer={destroyerParty?.Name?.ToString() ?? "none"}",
+                    decisionJson: $"{{\"home\":\"{rescueTarget.StringId}\",\"rescued\":{rescued}}}",
                     accepted: true);
             }
         }

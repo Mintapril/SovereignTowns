@@ -28,12 +28,12 @@ namespace SovereignTowns.SettlementManagement;
 /// <see cref="EnabledFeatures.ApplyToAiSettlementsToo"/> 联合决定：
 ///   - SuppressVanillaGarrisonRecruitment = false 或 AutoRecruitment = false → 还原 vanilla flag；
 ///   - ApplyToAiSettlementsToo = false  → 仅玩家氏族且有可用首府时，覆盖玩家 Town / Castle；
-///   - ApplyToAiSettlementsToo = true   → 仅已由 CapitalRegistry 接管且有可用首府的 clan。
+///   - ApplyToAiSettlementsToo = true   → 所有已由 CapitalRegistry 接管且有可用首府的 clan。
 /// 没有首府的 clan 不 suppress vanilla，否则城堡-only/流亡状态会失去所有补兵来源。
 ///
 /// 当某城镇易主：
-///   - 落到玩家手上 → 立刻禁用 vanilla flag；
-///   - 离开玩家手且 ApplyToAiSettlementsToo == false → 把 flag 还原为 true，避免 AI 阵营被永久阉割。
+///   - 落到受管氏族手上 → 立刻按规则禁用 vanilla flag；
+///   - 离开受管范围 → 把 flag 还原为 true，避免 AI 阵营被永久阉割。
 /// </summary>
 public sealed class VanillaSuppressionManager
 {
@@ -90,11 +90,11 @@ public sealed class VanillaSuppressionManager
                 return;
             }
 
-            // AI 接管是有边界的：AI 会进入首府/驻军/招募/调拨等 ST 路径，但巡逻仍保持玩家专属。
+            // AI 接管范围与玩家一致：首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻。
             if (feat.ApplyToAiSettlementsToo)
             {
                 const string msg =
-                    "[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨范围；AI 招兵限同文化，巡逻仍保持玩家专属。";
+                    "[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻范围；AI 招兵限同文化。";
                 Logger.Info(msg);
                 try { InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green)); }
                 catch { /* swallow — 启动早期 InformationManager 不一定可用 */ }
@@ -261,7 +261,7 @@ public sealed class VanillaSuppressionManager
             var registry = CapitalRegistry.Instance;
             if (registry != null)
             {
-                return registry.GetForClan(clan)?.GetCapitalSettlement() != null;
+                return registry.IsManagedClanWithCapital(clan);
             }
 
             // Early fallback for defensive use before registry.Instance is assigned.

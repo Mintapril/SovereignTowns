@@ -44,11 +44,11 @@ public sealed class PrisonerRecruitmentManager
             // B7.15 multi-clan：广义到受管 clan
             if (_capitalRegistry != null)
             {
-                if (!_capitalRegistry.IsManagedClan(settlement.OwnerClan)) return;
+                if (!_capitalRegistry.IsManagedClanWithCapital(settlement.OwnerClan)) return;
             }
             else
             {
-                // 兼容：registry 缺失时退回玩家专属
+                // 兼容：registry 缺失时退回玩家氏族路径
                 if (settlement.OwnerClan != Clan.PlayerClan) return;
             }
 
