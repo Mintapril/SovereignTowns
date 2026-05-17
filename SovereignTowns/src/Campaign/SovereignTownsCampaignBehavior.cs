@@ -38,7 +38,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private CapitalLogisticsManager? _capitalLogisticsManager;
     private BattleLootManager? _battleLootManager;
     private TransferDispatcher? _transferDispatcher;
-    private PatrolManager? _patrolManager;
+    private PatrolDispatcher? _patrolDispatcher;
     private SallyDispatcher? _sallyDispatcher;
 
     // B16.2: 静态 accessor — StSallyPartyComponent.NotifyDispatcherEnded 通过它通知 cooldown 重置。
@@ -170,10 +170,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
             _battleLootManager = new BattleLootManager(_capitalRegistry);
-            // B7.27：sally 先构造，patrol 接受 sally 引用以做支援判定
+            // B7.27：sally 先构造（component 通过 SovereignTownsCampaignBehavior.SallyDispatcher 静态 accessor 拿到 dispatcher）
             _sallyDispatcher = new SallyDispatcher(_lifecycle, _capitalRegistry);
             _staticSallyDispatcher = _sallyDispatcher;
-            _patrolManager = new PatrolManager(_lifecycle, _capitalRegistry, _sallyDispatcher, _battleLootManager);
+            // B16.4: PatrolDispatcher 仅创建端；状态机 + 支援判定均在 StPatrolPartyComponent，所以不再注入 sally / battleLoot
+            _patrolDispatcher = new PatrolDispatcher(_lifecycle, _capitalRegistry);
 
             // 2026-05-12 审查 B-WarPartyComponent.OnFinalize 修复：sally party 战场被歼灭时
             // 由 vanilla 直接 destroy → roster 残留兵员丢失；订阅 MobilePartyDestroyed 抢救存活兵回 home。
@@ -289,10 +290,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            // 首行性能：每个 Manager 内部都有 PartyComponent 类型过滤
-            _patrolManager?.OnHourlyTickParty(party);
-            // B16.1/B16.2/B16.3：transfer / sally / recruiter 已迁移到 StPartyComponent；
-            // 由 PartyLifecycleManager 单点路由。
+            // B16.4: 所有 4 种 StPartyComponent 子类（patrol / transfer / sally / recruiter）
+            // 由 PartyLifecycleManager.OnHourlyTickParty 单点路由到 StPartyComponent.OnHourlyTick。
+            // 本方法体保留 DrainWebConfigSync — 网页配置编辑需要 game thread 同步。
         }
         catch (Exception ex)
         {
@@ -305,7 +305,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            _patrolManager?.OnHourlyTickSettlement(settlement);
+            _patrolDispatcher?.OnHourlyTickSettlement(settlement);
             _sallyDispatcher?.OnHourlyTickSettlement(settlement);
         }
         catch (Exception ex)
@@ -348,8 +348,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
     /// <summary>
     /// 战斗结束回调（vanilla <c>CampaignEvents.MapEventEnded</c>，签名 <c>Action&lt;MapEvent&gt;</c>）。
-    /// transfer / sally / recruiter 由 lifecycle 单点路由（StPartyComponent.OnMapEventEnded）；
-    /// patrol 暂仍走旧 Manager 转发，待后续 Step 迁移。
+    /// B16.4 起所有 4 种 StPartyComponent 子类（patrol / transfer / sally / recruiter）由 lifecycle 单点路由
+    /// （StPartyComponent.OnMapEventEnded）。仅保留 _battleLootManager.OnMapEventEnded（战利品集中处理）。
     /// try-catch 包裹避免影响 vanilla 事件链。
     /// </summary>
     private void OnMapEventEnded(MapEvent mapEvent)
@@ -357,9 +357,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             _battleLootManager?.OnMapEventEnded(mapEvent);
-            _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1/B16.2/B16.3：单点路由到 StPartyComponent
-            // 仍保留旧 Manager 转发，它们在后续 Step 才迁移
-            _patrolManager?.OnMapEventEnded(mapEvent);
+            _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1-B16.4：单点路由到 StPartyComponent
         }
         catch (Exception ex)
         {

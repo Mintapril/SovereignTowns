@@ -31,6 +31,7 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
     protected override void DefineClassTypes()
     {
         AddClassDefinition(typeof(Parties.StPartyComponent), 4);
+        AddClassDefinition(typeof(Parties.StPatrolPartyComponent), 5);
         AddClassDefinition(typeof(Parties.StRecruiterPartyComponent), 6);
         AddClassDefinition(typeof(Parties.StTransferPartyComponent), 7);
         AddClassDefinition(typeof(Parties.StSallyPartyComponent), 8);

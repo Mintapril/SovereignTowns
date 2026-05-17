@@ -8,7 +8,6 @@ using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Party;
-using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
@@ -443,7 +442,7 @@ public static class BattleLootHandler
         {
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
-            if (party.PartyComponent is PatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StPatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
         }
         catch
         {

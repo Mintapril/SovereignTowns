@@ -21,7 +21,7 @@ namespace SovereignTowns.SallyForth;
 /// 所有"在飞中"的状态机（超时回家、目标失效、战后回家、销毁救援）落在 <see cref="StSallyPartyComponent"/>。
 ///
 /// 保留接口：
-///   - <see cref="GetActiveCombatSallyParties"/>：供 PatrolManager 评估支援
+///   - <see cref="GetActiveCombatSallyParties"/>：供 StPatrolPartyComponent 评估支援
 ///   - <see cref="NotifySallyEnded"/>：component 在到家/销毁时回调，重置冷却 + 持续可见计数
 /// </summary>
 public sealed class SallyDispatcher
@@ -120,7 +120,7 @@ public sealed class SallyDispatcher
 
     /// <summary>
     /// 返回该氏族当前正在 MapEvent 中战斗的 sally 队列表。
-    /// 供 PatrolManager 评估是否需要派 patrol 赶去支援。
+    /// 供 StPatrolPartyComponent 评估是否需要派 patrol 赶去支援。
     /// </summary>
     public List<MobileParty> GetActiveCombatSallyParties(Clan clan)
     {

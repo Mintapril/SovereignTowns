@@ -4,7 +4,6 @@ using SovereignTowns.Common;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
-using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Battle;
@@ -73,7 +72,7 @@ public sealed class BattleLootManager
             if (!_capitalRegistry.IsManagedClanWithCapital(clan)) return false;
 
             if (party.PartyComponent is StSallyPartyComponent) return true;
-            if (party.PartyComponent is PatrolPartyComponent) return true;
+            if (party.PartyComponent is StPatrolPartyComponent) return true;
 
             return false;
         }
@@ -89,7 +88,7 @@ public sealed class BattleLootManager
         {
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
-            if (party.PartyComponent is PatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StPatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
         }
         catch
         {

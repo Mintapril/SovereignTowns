@@ -4,7 +4,6 @@ using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Conversation;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.Party;
-using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.Localization;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -89,8 +88,8 @@ internal static class STPartyDialogRegistration
                 catch { /* SetTextVariable 偶尔抛 */ }
                 return true;
             }
-            // vanilla PatrolPartyComponent 也算（玩家自家城的）
-            if (comp is PatrolPartyComponent pp && pp.HomeSettlement?.OwnerClan == Clan.PlayerClan)
+            // B16.4：ST 自家巡逻队（玩家自家城的）— vanilla auto-spawn 的 PatrolPartyComponent 不再纳入对话拦截
+            if (comp is StPatrolPartyComponent pp && pp.HomeSettlement?.OwnerClan == Clan.PlayerClan)
             {
                 string homeName;
                 try { homeName = pp.HomeSettlement?.Name?.ToString() ?? "未知"; }

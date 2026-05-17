@@ -6,7 +6,6 @@ using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Party;
-using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
@@ -98,8 +97,7 @@ public sealed class PartyLifecycleManager
                 CampaignTime.Now,
                 party.TargetSettlement,
                 initialMembers,
-                SafeActualClan(party, home),
-                initialMembers);
+                SafeActualClan(party, home));
             _tracked[party] = meta;
             Logger.Info($"RegisterTrackedParty: '{PartyNameFormatter.SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
         }
@@ -128,7 +126,7 @@ public sealed class PartyLifecycleManager
         }
     }
 
-    /// <summary>外露：让 PatrolManager 之类查询某城镇当前 kind 的硬上限。</summary>
+    /// <summary>外露：让 PatrolDispatcher 之类查询某城镇当前 kind 的硬上限。</summary>
     public int GetCapFor(Settlement home, string kind) => GetMaxFor(home, kind);
 
     /// <summary>查询：某城镇当前指定 kind 的 active 队伍数。</summary>
@@ -155,10 +153,9 @@ public sealed class PartyLifecycleManager
     /// <summary>
     /// 读档恢复后由 <c>OnGameLoadedEvent</c> 调用：清空 <see cref="_tracked"/> 并基于 vanilla
     /// 已恢复的 <see cref="MobileParty"/> 列表重建索引。
-    /// 必须的过滤（与各 Manager 创建端保持一致）：
-    ///   - StRecruiterPartyComponent / StTransferPartyComponent / StSallyPartyComponent：本 Mod 自有类型，直接收编；
-    ///   - vanilla PatrolPartyComponent：仅在 HomeSettlement.OwnerClan 属于 ST 受管 clan
-    ///     时纳入（registry 尚未就绪时退回玩家氏族过滤）。
+    /// B16.4：4 种 StPartyComponent 子类（recruiter / transfer / sally / patrol）均继承自
+    /// CustomPartyComponent，统一在 <see cref="MobileParty.AllCustomParties"/> 单次扫描收编。
+    /// vanilla auto-spawn 的 <c>PatrolPartyComponent</c> 不再纳入跟踪（B16.4 ST 巡逻独立类型）。
     /// 单 party 失败 try-catch，不影响整体；幂等：可多次调用。
     /// </summary>
     public void RebuildFromCampaign()
@@ -170,7 +167,6 @@ public sealed class PartyLifecycleManager
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             var now = CampaignTime.Now;
 
-            // 1) StRecruiterPartyComponent / StTransferPartyComponent / StSallyPartyComponent（均继承自 CustomPartyComponent）
             try
             {
                 var customs = MobileParty.AllCustomParties;
@@ -181,30 +177,28 @@ public sealed class PartyLifecycleManager
                         try
                         {
                             if (party == null) continue;
-                            var comp = party.PartyComponent;
-                            if (comp is SovereignTowns.Parties.StRecruiterPartyComponent srp)
+                            if (party.PartyComponent is SovereignTowns.Parties.StPartyComponent stc)
                             {
-                                var home = srp.HomeSettlement;
+                                var home = stc.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
-                                _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
-                                recruiters++;
-                            }
-                            else if (comp is SovereignTowns.Parties.StTransferPartyComponent stp)
-                            {
-                                var home = stp.Source;
-                                if (home == null) { skipped++; continue; }
-                                int mc = PartyNameFormatter.SafeMemberCount(party);
-                                _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
-                                transfers++;
-                            }
-                            else if (comp is SovereignTowns.Parties.StSallyPartyComponent stsp)
-                            {
-                                var home = stsp.HomeSettlement;
-                                if (home == null) { skipped++; continue; }
-                                int mc = PartyNameFormatter.SafeMemberCount(party);
-                                _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
-                                sallyforths++;
+                                string kind = stc switch
+                                {
+                                    SovereignTowns.Parties.StRecruiterPartyComponent => KindRecruiter,
+                                    SovereignTowns.Parties.StTransferPartyComponent  => KindTransfer,
+                                    SovereignTowns.Parties.StSallyPartyComponent     => KindSallyForth,
+                                    SovereignTowns.Parties.StPatrolPartyComponent    => KindPatrol,
+                                    _ => null!,
+                                };
+                                if (kind == null!) continue;
+                                _tracked[party] = new TrackedPartyMeta(home, kind, now, party.TargetSettlement, mc, SafeActualClan(party, home));
+                                switch (kind)
+                                {
+                                    case KindRecruiter: recruiters++; break;
+                                    case KindTransfer: transfers++; break;
+                                    case KindSallyForth: sallyforths++; break;
+                                    case KindPatrol: patrols++; break;
+                                }
                             }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略
                         }
@@ -218,47 +212,6 @@ public sealed class PartyLifecycleManager
             catch (Exception ex)
             {
                 Logger.Error("RebuildFromCampaign: AllCustomParties enumeration failed", ex);
-            }
-
-            // 2) vanilla PatrolPartyComponent — 仅 ST 受管 clan 的
-            try
-            {
-                var patrolList = MobileParty.AllPatrolParties;
-                if (patrolList != null)
-                {
-                    foreach (var party in patrolList)
-                    {
-                        try
-                        {
-                            if (party == null) continue;
-                            var pp = party.PartyComponent as PatrolPartyComponent;
-                            if (pp == null) continue;
-                            var home = pp.HomeSettlement;
-                            if (home == null) continue;
-                            var ownerClan = SafeActualClan(party, home);
-                            var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
-                            if (registry != null)
-                            {
-                                if (!registry.IsManagedClan(ownerClan)) continue;
-                            }
-                            else if (ownerClan != Clan.PlayerClan)
-                            {
-                                continue;
-                            }
-                            int mcPatrol = PartyNameFormatter.SafeMemberCount(party);
-                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, mcPatrol, ownerClan, mcPatrol);
-                            patrols++;
-                        }
-                        catch (Exception oneEx)
-                        {
-                            Logger.Error($"RebuildFromCampaign: failed to register patrol party '{PartyNameFormatter.SafeName(party)}'", oneEx);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("RebuildFromCampaign: AllPatrolParties enumeration failed", ex);
             }
 
             Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} skipped={skipped} (total tracked={_tracked.Count})");
@@ -672,18 +625,9 @@ public sealed class PartyLifecycleManager
         }
     }
 
-    /// <summary>
-    /// 查询某 party 出发时的兵员数（用于"当前 / 出发 &lt; 阈值"判定）。
-    /// 未被跟踪 → 返回 0。读档场景下值为读档时的当前兵员数（fallback，可接受）。
-    /// </summary>
-    public int GetInitialMemberCount(MobileParty? party)
-    {
-        if (party is null) return 0;
-        if (_tracked.TryGetValue(party, out var meta)) return meta.InitialMemberCount;
-        return 0;
-    }
-
-    /// <summary>跟踪 meta；可变 struct 通过 _tracked[key]=meta 回写保证一致性。</summary>
+    /// <summary>跟踪 meta；可变 struct 通过 _tracked[key]=meta 回写保证一致性。
+    /// B16.4：出发兵员快照已迁移到 <see cref="SovereignTowns.Parties.StPartyComponent.InitialMemberCount"/>
+    /// （component 实例自带 [SaveableField]，无需在 lifecycle 内再存一份）。</summary>
     private struct TrackedPartyMeta
     {
         public Settlement Home;
@@ -692,8 +636,6 @@ public sealed class PartyLifecycleManager
         public CampaignTime LastActiveAt;
         public Settlement? LastTargetSettlement;
         public int LastMemberCount;
-        /// <summary>注册时的兵员数（出发兵员快照），用于"当前/出发"比例判定。</summary>
-        public int InitialMemberCount;
 
         public TrackedPartyMeta(
             Settlement home,
@@ -701,8 +643,7 @@ public sealed class PartyLifecycleManager
             CampaignTime lastActiveAt,
             Settlement? lastTarget,
             int lastMembers,
-            Clan? ownerClan,
-            int initialMembers)
+            Clan? ownerClan)
         {
             Home = home;
             Kind = kind;
@@ -710,7 +651,6 @@ public sealed class PartyLifecycleManager
             LastActiveAt = lastActiveAt;
             LastTargetSettlement = lastTarget;
             LastMemberCount = lastMembers;
-            InitialMemberCount = initialMembers;
         }
     }
 }

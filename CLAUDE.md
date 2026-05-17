@@ -44,7 +44,7 @@ These are bugs we have already paid for. They are not negotiable.
 4. **GameModels must be added in `OnGameStart(Game, IGameStarter)`** — *not* `OnSessionLaunched`. By session-launched time the Campaign is finalized and `AddModel` corrupts the internal model list. See `SovereignTownsSubModule.OnGameStart`.
 5. **Every event handler entry point wraps its body in `try { ... } catch { Logger.Error(...) }`.** Never let our exceptions escape into vanilla — IG/GDS users have already seen the crash modes. The pattern is everywhere in `SovereignTownsCampaignBehavior` and the `*Manager.OnHourly*` callbacks.
 6. **`HourlyTickPartyEvent` callbacks must first-line-filter by PartyComponent type.** Players have 100s of parties per hour; touching non-ST parties is both unsafe and a perf budget killer.
-7. **The save becomes hard-dependent on this mod** the moment a `CustomPartyComponent` subclass is persisted (`RecruitingPartyComponent` / `TransferPartyComponent` / `SallyForthPartyComponent`). There is no in-mod removal flow.
+7. **The save becomes hard-dependent on this mod** the moment a `StPartyComponent` subclass is persisted (`StRecruiterPartyComponent` / `StTransferPartyComponent` / `StSallyPartyComponent` / `StPatrolPartyComponent`). There is no in-mod removal flow.
 8. **JSON: use `Newtonsoft.Json`** (bundled in `$(GameBinPath)\Newtonsoft.Json.dll`, `Private=false`). Do not reintroduce hand-written regex/MiniJson parsers — they were removed in 2026-05-12 cross-validation.
 
 ## Architecture in one screen
@@ -54,9 +54,13 @@ These are bugs we have already paid for. They are not negotiable.
 ```
 Layer 4  UI                 : DiagnosticGameMenu, STPartyDialogRegistration,
                               WebConfig (WebConfigServer + WebConfigEndpoints + TroopDumper)
-Layer 3  Managers           : CapitalManager (★), CapitalLogisticsManager, RecruitmentManager, PrisonerRecruitmentManager,
-                              PatrolManager, GarrisonTransferManager, SallyForthManager,
+Layer 3  Dispatchers        : CapitalManager (★), CapitalLogisticsManager, RecruitmentDispatcher, PrisonerRecruitmentManager,
+                              PatrolDispatcher, TransferDispatcher, SallyDispatcher,
                               PartyLifecycleManager
+Layer 3b Component instances: StPartyComponent (abstract base),
+                              StPatrolPartyComponent / StRecruiterPartyComponent /
+                              StTransferPartyComponent / StSallyPartyComponent
+                              (each instance owns its own state machine; see B16.4)
 Layer 2  Evaluators         : RiskAssessmentService, TroopCompositionEvaluator,
                               TroopClassifier, TroopTemplateMatcher, GenericTroopMatcher
 Layer 1  Infrastructure     : SovereignTownsSubModule, SovereignTownsCampaignBehavior, SovereignTownsTypeDefiner,

@@ -183,7 +183,7 @@ public sealed class PartyThresholds
     /// <summary>当前受伤兵员 / 当前全部兵员 高于此比例 → 回首府解散。默认 0.3。</summary>
     public float PartyReturnWoundedRatio { get; set; } = 0.3f;
 
-    // ── 巡逻队（PatrolManager） ─────────────────────────────────────────────
+    // ── 巡逻队（PatrolDispatcher） ──────────────────────────────────────────
     /// <summary>创建巡逻队后首府必须保留的实际驻军比例。默认 0.8（高保留，避免抽空驻军）。</summary>
     public float PatrolReserveAfterCreationRatio { get; set; } = 0.8f;
 
