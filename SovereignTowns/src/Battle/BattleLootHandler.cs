@@ -442,7 +442,7 @@ public static class BattleLootHandler
         try
         {
             if (party.ActualClan != null) return party.ActualClan;
-            if (party.PartyComponent is SallyForthPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
             if (party.PartyComponent is PatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
         }
         catch

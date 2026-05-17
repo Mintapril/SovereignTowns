@@ -58,19 +58,19 @@ public sealed class PatrolManager
     private readonly PartyLifecycleManager _lifecycle;
     private readonly PartyMergeService _mergeService;
     private readonly CapitalRegistry? _capitalRegistry;
-    private readonly SovereignTowns.SallyForth.SallyForthManager? _sallyForthManager;  // B7.27：用于支援判定
+    private readonly SovereignTowns.SallyForth.SallyDispatcher? _sallyDispatcher;  // B7.27：用于支援判定
     private readonly BattleLootManager? _battleLootManager;
 
     public PatrolManager(
         PartyLifecycleManager lifecycle,
         CapitalRegistry? capitalRegistry = null,
-        SovereignTowns.SallyForth.SallyForthManager? sallyForthManager = null,
+        SovereignTowns.SallyForth.SallyDispatcher? sallyDispatcher = null,
         BattleLootManager? battleLootManager = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _mergeService = PartyMergeService.Instance;
         _capitalRegistry = capitalRegistry;
-        _sallyForthManager = sallyForthManager;
+        _sallyDispatcher = sallyDispatcher;
         _battleLootManager = battleLootManager;
     }
 
@@ -181,7 +181,7 @@ public sealed class PatrolManager
             }
 
             // ★ 2) 支援出击战斗（B7.27 新增）
-            if (_sallyForthManager != null)
+            if (_sallyDispatcher != null)
             {
                 var supportSally = FindSupportableSallyBattle(party, capitalMgr);
                 if (supportSally != null)
@@ -594,9 +594,9 @@ public sealed class PatrolManager
     {
         try
         {
-            if (_sallyForthManager == null) return null;
+            if (_sallyDispatcher == null) return null;
             var threshold = ConfigurationManager.Current.ClanPatrol.SupportEtaThresholdHours;
-            var sallies = _sallyForthManager.GetActiveCombatSallyParties(capitalMgr.OwnerClan);
+            var sallies = _sallyDispatcher.GetActiveCombatSallyParties(capitalMgr.OwnerClan);
             if (sallies.Count == 0) return null;
 
             var partyPos = patrol.GetPosition2D;

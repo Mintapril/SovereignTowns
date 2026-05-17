@@ -72,7 +72,7 @@ public sealed class BattleLootManager
             var clan = ResolvePartyClan(party);
             if (!_capitalRegistry.IsManagedClanWithCapital(clan)) return false;
 
-            if (party.PartyComponent is SallyForthPartyComponent) return true;
+            if (party.PartyComponent is StSallyPartyComponent) return true;
             if (party.PartyComponent is PatrolPartyComponent) return true;
 
             return false;
@@ -88,7 +88,7 @@ public sealed class BattleLootManager
         try
         {
             if (party.ActualClan != null) return party.ActualClan;
-            if (party.PartyComponent is SallyForthPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlement?.OwnerClan;
             if (party.PartyComponent is PatrolPartyComponent patrol) return patrol.HomeSettlement?.OwnerClan;
         }
         catch

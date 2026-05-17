@@ -10,7 +10,7 @@ namespace SovereignTowns.Models;
 
 /// <summary>
 /// 为 Mod 自定义的 3 类 MobileParty
-/// (<see cref="RecruitingPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="SallyForthPartyComponent"/>)
+/// (<see cref="RecruitingPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="StSallyPartyComponent"/>)
 /// 提供 +20% 移动速度加成，加快回程减少卡死；其它 party fall-through。
 ///
 /// v1.3.15 真实签名（reflection 验证）：
@@ -42,7 +42,7 @@ public sealed class STPartySpeedModel : DefaultPartySpeedCalculatingModel
             var comp = mobileParty?.PartyComponent;
             if (comp is RecruitingPartyComponent
                 || comp is StTransferPartyComponent
-                || comp is SallyForthPartyComponent)
+                || comp is StSallyPartyComponent)
             {
                 result.AddFactor(
                     SpeedBonusFactor,

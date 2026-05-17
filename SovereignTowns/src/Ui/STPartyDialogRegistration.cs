@@ -71,14 +71,14 @@ internal static class STPartyDialogRegistration
             if (comp is null) return false;
             if (comp is RecruitingPartyComponent
                 || comp is StTransferPartyComponent
-                || comp is SallyForthPartyComponent)
+                || comp is StSallyPartyComponent)
             {
                 // 设置 NPC 文本变量（{ST_PARTY_GREETING}）
                 string kindZh = comp switch
                 {
                     RecruitingPartyComponent => "征兵队",
                     StTransferPartyComponent => "调拨队",
-                    SallyForthPartyComponent => "出击队",
+                    StSallyPartyComponent    => "出击队",
                     _                        => "队伍"
                 };
                 string homeName;

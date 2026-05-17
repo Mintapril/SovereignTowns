@@ -16,8 +16,7 @@ namespace SovereignTowns.Common;
 ///   - skip heroes（IsHero == true）—— heroes 永远不通过 TroopRoster.AddToCounts 转移；
 ///   - 失败时兵员留在 source roster，绝不蒸发；
 ///   - 不抛异常（所有 vanilla API 调用 try/catch）；
-///   - 模板逐字搬运自 SallyForthManager.TransferTroopsFromGarrison /
-///     TransferTroopsBackToGarrison（生产测试过），唯一改造：排序方向参数化。
+///   - 排序方向参数化（HighestTierFirst / LowestTierFirst），生产测试过。
 /// </summary>
 public static class TroopTransferHelper
 {

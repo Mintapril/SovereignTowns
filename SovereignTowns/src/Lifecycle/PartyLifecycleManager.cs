@@ -170,7 +170,7 @@ public sealed class PartyLifecycleManager
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             var now = CampaignTime.Now;
 
-            // 1) RecruitingPartyComponent / StTransferPartyComponent / SallyForthPartyComponent（均继承自 CustomPartyComponent）
+            // 1) RecruitingPartyComponent / StTransferPartyComponent / StSallyPartyComponent（均继承自 CustomPartyComponent）
             try
             {
                 var customs = MobileParty.AllCustomParties;
@@ -198,9 +198,9 @@ public sealed class PartyLifecycleManager
                                 _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
                                 transfers++;
                             }
-                            else if (comp is SallyForthPartyComponent sp)
+                            else if (comp is SovereignTowns.Parties.StSallyPartyComponent stsp)
                             {
-                                var home = sp.HomeSettlement;
+                                var home = stsp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
                                 _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);

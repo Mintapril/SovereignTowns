@@ -213,7 +213,7 @@ public sealed class PartyThresholds
     /// <summary>派征兵队的缺口下限：capital garrison × 此比例。原硬编码 10/150 ≈ 0.07。</summary>
     public float RecruitmentMinDemandRatio { get; set; } = 0.07f;
 
-    // ── 主动出击（SallyForthManager） ─────────────────────────────────────
+    // ── 主动出击（SallyDispatcher） ─────────────────────────────────────
     /// <summary>主动出击时抽取当前实际驻军的比例。原硬编码 = 0.60。</summary>
     public float SallyExtractionRatio { get; set; } = 0.60f;
 
