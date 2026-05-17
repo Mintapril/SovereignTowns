@@ -16,7 +16,7 @@ namespace SovereignTowns.Recruitment;
 /// 把符合 rule 兵种比例（非零 ratio）的志愿者塞入 GarrisonParty.MemberRoster，
 /// 同步将 <c>VolunteerTypes[i]</c> 置 null（与 vanilla 玩家手动从 notable 招兵后的清 slot 行为一致）。
 ///
-/// 与 <see cref="RecruitmentManager"/> 派去 village 招募不同：
+/// 与 <see cref="RecruitmentDispatcher"/> 派去 village 招募不同：
 ///   - 不创建 MobileParty / 不寻路
 ///   - 玩家氏族按固定单兵费用扣款，AI 氏族免费
 ///   - 不收 BudgetLimit 约束

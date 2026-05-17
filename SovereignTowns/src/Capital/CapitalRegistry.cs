@@ -236,7 +236,7 @@ public sealed class CapitalRegistry
     /// 用户 toggle ApplyToAiSettlementsToo 后调（网页 PUT /api/config / POST /api/reload）。
     /// - 开启：补齐所有有 Town/Castle 的 AI clan。
     /// - 关闭：移除所有 AI clan manager（玩家保留）；不主动清理 in-flight party，让现有
-    ///   AI 招募队跑完最后一段任务后自然结束（解散在 RecruitmentManager / LifecycleManager 的
+    ///   AI 招募队跑完最后一段任务后自然结束（解散在 StRecruiterPartyComponent / LifecycleManager 的
     ///   IsManagedClan 检查里抑制新派遣即可）。
     /// </summary>
     public void SyncFromConfig()

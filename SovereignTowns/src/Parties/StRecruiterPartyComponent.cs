@@ -1,0 +1,614 @@
+using System;
+using System.Collections.Generic;
+using SovereignTowns.Audit;
+using SovereignTowns.Capital;
+using SovereignTowns.Common;
+using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
+using SovereignTowns.Evaluators;
+using SovereignTowns.Recruitment;
+using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.MapEvents;
+using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Core;
+using TaleWorlds.Library;
+using TaleWorlds.Localization;
+using TaleWorlds.SaveSystem;
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
+using Logger = SovereignTowns.Logging.Logger;
+
+namespace SovereignTowns.Parties;
+
+/// <summary>
+/// 征兵队伍组件（B16.3）。显式 RecruiterPhase 状态机（Dispatching / AtVillage / Travelling / Returning）。
+///
+/// 实例化字段 <see cref="_visitedThisTrip"/> 是 [CachedData]：跟随 party 销毁自然 GC，
+/// 不需要全局 Dict + OnMobilePartyDestroyed 清理代码。
+///
+/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 23)。
+/// </summary>
+public sealed class StRecruiterPartyComponent : StPartyComponent
+{
+    public const string StringIdPrefix = "st_recruit_";
+
+    /// <summary>vanilla volunteer slot 上限放宽倍率（B7.20，硬编码 2.0）。</summary>
+    private const float VolunteerMul = 2.0f;
+    /// <summary>玩家氏族单兵金币折扣（B7.20，硬编码 0.5）。</summary>
+    private const float CostDiscount = 0.5f;
+    private const int DefaultGoldPerRecruit = 10;
+    private const int CandidateBatchSize = 8;
+    private const float PlanMaxDistance = 100f;
+
+    public enum RecruiterPhase
+    {
+        Dispatching = 0,
+        AtVillage = 1,
+        Travelling = 2,
+        Returning = 3,
+    }
+
+    [SaveableField(20)] private int _recruitedThisTrip;
+    [SaveableField(21)] private Settlement? _assignedTarget;
+    [SaveableField(22)] private RecruiterPhase _phase = RecruiterPhase.Dispatching;
+    [CachedData] private TextObject? _cachedName;
+    [CachedData] private HashSet<Settlement>? _visitedThisTrip;
+
+    private HashSet<Settlement> VisitedThisTrip => _visitedThisTrip ??= new HashSet<Settlement>();
+
+    public int RecruitedThisTrip => _recruitedThisTrip;
+    public Settlement? AssignedTarget => _assignedTarget;
+    public RecruiterPhase Phase => _phase;
+
+    private static int ReturnRecruitedCount
+        => ConfigurationManager.Current?.Thresholds?.RecruiterReturnRecruitedCount ?? 50;
+
+    public override TextObject Name
+    {
+        get
+        {
+            if (_cachedName != null) return _cachedName;
+            var s = HomeSettlement?.Name?.ToString() ?? "未知";
+            _cachedName = new TextObject("{=ST_RecruiterPartyName}征兵队 - " + s);
+            return _cachedName;
+        }
+    }
+
+    public override bool AvoidHostileActions => true;
+
+    public void RecordRecruited(int count) { if (count > 0) _recruitedThisTrip += count; }
+    public void SetAssignedTarget(Settlement? target) => _assignedTarget = target;
+    public void TransitionTo(RecruiterPhase phase) => _phase = phase;
+
+    private StRecruiterPartyComponent(
+        Settlement home, TextObject name, Hero owner,
+        string partyMountStringId, string partyHarnessStringId,
+        float customPartyBaseSpeed, bool avoidHostileActions,
+        InitializationArgs args, Hero? leader = null)
+        : base(home, name, owner, partyMountStringId, partyHarnessStringId,
+               customPartyBaseSpeed, avoidHostileActions, args, leader)
+    {
+    }
+
+    /// <summary>
+    /// 工厂：创建征兵队伍。初始 escort 由 dispatcher 抽取后传入。
+    /// SnapshotInitialMembers 在 MobileParty.CreateParty 之后立即调用。
+    /// </summary>
+    public static MobileParty? CreateForTown(Town homeTown, TroopRoster? initialEscort = null)
+    {
+        if (homeTown == null)
+        {
+            Logger.Error("StRecruiterPartyComponent.CreateForTown: homeTown is null");
+            return null;
+        }
+        try
+        {
+            var settlement = homeTown.Settlement;
+            if (settlement == null)
+            {
+                Logger.Error("StRecruiterPartyComponent.CreateForTown: homeTown.Settlement is null");
+                return null;
+            }
+            var ownerClan = settlement.OwnerClan;
+            var ownerLeader = ownerClan?.Leader;
+            if (ownerClan == null || ownerLeader == null)
+            {
+                Logger.Error($"StRecruiterPartyComponent.CreateForTown: town '{settlement.StringId}' has no OwnerClan/Leader");
+                return null;
+            }
+
+            var startingTroops = initialEscort ?? TroopRoster.CreateDummyTroopRoster();
+            var emptyPrisoners = TroopRoster.CreateDummyTroopRoster();
+            var args = new InitializationArgs(settlement.GatePosition, 1f, ownerClan, startingTroops, emptyPrisoners);
+
+            var nameObj = new TextObject("{=ST_RecruiterPartyName}征兵队 - " + settlement.Name);
+
+            var component = new StRecruiterPartyComponent(
+                home: settlement, name: nameObj, owner: ownerLeader,
+                partyMountStringId: string.Empty, partyHarnessStringId: string.Empty,
+                customPartyBaseSpeed: 0f, avoidHostileActions: true,
+                args: args, leader: null);
+
+            var stringId = StringIdPrefix + settlement.StringId + "_" + DateTime.UtcNow.Ticks.ToString();
+            var mobileParty = MobileParty.CreateParty(stringId, component);
+            if (mobileParty == null)
+            {
+                Logger.Error($"StRecruiterPartyComponent.CreateForTown: MobileParty.CreateParty returned null for '{stringId}'");
+                return null;
+            }
+            // B7.22：强制 0 攻击性 — 防自家征兵队主动招惹敌方
+            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
+
+            component.SnapshotInitialMembers(mobileParty);
+            Logger.Info($"StRecruiterPartyComponent: created '{stringId}' for '{settlement.StringId}'");
+            return mobileParty;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("StRecruiterPartyComponent.CreateForTown failed", ex);
+            return null;
+        }
+    }
+
+    // ── 状态机核心 ────────────────────────────────────────
+
+    protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
+    {
+        switch (_phase)
+        {
+            case RecruiterPhase.Dispatching: HandleDispatching(self); break;
+            case RecruiterPhase.AtVillage:   HandleAtVillage(self); break;
+            case RecruiterPhase.Travelling:  HandleTravelling(self); break;
+            case RecruiterPhase.Returning:   /* base.IsAtHome 接管 → OnArrivedHome → DefaultMergeAndDisband */ break;
+        }
+    }
+
+    /// <summary>
+    /// Dispatching：刚创建尚未首发，或异常情况下回到 Dispatching。
+    /// ResolveDepartureTarget 取首站目标后切到 Travelling。
+    /// </summary>
+    private void HandleDispatching(MobileParty self)
+    {
+        var home = HomeSettlement;
+        if (home == null) return;
+        var next = ResolveDepartureTarget(self, home);
+        if (next == null || next == home)
+        {
+            // 无候选；下个 tick 再试
+            return;
+        }
+        MoveTo(self, next, "Dispatching → first hop");
+        _phase = RecruiterPhase.Travelling;
+    }
+
+    /// <summary>
+    /// AtVillage：抵达非 home village → 招募 + 标记冷却 + 阈值检查 + 规划下一站。
+    /// </summary>
+    private void HandleAtVillage(MobileParty self)
+    {
+        var home = HomeSettlement;
+        if (home == null) return;
+
+        var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
+        // 安全网：若实际不在 village（或目标已经变化），重新规划
+        if (currentSettlement == null || !currentSettlement.IsVillage || currentSettlement == home)
+        {
+            // 可能 vanilla 已经把我们带离了村子（被推走 / 战斗等）；重新走 Travelling 逻辑
+            _phase = RecruiterPhase.Travelling;
+            HandleTravelling(self);
+            return;
+        }
+
+        // 与 _assignedTarget 不一致 = 玩家或 vanilla 改路 / 强制回家。视为继续 travelling 处理。
+        // 同时 — 若 vanilla TargetSettlement 已被基类 ReturnToHome 重定向到 home，
+        // 不应执行招兵；走 Travelling 让基类的 IsAtHome 判定接管下次 tick。
+        if (_assignedTarget != null && currentSettlement != _assignedTarget)
+        {
+            _phase = RecruiterPhase.Travelling;
+            HandleTravelling(self);
+            return;
+        }
+        if (self.TargetSettlement != null && self.TargetSettlement == home)
+        {
+            _phase = RecruiterPhase.Returning;
+            return;
+        }
+
+        if (!IsRecruitmentTargetStillValid(currentSettlement, home))
+        {
+            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，重新规划");
+            VisitedThisTrip.Add(currentSettlement);
+            var replacement = PlanNextHop(self, home);
+            MoveTo(self, replacement ?? home, "invalid arrived village");
+            _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+            return;
+        }
+
+        int recruited = RecruitFromTargetVillage(self, currentSettlement, home);
+        if (recruited > 0)
+        {
+            RecordRecruited(recruited);
+            RecruitmentCooldown.MarkRecruited(currentSettlement);
+        }
+        VisitedThisTrip.Add(currentSettlement);
+
+        int returnThreshold = ReturnRecruitedCount;
+        if (_recruitedThisTrip >= returnThreshold)
+        {
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募 {_recruitedThisTrip} ≥ 阈值 {returnThreshold}，回 '{home.Name}'");
+            MoveTo(self, home, "recruited threshold");
+            _phase = RecruiterPhase.Returning;
+            return;
+        }
+
+        var next = PlanNextHop(self, home);
+        if (next != null && next != home)
+        {
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 巡回下一站：'{next.Name}' (此前 visited={VisitedThisTrip.Count})");
+            MoveTo(self, next, "next village");
+            _phase = RecruiterPhase.Travelling;
+        }
+        else
+        {
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 候选枯竭，回 '{home.Name}'");
+            MoveTo(self, home, "no candidates");
+            _phase = RecruiterPhase.Returning;
+        }
+    }
+
+    /// <summary>
+    /// Travelling：在路上或刚抵达村庄。
+    /// 抵达分配的村庄 → 同 tick fall-through 到 HandleAtVillage（避免 1h 延迟）。
+    /// 否则检查累计阈值 / 目标失效 / 风险高。
+    /// </summary>
+    private void HandleTravelling(MobileParty self)
+    {
+        var home = HomeSettlement;
+        if (home == null) return;
+
+        // 抵达 _assignedTarget（即 vanilla CurrentSettlement 或 LastVisitedSettlement 与 _assignedTarget 一致）
+        // → 切到 AtVillage 并同 tick 处理（"到村即招"行为，避免 1h 延迟）。
+        // 防御：必须 self.TargetSettlement 也与 _assignedTarget 一致——否则可能是基类 ReturnToHome
+        // 已经把目标改成 home，本组件不应当把它"拉回去"招兵。
+        var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
+        if (_assignedTarget != null
+            && _assignedTarget != home
+            && currentSettlement == _assignedTarget
+            && currentSettlement.IsVillage
+            && self.TargetSettlement == _assignedTarget)
+        {
+            _phase = RecruiterPhase.AtVillage;
+            HandleAtVillage(self);
+            return;
+        }
+
+        var targetSettlement = self.TargetSettlement;
+
+        // 累计阈值检查：即使没到下一个村也可能因之前累积已满
+        int returnThreshold = ReturnRecruitedCount;
+        if (_recruitedThisTrip >= returnThreshold && (targetSettlement == null || targetSettlement != home))
+        {
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募达到阈值 {_recruitedThisTrip}/{returnThreshold}，回 '{home.Name}'");
+            MoveTo(self, home, "road recruited threshold");
+            _phase = RecruiterPhase.Returning;
+            return;
+        }
+
+        if (targetSettlement == null)
+        {
+            var replacement = ResolveDepartureTarget(self, home);
+            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 没有当前目标，{(replacement != null && replacement != home ? $"改去 '{replacement.Name}'" : $"回 '{home.Name}'")}");
+            MoveTo(self, replacement ?? home, "missing target");
+            _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+            return;
+        }
+
+        // 目标失效 / 风险高 → 重新规划
+        if (targetSettlement != home)
+        {
+            if (targetSettlement.IsVillage && !IsRecruitmentTargetStillValid(targetSettlement, home))
+            {
+                Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' 已失效，重新规划");
+                VisitedThisTrip.Add(targetSettlement);
+                var replacement = PlanNextHop(self, home);
+                MoveTo(self, replacement ?? home, "invalid road target");
+                _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+                return;
+            }
+
+            var risk = RiskAssessmentService.Assess(targetSettlement);
+            if (risk.Level >= RiskLevel.High)
+            {
+                Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' risk={risk.Level}，重新规划");
+                VisitedThisTrip.Add(targetSettlement);
+                var replacement = PlanNextHop(self, home);
+                MoveTo(self, replacement ?? home, "risky road target");
+                _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+            }
+        }
+    }
+
+    // ── helpers ────────────────────────────────────────────────
+
+    private static bool MoveTo(MobileParty party, Settlement destination, string reason)
+    {
+        try
+        {
+            if (party?.PartyComponent is StRecruiterPartyComponent rp)
+            {
+                rp.SetAssignedTarget(destination);
+            }
+            party?.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"  StRecruiterPartyComponent: SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(party)}' -> '{destination?.Name}' ({reason})", ex);
+            return false;
+        }
+    }
+
+    private static bool IsRecruitmentTargetStillValid(Settlement village, Settlement home)
+    {
+        try
+        {
+            if (village == null || home == null) return false;
+            if (!village.IsVillage || !village.IsActive) return false;
+            if (village.MapFaction != home.MapFaction) return false;
+            var v = village.Village;
+            if (v == null) return false;
+            return v.VillageState != Village.VillageStates.BeingRaided
+                && v.VillageState != Village.VillageStates.Looted;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 优先用 <see cref="_assignedTarget"/>（若未访问 + 合法）；否则 PlanNextHop。
+    /// </summary>
+    private Settlement? ResolveDepartureTarget(MobileParty party, Settlement home)
+    {
+        try
+        {
+            var assigned = _assignedTarget;
+            if (assigned != null && assigned != home
+                && !VisitedThisTrip.Contains(assigned)
+                && IsRecruitmentTargetStillValid(assigned, home))
+            {
+                return assigned;
+            }
+            return PlanNextHop(party, home);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"ResolveDepartureTarget failed for '{PartyNameFormatter.SafeName(party)}': {ex.Message}");
+            return PlanNextHop(party, home);
+        }
+    }
+
+    /// <summary>
+    /// 规划巡回的下一站。优先 ClanRecruiterScheduler（多队互补）；失败回退 RankCandidates。
+    /// </summary>
+    private Settlement? PlanNextHop(MobileParty party, Settlement home)
+    {
+        try
+        {
+            var registry = CapitalRegistry.Instance;
+            var capitalMgr = registry?.GetForSettlement(home);
+            if (capitalMgr != null)
+            {
+                var next = capitalMgr.RecruiterScheduler.PickNextVillage(party);
+                if (next != null) return next;
+            }
+
+            var homeTown = home.Town;
+            if (homeTown == null) return null;
+            var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
+
+            var exclude = new HashSet<Settlement>();
+            foreach (var s in VisitedThisTrip) exclude.Add(s);
+
+            var candidates = RecruitmentPlanner.RankCandidates(
+                homeTown,
+                maxDistance: PlanMaxDistance,
+                maxResults: CandidateBatchSize,
+                excludeSettlements: exclude,
+                matchingRule: rule);
+
+            if (candidates.Count == 0) return null;
+            return candidates[0].VillageSettlement;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("PlanNextHop failed", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 抵达 village 的实际招募动作。返回实际招到的人数（用于冷却登记判定）。
+    /// 含 per-role 饱和检查 + vanilla VolunteerModel slot 扩展 + ModTreasury rollback。
+    /// </summary>
+    private int RecruitFromTargetVillage(MobileParty recruitingParty, Settlement village, Settlement home)
+    {
+        int recruited = 0;
+        try
+        {
+            if (village?.Notables == null) return 0;
+            var ownerHero = home.OwnerClan?.Leader;
+            if (ownerHero == null) return 0;
+            var volunteerModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.VolunteerModel;
+            if (volunteerModel == null) return 0;
+
+            var rule = ConfigurationManager.GetRuleFor(home.Town);
+            int budgetRemaining = Math.Max(0, rule?.BudgetLimit ?? 5000);
+            int leaderGold = ownerHero.Gold;
+
+            // B7.20：硬编码 0.5 折扣（玩家 5 denar/兵）；AI 免费。
+            bool shouldChargeRecruit = CapitalRegistry.ShouldChargeClan(home.OwnerClan);
+            int costPerRecruit = shouldChargeRecruit ? Math.Max(1, (int)Math.Round(DefaultGoldPerRecruit * CostDiscount)) : 0;
+
+            int spent = 0;
+            int candidatesScanned = 0;
+            var scoredCandidates = new List<(CharacterObject Troop, CharacterObject[] Slots, int SlotIndex, float Score)>();
+            var garrisonRoster = home.Town?.GarrisonParty?.MemberRoster;
+            int targetTotal = Math.Max(1, rule?.TargetTotalCount ?? 1);
+
+            // B7.22 Fix per-role 饱和：预测「征兵队回家合并后」各 role 总人数。
+            var snapGarrison = GenericTroopMatcher.Snapshot(garrisonRoster);
+            var snapRecruiter = GenericTroopMatcher.Snapshot(recruitingParty.MemberRoster);
+            int rTargetCav = (int)Math.Round((rule?.CavalryRatio  ?? 0f) * targetTotal);
+            int rTargetHa  = (int)Math.Round((rule?.HorseArcherRatio ?? 0f) * targetTotal);
+            int rTargetInf = (int)Math.Round((rule?.InfantryRatio ?? 0f) * targetTotal);
+            int rTargetRng = (int)Math.Round((rule?.RangedRatio ?? 0f) * targetTotal);
+            int rGainCav = 0, rGainHa = 0, rGainInf = 0, rGainRng = 0;
+
+            foreach (var notable in village.Notables)
+            {
+                if (notable == null) continue;
+                if (!notable.CanHaveRecruits) continue;
+
+                var volunteerTypes = notable.VolunteerTypes;
+                if (volunteerTypes == null || volunteerTypes.Length == 0) continue;
+
+                int maxIdx;
+                try
+                {
+                    maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"  RecruitFromTargetVillage: MaximumIndexHeroCanRecruitFromHero threw for notable '{notable.Name}': {ex.Message}");
+                    continue;
+                }
+                if (maxIdx < 0) continue;
+
+                // B7.14: vanilla slot 上限按 VolunteerMul 扩大，但不超 volunteerTypes 实际长度
+                int effectiveMaxIdx = Math.Min(
+                    volunteerTypes.Length - 1,
+                    Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
+
+                for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
+                {
+                    var troop = volunteerTypes[i];
+                    if (troop == null) continue;
+
+                    candidatesScanned++;
+                    if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
+                    float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
+                    if (float.IsNegativeInfinity(score)) continue;
+                    scoredCandidates.Add((troop, volunteerTypes, i, score));
+                }
+            }
+
+            scoredCandidates.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+
+            foreach (var candidate in scoredCandidates)
+            {
+                int cost = costPerRecruit;
+                if (budgetRemaining < cost) break;
+                if (candidate.Slots[candidate.SlotIndex] == null) continue;
+
+                // B7.22 Fix per-role 饱和检查
+                var roleOfCand = GenericTroopMatcher.GetRole(candidate.Troop);
+                int projected, target;
+                switch (roleOfCand)
+                {
+                    case GenericTroopRole.Cavalry:     projected = snapGarrison.Cavalry     + snapRecruiter.Cavalry     + rGainCav; target = rTargetCav; break;
+                    case GenericTroopRole.HorseArcher: projected = snapGarrison.HorseArcher + snapRecruiter.HorseArcher + rGainHa;  target = rTargetHa;  break;
+                    case GenericTroopRole.Infantry:    projected = snapGarrison.Infantry    + snapRecruiter.Infantry    + rGainInf; target = rTargetInf; break;
+                    case GenericTroopRole.Ranged:      projected = snapGarrison.Ranged      + snapRecruiter.Ranged      + rGainRng; target = rTargetRng; break;
+                    default: continue;
+                }
+                if (projected >= target) continue;
+
+                if (shouldChargeRecruit && cost > 0 && !ModTreasury.CanAfford(cost))
+                {
+                    Logger.Info($"  RecruitFromTargetVillage: 玩家金币不足，停止招募（已招 {recruited} 人）");
+                    break;
+                }
+
+                bool added = false;
+                try
+                {
+                    recruitingParty.AddElementToMemberRoster(candidate.Troop, 1, false);
+                    added = true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}': {ex.Message}");
+                    continue;
+                }
+
+                // 扣费失败 → rollback 刚加入的兵，避免免费招募
+                if (shouldChargeRecruit && cost > 0)
+                {
+                    if (!ModTreasury.Charge(ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}"))
+                    {
+                        try
+                        {
+                            if (added)
+                            {
+                                recruitingParty.MemberRoster?.RemoveTroop(candidate.Troop, 1, default(UniqueTroopDescriptor), 0);
+                            }
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            Logger.Warn($"  RecruitFromTargetVillage: rollback failed after charge refusal for '{candidate.Troop.StringId}': {rollbackEx.Message}");
+                        }
+                        Logger.Info($"  RecruitFromTargetVillage: ModTreasury.Charge 拒绝，停止招募（已招 {recruited} 人）");
+                        break;
+                    }
+                }
+
+                candidate.Slots[candidate.SlotIndex] = null!;
+                try
+                {
+                    switch (roleOfCand)
+                    {
+                        case GenericTroopRole.Cavalry:     rGainCav++; break;
+                        case GenericTroopRole.HorseArcher: rGainHa++; break;
+                        case GenericTroopRole.Infantry:    rGainInf++; break;
+                        case GenericTroopRole.Ranged:      rGainRng++; break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"  RecruitFromTargetVillage: role counter update failed for '{candidate.Troop.StringId}': {ex.Message}");
+                }
+
+                budgetRemaining -= cost;
+                leaderGold -= cost;
+                spent += cost;
+                recruited++;
+            }
+
+            DecisionAuditLogger.LogRule(
+                decisionType: "RecruitFromVillage",
+                inputSummary: $"home={home.StringId} village={village.StringId} notables={village.Notables.Count} candidates={candidatesScanned}",
+                decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
+                accepted: recruited > 0);
+
+            // B7.27：通知 scheduler 本次访问，更新 LastRecruitedAt
+            if (recruited > 0)
+            {
+                try
+                {
+                    var visitCapitalMgr = CapitalRegistry.Instance?.GetForSettlement(home);
+                    visitCapitalMgr?.RecruiterScheduler.RecordVisit(village);
+                }
+                catch (Exception ex) { Logger.Warn("RecruiterScheduler.RecordVisit (per-village) failed: " + ex.Message); }
+            }
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar）");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RecruitFromTargetVillage failed", ex);
+        }
+        return recruited;
+    }
+}

@@ -30,8 +30,8 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
 
     protected override void DefineClassTypes()
     {
-        AddClassDefinition(typeof(Parties.RecruitingPartyComponent), 1);
         AddClassDefinition(typeof(Parties.StPartyComponent), 4);
+        AddClassDefinition(typeof(Parties.StRecruiterPartyComponent), 6);
         AddClassDefinition(typeof(Parties.StTransferPartyComponent), 7);
         AddClassDefinition(typeof(Parties.StSallyPartyComponent), 8);
     }
@@ -42,5 +42,6 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         // SaveableCampaignTypeDefiner 模式：典型 base id 偏移 100+ 段）。否则
         // 存档读写时序列化层无法识别该 enum 字段。
         AddEnumDefinition(typeof(Parties.StSallyPartyComponent.SallyPhase), 100);
+        AddEnumDefinition(typeof(Parties.StRecruiterPartyComponent.RecruiterPhase), 101);
     }
 }

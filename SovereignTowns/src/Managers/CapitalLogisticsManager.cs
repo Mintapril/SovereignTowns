@@ -41,16 +41,16 @@ public sealed class CapitalLogisticsManager
     private const float MaxPairDistance = 100f;
 
     private readonly CapitalRegistry _capitalRegistry;
-    private readonly RecruitmentManager _recruitmentManager;
+    private readonly RecruitmentDispatcher _recruitmentDispatcher;
     private readonly TransferDispatcher _transferDispatcher;
 
     public CapitalLogisticsManager(
         CapitalRegistry capitalRegistry,
-        RecruitmentManager recruitmentManager,
+        RecruitmentDispatcher recruitmentDispatcher,
         TransferDispatcher transferDispatcher)
     {
         _capitalRegistry = capitalRegistry ?? throw new ArgumentNullException(nameof(capitalRegistry));
-        _recruitmentManager = recruitmentManager ?? throw new ArgumentNullException(nameof(recruitmentManager));
+        _recruitmentDispatcher = recruitmentDispatcher ?? throw new ArgumentNullException(nameof(recruitmentDispatcher));
         _transferDispatcher = transferDispatcher ?? throw new ArgumentNullException(nameof(transferDispatcher));
     }
 
@@ -222,7 +222,7 @@ public sealed class CapitalLogisticsManager
                         destNode.Inbound += men;
                     }
                 }
-                else if (party.PartyComponent is RecruitingPartyComponent recruiter)
+                else if (party.PartyComponent is StRecruiterPartyComponent recruiter)
                 {
                     var home = recruiter.HomeSettlement;
                     if (home != null && bySettlement.TryGetValue(home, out var homeNode))
@@ -244,7 +244,7 @@ public sealed class CapitalLogisticsManager
         {
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
-            if (party.PartyComponent is RecruitingPartyComponent recruiter) return recruiter.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlement?.OwnerClan;
         }
         catch
         {
@@ -345,7 +345,7 @@ public sealed class CapitalLogisticsManager
                 GarrisonThresholdMath.CountFromRatio(capitalNode.CurrentMen, MinRecruitmentDemandRatio, minimumWhenPositive: 1));
             if (remainingDemand >= recruitmentDemandThreshold || remainingCriticalDemand > 0)
             {
-                _recruitmentManager.TryDispatchRecruiter(capitalNode.Town, Math.Max(remainingDemand, remainingCriticalDemand), reason);
+                _recruitmentDispatcher.TryDispatchRecruiter(capitalNode.Town, Math.Max(remainingDemand, remainingCriticalDemand), reason);
             }
         }
         catch (Exception ex)

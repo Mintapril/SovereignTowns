@@ -24,7 +24,7 @@ public static class FoodGuard
     /// </summary>
     /// <param name="town">Target town; null OR a town with null Settlement is treated as "not paused" (caller's existing guards remain authoritative).</param>
     /// <param name="rule">Active rule (caller already resolved via <c>ConfigurationManager.GetRuleFor</c>).</param>
-    /// <param name="callerLabel">Short string identifying the call site for audit (e.g. "RecruitmentManager"). Appears verbatim in both Logger output and audit inputSummary.</param>
+    /// <param name="callerLabel">Short string identifying the call site for audit (e.g. "RecruitmentDispatcher"). Appears verbatim in both Logger output and audit inputSummary.</param>
     public static bool IsRecruitmentPausedForFood(Town town, TownGarrisonRule rule, string callerLabel)
     {
         try

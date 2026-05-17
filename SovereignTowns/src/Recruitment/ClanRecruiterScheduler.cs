@@ -72,6 +72,6 @@ public sealed class ClanRecruiterScheduler : BaseSettlementVisitScheduler
 
     protected override string SchedulerLogTag => "ClanRecruiterScheduler";
 
-    /// <summary>保留旧 API 名给 RecruitmentManager 调用。</summary>
+    /// <summary>保留旧 API 名给 StRecruiterPartyComponent / RecruitmentDispatcher 调用。</summary>
     public Settlement? PickNextVillage(MobileParty recruiterParty) => PickNext(recruiterParty);
 }

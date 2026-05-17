@@ -11,7 +11,7 @@ namespace SovereignTowns.Models;
 
 /// <summary>
 /// 为 Mod 自定义的 3 类 MobileParty
-/// (<see cref="RecruitingPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="StSallyPartyComponent"/>)
+/// (<see cref="StRecruiterPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="StSallyPartyComponent"/>)
 /// 提供独立的兵员上限；其它 party 一律 fall-through 到 vanilla
 /// <see cref="DefaultPartySizeLimitModel"/>。
 ///
@@ -28,7 +28,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
             var mp = party?.MobileParty;
             var comp = mp?.PartyComponent;
 
-            if (comp is RecruitingPartyComponent)
+            if (comp is StRecruiterPartyComponent)
             {
                 return new ExplainedNumber(
                     ComputeRecruiterLimit(mp),
@@ -72,7 +72,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
     private static int ComputeRecruiterLimit(MobileParty? party)
     {
         int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
-        var comp = party?.PartyComponent as RecruitingPartyComponent;
+        var comp = party?.PartyComponent as StRecruiterPartyComponent;
         int recruitedThreshold = Math.Max(1, ConfigurationManager.Current?.Thresholds?.RecruiterReturnRecruitedCount ?? 50);
         int remainingRecruitCapacity = Math.Max(0, recruitedThreshold - (comp?.RecruitedThisTrip ?? 0));
         return Math.Max(1, currentMembers + remainingRecruitCapacity);

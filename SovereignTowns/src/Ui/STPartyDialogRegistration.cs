@@ -69,17 +69,17 @@ internal static class STPartyDialogRegistration
             if (mp == null) return false;
             var comp = mp.PartyComponent;
             if (comp is null) return false;
-            if (comp is RecruitingPartyComponent
+            if (comp is StRecruiterPartyComponent
                 || comp is StTransferPartyComponent
                 || comp is StSallyPartyComponent)
             {
                 // 设置 NPC 文本变量（{ST_PARTY_GREETING}）
                 string kindZh = comp switch
                 {
-                    RecruitingPartyComponent => "征兵队",
-                    StTransferPartyComponent => "调拨队",
-                    StSallyPartyComponent    => "出击队",
-                    _                        => "队伍"
+                    StRecruiterPartyComponent => "征兵队",
+                    StTransferPartyComponent  => "调拨队",
+                    StSallyPartyComponent     => "出击队",
+                    _                         => "队伍"
                 };
                 string homeName;
                 try { homeName = mp.HomeSettlement?.Name?.ToString() ?? "未知"; }

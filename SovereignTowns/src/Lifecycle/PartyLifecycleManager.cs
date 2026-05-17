@@ -156,7 +156,7 @@ public sealed class PartyLifecycleManager
     /// 读档恢复后由 <c>OnGameLoadedEvent</c> 调用：清空 <see cref="_tracked"/> 并基于 vanilla
     /// 已恢复的 <see cref="MobileParty"/> 列表重建索引。
     /// 必须的过滤（与各 Manager 创建端保持一致）：
-    ///   - RecruitingPartyComponent / StTransferPartyComponent：本 Mod 自有类型，直接收编；
+    ///   - StRecruiterPartyComponent / StTransferPartyComponent / StSallyPartyComponent：本 Mod 自有类型，直接收编；
     ///   - vanilla PatrolPartyComponent：仅在 HomeSettlement.OwnerClan 属于 ST 受管 clan
     ///     时纳入（registry 尚未就绪时退回玩家氏族过滤）。
     /// 单 party 失败 try-catch，不影响整体；幂等：可多次调用。
@@ -170,7 +170,7 @@ public sealed class PartyLifecycleManager
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             var now = CampaignTime.Now;
 
-            // 1) RecruitingPartyComponent / StTransferPartyComponent / StSallyPartyComponent（均继承自 CustomPartyComponent）
+            // 1) StRecruiterPartyComponent / StTransferPartyComponent / StSallyPartyComponent（均继承自 CustomPartyComponent）
             try
             {
                 var customs = MobileParty.AllCustomParties;
@@ -182,9 +182,9 @@ public sealed class PartyLifecycleManager
                         {
                             if (party == null) continue;
                             var comp = party.PartyComponent;
-                            if (comp is RecruitingPartyComponent rp)
+                            if (comp is SovereignTowns.Parties.StRecruiterPartyComponent srp)
                             {
-                                var home = rp.HomeSettlement;
+                                var home = srp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
                                 _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
@@ -499,7 +499,7 @@ public sealed class PartyLifecycleManager
                     Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeForceReturn}h — forcing return to home '{meta.Home.Name}'");
                     try
                     {
-                        if (party.PartyComponent is RecruitingPartyComponent rp)
+                        if (party.PartyComponent is SovereignTowns.Parties.StRecruiterPartyComponent rp)
                         {
                             rp.SetAssignedTarget(meta.Home);
                         }

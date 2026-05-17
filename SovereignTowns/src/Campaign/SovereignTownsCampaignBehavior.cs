@@ -33,7 +33,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 {
     private PartyLifecycleManager? _lifecycle;
     private CapitalRegistry? _capitalRegistry;
-    private RecruitmentManager? _recruitmentManager;
+    private RecruitmentDispatcher? _recruitmentDispatcher;
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
     private CapitalLogisticsManager? _capitalLogisticsManager;
     private BattleLootManager? _battleLootManager;
@@ -204,15 +204,15 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // B7: ribbon retired. Player config is now web-only via DiagnosticGameMenu's
             // "打开网页控制面板" town menu option + WebConfigServer.
 
-            _recruitmentManager = new RecruitmentManager(_lifecycle, _capitalRegistry);
+            _recruitmentDispatcher = new RecruitmentDispatcher(_lifecycle, _capitalRegistry);
             _prisonerRecruitmentManager = new PrisonerRecruitmentManager(_capitalRegistry);
             _capitalLogisticsManager = new CapitalLogisticsManager(
                 _capitalRegistry,
-                _recruitmentManager,
+                _recruitmentDispatcher,
                 _transferDispatcher);
 
             // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
-            // 时序：必须在 RecruitmentManager 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
+            // 时序：必须在 RecruitmentDispatcher 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
             _vanillaSuppression = new SovereignTowns.SettlementManagement.VanillaSuppressionManager();
             _vanillaSuppression.Initialize();
 
@@ -290,9 +290,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             DrainWebConfigSync();
             // 首行性能：每个 Manager 内部都有 PartyComponent 类型过滤
-            _recruitmentManager?.OnHourlyTickParty(party);
             _patrolManager?.OnHourlyTickParty(party);
-            // B16.1/B16.2：transfer / sally 已迁移到 StPartyComponent；由 PartyLifecycleManager 单点路由。
+            // B16.1/B16.2/B16.3：transfer / sally / recruiter 已迁移到 StPartyComponent；
+            // 由 PartyLifecycleManager 单点路由。
         }
         catch (Exception ex)
         {
@@ -348,8 +348,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
     /// <summary>
     /// 战斗结束回调（vanilla <c>CampaignEvents.MapEventEnded</c>，签名 <c>Action&lt;MapEvent&gt;</c>）。
-    /// transfer / sally 由 lifecycle 单点路由（StPartyComponent.OnMapEventEnded）；
-    /// patrol / recruiter 暂仍走旧 Manager 转发，待后续 Step 迁移。
+    /// transfer / sally / recruiter 由 lifecycle 单点路由（StPartyComponent.OnMapEventEnded）；
+    /// patrol 暂仍走旧 Manager 转发，待后续 Step 迁移。
     /// try-catch 包裹避免影响 vanilla 事件链。
     /// </summary>
     private void OnMapEventEnded(MapEvent mapEvent)
@@ -357,10 +357,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             _battleLootManager?.OnMapEventEnded(mapEvent);
-            _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1/B16.2：单点路由到 StPartyComponent
+            _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1/B16.2/B16.3：单点路由到 StPartyComponent
             // 仍保留旧 Manager 转发，它们在后续 Step 才迁移
             _patrolManager?.OnMapEventEnded(mapEvent);
-            _recruitmentManager?.OnMapEventEnded(mapEvent);
         }
         catch (Exception ex)
         {
