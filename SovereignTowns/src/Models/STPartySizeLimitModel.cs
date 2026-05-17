@@ -92,7 +92,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
     private static int ComputeSallyLimit(MobileParty? party, StSallyPartyComponent sally)
     {
         int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
-        int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(sally.HomeSettlement) + currentMembers;
+        int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(sally.HomeSettlementOrNull) + currentMembers;
         int byGarrisonRatio = GarrisonThresholdMath.CountFromRatio(
             baseGarrison,
             ConfigurationManager.Current?.Thresholds?.SallyExtractionRatio ?? 0.60f,

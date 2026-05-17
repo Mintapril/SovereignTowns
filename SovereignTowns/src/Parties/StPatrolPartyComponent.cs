@@ -38,7 +38,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var s = HomeSettlement?.Name?.ToString() ?? "未知";
+            var s = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
             _cachedName = new TextObject("{=ST_PatrolPartyName}巡逻队 - " + s);
             return _cachedName;
         }

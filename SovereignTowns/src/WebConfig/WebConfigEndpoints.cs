@@ -65,8 +65,16 @@ internal static class WebConfigEndpoints
                 return;
             }
 
-            // P1-5 修复 A：payload 上限。HttpListener 设了 -1 = 未知，宽松通过（chunked encoding 走 ReadBody）。
+            // P1-5 修复 A：payload 上限。
+            // ContentLength64 == -1 表示 chunked encoding（无声明长度）—— 拒绝，要求客户端提供 Content-Length。
+            // WebUI 始终发送 Content-Length，此处 411 只影响脚本/curl 等非标准调用。
             long declared = ctx.Request.ContentLength64;
+            if (declared < 0)
+            {
+                Logger.Warn("PUT /api/config: chunked encoding without Content-Length rejected");
+                WebConfigServer.WriteError(ctx, 411, "length_required", "Content-Length header required");
+                return;
+            }
             if (declared > MaxConfigPayloadBytes)
             {
                 Logger.Warn($"PUT /api/config rejected: declared Content-Length={declared} 超过 {MaxConfigPayloadBytes}");

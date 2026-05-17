@@ -333,11 +333,19 @@ public sealed class CapitalRegistry
     {
         try
         {
+            // P1-C 防御：同对象不应触发（vanilla 一般不发，但防御性）
+            if (oldPlayerClan != null && oldPlayerClan == newPlayerClan) return;
+
             if (oldPlayerClan != null)
             {
-                _lifecycle?.MigrateAllOrDisband(oldPlayerClan, null);
+                // P1 #1：在 _managers.Remove 之前先抢救 capital 引用，
+                // 让 MigrateAllOrDisband 走 merge 路径而非 disband-only。
+                // edge case：若 swap 由 oldClan 失去最后 town 触发，capital 已 null，
+                // 此时 fall through 到 null 接受蒸发 — 玩家已无 garrison 可 merge。
+                Settlement? oldCapital = GetCapitalForClan(oldPlayerClan);
+                _lifecycle?.MigrateAllOrDisband(oldPlayerClan, oldCapital);
                 _managers.Remove(oldPlayerClan);
-                Logger.Info($"HandlePlayerClanSwap: removed manager for old clan '{oldPlayerClan.StringId}'");
+                Logger.Info($"HandlePlayerClanSwap: removed manager for old clan '{oldPlayerClan.StringId}' (merged to '{oldCapital?.Name?.ToString() ?? "<none>"}')");
             }
             if (newPlayerClan != null)
             {

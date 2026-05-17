@@ -501,6 +501,9 @@ public static class ConfigurationManager
     private static bool IsNonNegativeFloat(float v)
         => !float.IsNaN(v) && !float.IsInfinity(v) && v >= 0f;
 
+    private static bool IsFiniteFloat(float v)
+        => !float.IsNaN(v) && !float.IsInfinity(v);
+
     private static bool ValidateRule(TownGarrisonRule rule, string ctx, out string reason)
     {
         if (rule.TargetTotalCount < 0)
@@ -576,6 +579,16 @@ public static class ConfigurationManager
         if (rule.PeacetimeMultiplier > 10f)
         {
             reason = $"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} 超过上限 10";
+            return false;
+        }
+        if (!IsFiniteFloat(rule.FoodSafetyThreshold))
+        {
+            reason = $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须是有限数值（排 NaN/Infinity）";
+            return false;
+        }
+        if (rule.FoodSafetyThreshold < -1000f || rule.FoodSafetyThreshold > 1000f)
+        {
+            reason = $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须在 [-1000, 1000]";
             return false;
         }
         if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)

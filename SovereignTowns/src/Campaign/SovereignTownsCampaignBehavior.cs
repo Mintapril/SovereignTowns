@@ -407,7 +407,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                     if (target == null) continue;
 
                     // 目标村庄所属势力现在是否与玩家敌对
-                    if (!target.MapFaction.IsAtWarWith(playerFaction)) continue;
+                    if (target.MapFaction?.IsAtWarWith(playerFaction) != true) continue;
 
                     var home = recruiter.HomeSettlementOrNull;
                     if (home == null) continue;
