@@ -172,6 +172,16 @@ public static class GenericTroopMatcher
             if (tier < rule.MinTier || tier > rule.MaxTier) return false;
             // B7.10: TierRatio bucket weighting removed — MinTier/MaxTier band is the only tier filter.
 
+            if (rule.AllowedCultureIds != null && rule.AllowedCultureIds.Count > 0)
+            {
+                var cid = troop.Culture?.StringId;
+                if (string.IsNullOrEmpty(cid)) return false;
+                bool cultureOk = false;
+                foreach (var id in rule.AllowedCultureIds)
+                    if (string.Equals(id, cid, StringComparison.OrdinalIgnoreCase)) { cultureOk = true; break; }
+                if (!cultureOk) return false;
+            }
+
             var role = GetRole(troop);
             if (role == GenericTroopRole.Unknown) return false;
             return RoleRatio(rule, role) > 0f;

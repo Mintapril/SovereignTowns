@@ -1212,7 +1212,18 @@
 
         // ============ toggles ============
         getToggleValue(t) { return !!this.config?.[t.root]?.[t.key]; },
-        setToggleValue(t, v) { this.config[t.root][t.key] = v; },
+        setToggleValue(t, v) {
+          if (t.key === 'ApplyToAiSettlementsToo' &&
+              this.config?.[t.root]?.[t.key] === true && v === false) {
+            if (!window.confirm('即将解散所有 AI 氏族正在执行的 SovereignTowns 任务，是否继续？')) {
+              // 用户取消：写回原值以触发 Alpine 重新渲染 :checked 绑定，恢复勾选状态
+              this.config[t.root][t.key] = false;
+              this.$nextTick(() => { this.config[t.root][t.key] = true; });
+              return;
+            }
+          }
+          this.config[t.root][t.key] = v;
+        },
 
         // ============ ratio with proportional auto-normalize ============
         // Dragging one slider rescales the other role sliders so Σ stays at 1.0.

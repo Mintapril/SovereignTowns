@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 using SovereignTowns.Audit;
 using SovereignTowns.Battle;
+using SovereignTowns.Common;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Lifecycle;
@@ -68,6 +69,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             CampaignEvents.OnSettlementOwnerChangedEvent.AddNonSerializedListener(this, OnSettlementOwnerChanged);
             // MVP 5：战斗结束 → SallyForth 战后回程（精确触发，vs GDS 的 TickEvent 轮询 bug）
             CampaignEvents.MapEventEnded.AddNonSerializedListener(this, OnMapEventEnded);
+            // P0-3：宣战事件 — 玩家氏族征兵队目标村庄成为敌对时立即撤退
+            CampaignEvents.WarDeclared.AddNonSerializedListener(this, OnWarDeclared);
+            // P0-4：英雄换氏族事件 — 玩家换氏族时迁移所有在途队伍
+            CampaignEvents.OnHeroChangedClanEvent.AddNonSerializedListener(this, OnHeroChangedClan);
             Logger.Info("SovereignTownsCampaignBehavior: events registered");
         }
         catch (Exception ex)
@@ -374,6 +379,73 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex)
         {
             Logger.Error("OnMapEventEnded forwarding failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// P0-3：宣战回调。仅处理玩家氏族的征兵队：若 _assignedTarget 村庄所属势力已与玩家氏族敌对，
+    /// 立即将该征兵队的阶段设为 Returning 并导航回 home，避免征兵队被敌军拦截。
+    /// </summary>
+    private void OnWarDeclared(IFaction faction1, IFaction faction2, DeclareWarAction.DeclareWarDetail detail)
+    {
+        try
+        {
+            var playerFaction = Clan.PlayerClan?.MapFaction;
+            if (playerFaction == null) return;
+
+            // 只有当玩家阵营是宣战的当事方之一才需处理
+            if (faction1 != playerFaction && faction2 != playerFaction) return;
+
+            foreach (var party in MobileParty.AllCustomParties)
+            {
+                try
+                {
+                    if (party?.PartyComponent is not SovereignTowns.Parties.StRecruiterPartyComponent recruiter) continue;
+                    if (recruiter.HomeSettlementOrNull?.OwnerClan != Clan.PlayerClan) continue;
+
+                    var target = recruiter.AssignedTarget;
+                    if (target == null) continue;
+
+                    // 目标村庄所属势力现在是否与玩家敌对
+                    if (!target.MapFaction.IsAtWarWith(playerFaction)) continue;
+
+                    var home = recruiter.HomeSettlementOrNull;
+                    if (home == null) continue;
+
+                    Logger.Info($"OnWarDeclared: recruiter '{PartyNameFormatter.SafeName(party)}' target '{target.Name}' is now hostile, retreating to '{home.Name}'");
+                    recruiter.SetAssignedTarget(home);
+                    recruiter.TransitionTo(SovereignTowns.Parties.StRecruiterPartyComponent.RecruiterPhase.Returning);
+                    try { party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false); }
+                    catch (Exception navEx) { Logger.Error($"OnWarDeclared SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(party)}'", navEx); }
+                }
+                catch (Exception partyEx)
+                {
+                    Logger.Error("OnWarDeclared inner party loop threw", partyEx);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnWarDeclared failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// P0-4：英雄换氏族回调。当玩家（MainHero）换氏族时，解散旧氏族所有在途 ST 队伍，
+    /// 并为新氏族引导 EnsureForClan（通过 CapitalRegistry.HandlePlayerClanSwap）。
+    /// </summary>
+    private void OnHeroChangedClan(Hero hero, Clan oldClan)
+    {
+        try
+        {
+            if (hero != Hero.MainHero) return;
+            var newClan = hero.Clan;
+            Logger.Info($"OnHeroChangedClan: player switched from '{oldClan?.StringId}' to '{newClan?.StringId}'");
+            _capitalRegistry?.HandlePlayerClanSwap(oldClan, newClan);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnHeroChangedClan failed", ex);
         }
     }
 

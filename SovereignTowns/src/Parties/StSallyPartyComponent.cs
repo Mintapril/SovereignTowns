@@ -1,5 +1,4 @@
 using System;
-using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
@@ -212,45 +211,12 @@ public sealed class StSallyPartyComponent : StPartyComponent
     }
 
     /// <summary>
-    /// 销毁回调：救援存活兵到 home garrison（沿用现有 OnMobilePartyDestroyed 逻辑）。
-    /// home 失守 → 改救到 partyClan 当前首府；都没有则兵员蒸发。
+    /// 销毁回调：委托基类救援残兵，并在 finally 中通知 SallyDispatcher 周期结束。
     /// </summary>
     public override void OnDestroyed(MobileParty self, PartyBase? destroyer)
     {
-        try
-        {
-            // B16.4a P1-7：销毁路径必须容忍 null home（party 已损坏）—— 用 OrNull 跳过抛异常。
-            var home = HomeSettlementOrNull;
-            var partyClan = self.ActualClan ?? home?.OwnerClan;
-            Settlement? rescueTarget = null;
-            var registry = CapitalRegistry.Instance;
-            if (registry != null && partyClan != null)
-            {
-                if (home != null && home.OwnerClan == partyClan && registry.IsManagedClanWithCapital(partyClan))
-                    rescueTarget = home;
-                else
-                    rescueTarget = registry.GetCapitalForClan(partyClan);
-            }
-
-            if (rescueTarget == null)
-            {
-                Logger.Info($"StSallyParty.OnDestroyed: '{PartyNameFormatter.SafeName(self)}' home unavailable, no rescue");
-            }
-            else
-            {
-                int rescued = PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(self, rescueTarget, "StSallyPartyComponent.OnDestroyed");
-                if (rescued > 0)
-                    Logger.Info($"StSallyParty.OnDestroyed: rescued {rescued} survivors to '{rescueTarget.Name}'");
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"StSallyPartyComponent.OnDestroyed failed for '{PartyNameFormatter.SafeName(self)}'", ex);
-        }
-        finally
-        {
-            NotifyDispatcherEnded();
-        }
+        try { base.OnDestroyed(self, destroyer); }
+        finally { NotifyDispatcherEnded(); }
     }
 
     private void TransitionToReturning(MobileParty self)

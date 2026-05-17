@@ -324,6 +324,33 @@ public sealed class CapitalRegistry
         }
     }
 
+    /// <summary>
+    /// P0-4：玩家换氏族时调用。
+    /// 解散 <paramref name="oldPlayerClan"/> 所有在途 ST 队伍，从 registry 移除其 manager，
+    /// 然后为 <paramref name="newPlayerClan"/> 执行 EnsureForClan（若不为 null）。
+    /// </summary>
+    public void HandlePlayerClanSwap(Clan? oldPlayerClan, Clan? newPlayerClan)
+    {
+        try
+        {
+            if (oldPlayerClan != null)
+            {
+                _lifecycle?.MigrateAllOrDisband(oldPlayerClan, null);
+                _managers.Remove(oldPlayerClan);
+                Logger.Info($"HandlePlayerClanSwap: removed manager for old clan '{oldPlayerClan.StringId}'");
+            }
+            if (newPlayerClan != null)
+            {
+                EnsureForClan(newPlayerClan);
+                Logger.Info($"HandlePlayerClanSwap: ensured manager for new clan '{newPlayerClan.StringId}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("CapitalRegistry.HandlePlayerClanSwap failed", ex);
+        }
+    }
+
     // ───────── 私有 ─────────
 
     /// <summary>

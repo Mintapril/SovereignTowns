@@ -100,8 +100,38 @@ public abstract class StPartyComponent : CustomPartyComponent
         }
     }
 
-    /// MobilePartyDestroyed 路由入口，由 PartyLifecycleManager 单点调用。默认 no-op；子类可救援残兵等。
-    public virtual void OnDestroyed(MobileParty self, PartyBase? destroyer) { }
+    /// MobilePartyDestroyed 路由入口，由 PartyLifecycleManager 单点调用。
+    /// 默认行为：尝试将残余兵员合并入 home garrison（或 clan capital 作为 fallback）。
+    /// 子类 override 时必须调用 base.OnDestroyed 并将副作用放在 finally 块中（如 SallyDispatcher 通知）。
+    public virtual void OnDestroyed(MobileParty self, PartyBase? destroyer)
+    {
+        try
+        {
+            var home = HomeSettlementOrNull;
+            var partyClan = self.ActualClan ?? home?.OwnerClan;
+            Settlement? rescueTarget = null;
+            var registry = CapitalRegistry.Instance;
+            if (registry != null && partyClan != null)
+            {
+                if (home != null && home.OwnerClan == partyClan && registry.IsManagedClanWithCapital(partyClan))
+                    rescueTarget = home;
+                else
+                    rescueTarget = registry.GetCapitalForClan(partyClan);
+            }
+            if (rescueTarget == null)
+                Logger.Info($"{GetType().Name}.OnDestroyed: '{PartyNameFormatter.SafeName(self)}' home unavailable, no rescue");
+            else
+            {
+                int rescued = PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(self, rescueTarget, $"{GetType().Name}.OnDestroyed");
+                if (rescued > 0)
+                    Logger.Info($"{GetType().Name}.OnDestroyed: rescued {rescued} survivors to '{rescueTarget.Name}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"{GetType().Name}.OnDestroyed failed for '{PartyNameFormatter.SafeName(self)}'", ex);
+        }
+    }
 
     // ── 子类必须 / 可以实现的差异化部分 ──
 
