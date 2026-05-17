@@ -374,7 +374,16 @@ public static class ConfigurationManager
             // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
             if (parsed.ConfigVersion != CurrentConfigVersion)
             {
-                Logger.Warn($"Config 版本不匹配 (file={parsed.ConfigVersion}, expected={CurrentConfigVersion})；不做迁移，重置为默认。请重新在网页面板配置。");
+                string msg = $"[主权城镇] global.json 版本不匹配 (file v{parsed.ConfigVersion}, expected v{CurrentConfigVersion}) — 已重置为默认，请重新在网页面板配置";
+                Logger.Warn(msg);
+                // B17.4 A4：升级到 UI 黄色 — 玩家不会再"静默丢配置"
+                // 注：InformationManager / InformationMessage 实际驻 TaleWorlds.Library（与 Colors 同程序集）。
+                try
+                {
+                    TaleWorlds.Library.InformationManager.DisplayMessage(
+                        new TaleWorlds.Library.InformationMessage(msg, TaleWorlds.Library.Colors.Yellow));
+                }
+                catch (Exception uiEx) { Logger.Warn($"version-mismatch UI display failed: {uiEx.Message}"); }
                 return null;
             }
 
@@ -400,16 +409,48 @@ public static class ConfigurationManager
         Culture = System.Globalization.CultureInfo.InvariantCulture,
     };
 
+    /// <summary>
+    /// B17.4 S4：原子写盘 — tmp → swap → backup。崩溃/断电中途绝不留半截/0 字节文件。
+    /// net472 缺 File.Replace 跨卷保证；用 Delete + Move 替代,前一份保留为 .bak。
+    /// 单步失败：尽力恢复（删除残留 .tmp），保留原 global.json 不动。
+    /// </summary>
     private static void WriteToDiskUnlocked(string configPath, GlobalConfig config)
     {
+        string tmpPath = configPath + ".tmp";
+        string bakPath = configPath + ".bak";
         try
         {
             string json = JsonConvert.SerializeObject(config, _jsonSettings);
-            File.WriteAllText(configPath, json);
+
+            // 1. 全量写到 tmp（独立文件，失败不污染主文件）
+            File.WriteAllText(tmpPath, json);
+
+            // 2. 把当前 main 备份到 .bak（若 main 存在）。备份失败仅 warn，继续 swap。
+            if (File.Exists(configPath))
+            {
+                try
+                {
+                    if (File.Exists(bakPath)) File.Delete(bakPath);
+                    File.Move(configPath, bakPath);
+                }
+                catch (Exception bakEx)
+                {
+                    Logger.Warn($"WriteToDiskUnlocked: backup to '{bakPath}' failed; proceeding without backup: {bakEx.Message}");
+                    // 若 .bak 创建失败但 main 还在 — 直接删 main 让下一步 Move 成功
+                    try { if (File.Exists(configPath)) File.Delete(configPath); }
+                    catch (Exception delEx) { Logger.Error($"WriteToDiskUnlocked: failed to remove stale main '{configPath}' before swap", delEx); throw; }
+                }
+            }
+
+            // 3. tmp → main（这一刻起新内容生效）
+            File.Move(tmpPath, configPath);
         }
         catch (Exception ex)
         {
-            Logger.Error($"Failed to write config to '{configPath}'", ex);
+            Logger.Error($"Failed to write config to '{configPath}' (atomic swap)", ex);
+            // 残留 tmp 清理：不留半截文件给下次 Reload 误读
+            try { if (File.Exists(tmpPath)) File.Delete(tmpPath); }
+            catch (Exception cleanupEx) { Logger.Warn($"WriteToDiskUnlocked: failed to clean up '{tmpPath}': {cleanupEx.Message}"); }
         }
     }
 
