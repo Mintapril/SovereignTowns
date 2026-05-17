@@ -38,6 +38,13 @@ public static class ConfigurationManager
     private static bool _initialized;
     private static string _lastValidationError = "";
 
+    /// <summary>
+    /// B17.4 B1：PerSettlementOverrides 或 GlobalDefaults 变更后触发。
+    /// 参数：被改的 settlement.StringId，或 null 表示全局/未知（订阅者需对所有 in-flight 队伍重规划）。
+    /// 仅在 ReplaceAndSave 成功后触发（Save 单独存当前 _current,不触发 — 避免无变化时刷屏）。
+    /// </summary>
+    public static event Action<string?>? OnConfigChanged;
+
     /// <summary>当前已加载的全局配置。Initialize 之前调用返回默认配置。</summary>
     public static GlobalConfig Current
     {
@@ -239,6 +246,12 @@ public static class ConfigurationManager
                 _current.LastModified = DateTime.UtcNow.ToString("O");
                 WriteToDiskUnlocked(configPath, _current);
                 Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}'");
+
+                // B17.4 B1：通知订阅者 config 已变 — 让 in-flight 队伍重规划。
+                // 写盘后触发（失败的 replace 不应通知，避免订阅者瞎刷新）。
+                try { OnConfigChanged?.Invoke(null); }
+                catch (Exception evEx) { Logger.Warn($"OnConfigChanged invocation failed: {evEx.Message}"); }
+
                 reason = "";
                 return true;
             }

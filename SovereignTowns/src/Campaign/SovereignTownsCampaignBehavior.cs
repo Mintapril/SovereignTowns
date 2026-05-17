@@ -73,6 +73,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             CampaignEvents.WarDeclared.AddNonSerializedListener(this, OnWarDeclared);
             // P0-4：英雄换氏族事件 — 玩家换氏族时迁移所有在途队伍
             CampaignEvents.OnHeroChangedClanEvent.AddNonSerializedListener(this, OnHeroChangedClan);
+
+            // B17.4 B1：config 变更 → 重规划 in-flight recruiter（让 TownGarrisonRule 更改即时生效）。
+            // idempotent unsubscribe-then-subscribe — 静态 event 跨会话可能累积 handler 引用，避免重载后双订阅。
+            ConfigurationManager.OnConfigChanged -= OnConfigChangedHandler;
+            ConfigurationManager.OnConfigChanged += OnConfigChangedHandler;
             Logger.Info("SovereignTownsCampaignBehavior: events registered");
         }
         catch (Exception ex)
@@ -473,6 +478,38 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex)
         {
             Logger.Error("OnHeroChangedClan failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// B17.4 B1：ConfigurationManager.ReplaceAndSave 后被回调。
+    /// 把所有 in-flight StRecruiterPartyComponent 切回 Dispatching 阶段，让 PlanNextHop 用新规则重选目标。
+    /// settlementStringId == null → 影响所有 home town。否则仅影响 home 匹配的队伍。
+    /// 不限于 PlayerClan — 任意 managed clan 的 recruiter 都按其各自首府的规则刷新。
+    /// </summary>
+    private void OnConfigChangedHandler(string? settlementStringId)
+    {
+        try
+        {
+            foreach (var party in MobileParty.AllCustomParties)
+            {
+                try
+                {
+                    if (party?.PartyComponent is not SovereignTowns.Parties.StRecruiterPartyComponent recruiter) continue;
+                    var home = recruiter.HomeSettlementOrNull;
+                    if (home == null) continue;
+                    if (settlementStringId != null && home.StringId != settlementStringId) continue;
+
+                    recruiter.SetAssignedTarget(null);
+                    recruiter.TransitionTo(SovereignTowns.Parties.StRecruiterPartyComponent.RecruiterPhase.Dispatching);
+                    Logger.Info($"OnConfigChanged: '{PartyNameFormatter.SafeName(party)}' transitioned to Dispatching for re-planning under new rule");
+                }
+                catch (Exception innerEx) { Logger.Warn($"OnConfigChanged per-party refresh failed: {innerEx.Message}"); }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnConfigChangedHandler failed", ex);
         }
     }
 
