@@ -197,6 +197,30 @@ internal static class WebConfigEndpoints
         }
     }
 
+    /// <summary>
+    /// GET /api/settlements/{stringId}/activities → 该 settlement 最近 N 条结构化活动（B17.4 A2）。
+    /// 数据源:<see cref="SovereignTowns.Audit.PerSettlementActivityRing"/>。
+    /// HTTP 线程安全 — ring 内部 lock；不读取 vanilla 对象。
+    /// </summary>
+    public static void GetSettlementActivities(HttpListenerContext ctx, string settlementStringId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(settlementStringId))
+            {
+                WebConfigServer.WriteError(ctx, 400, "missing_settlement_id", "URL must include /api/settlements/{stringId}/activities");
+                return;
+            }
+            var entries = SovereignTowns.Audit.PerSettlementActivityRing.Read(settlementStringId);
+            WebConfigServer.WriteJson(ctx, 200, new { settlement = settlementStringId, count = entries.Count, activities = entries });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetSettlementActivities threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
     /// <summary>GET /api/status → 简单运行时统计。</summary>
     public static void GetStatus(HttpListenerContext ctx)
     {

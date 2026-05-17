@@ -221,6 +221,22 @@ public static class WebConfigServer
             }
 
             // 5) Route
+            // B17.4 A2: parameterized route `/api/settlements/{id}/activities` — pattern 不适合
+            // 全局 switch（switch case 必须是常量），单独前置匹配。仅 GET。
+            const string settlementsPrefix = "/api/settlements/";
+            const string activitiesSuffix = "/activities";
+            if (method == "GET"
+                && path.StartsWith(settlementsPrefix, StringComparison.Ordinal)
+                && path.EndsWith(activitiesSuffix, StringComparison.Ordinal)
+                && path.Length > settlementsPrefix.Length + activitiesSuffix.Length)
+            {
+                int idStart = settlementsPrefix.Length;
+                int idLength = path.Length - settlementsPrefix.Length - activitiesSuffix.Length;
+                string settlementId = Uri.UnescapeDataString(path.Substring(idStart, idLength));
+                WebConfigEndpoints.GetSettlementActivities(ctx, settlementId);
+                return;
+            }
+
             switch (method)
             {
                 case "GET" when path == "/api/config":      WebConfigEndpoints.GetConfig(ctx); return;

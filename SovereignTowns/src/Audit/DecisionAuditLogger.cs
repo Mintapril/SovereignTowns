@@ -114,6 +114,97 @@ public static class DecisionAuditLogger
             Accepted = accepted,
             RejectionReason = rejectionReason
         });
+
+        // B17.4 A2：路由到 per-settlement ring + daily counters,不影响磁盘审计流。
+        if (!accepted) return;  // 仅成功决策记录到 ring/counter
+        TryUpdateActivityRingAndCounters(decisionType ?? "", inputSummary ?? "", decisionJson ?? "");
+    }
+
+    /// <summary>
+    /// B17.4 A2：从 inputSummary 中粗略解析 settlement key(home= / source= / village= / town= / dest=),
+    /// 路由到 PerSettlementActivityRing,并按 decisionType 累加 DailyActivityCounters。
+    /// 失败仅吞 — A2 是辅助功能,绝不影响审计主路径。
+    /// decisionType 字符串对照实际代码(plan 里 PrisonerRecruit / DispatchSally 与实际不符,以代码为准):
+    ///   "RecruitFromVillage"     → +recruited
+    ///   "DispatchRecruiter"      → no-op(派出 ≠ 招到)
+    ///   "DispatchTransfer"       → +transferred
+    ///   "create_patrol_party"    → +1 patrol
+    ///   "create_sally_party"     → +1 sally(SallyDispatcher.cs:286)
+    ///   "RecruitPrisoner"        → +prisoners(PrisonerRecruitmentManager.cs:223)
+    /// </summary>
+    private static void TryUpdateActivityRingAndCounters(string decisionType, string inputSummary, string decisionJson)
+    {
+        try
+        {
+            // 优先 home=,然后 source=,然后 village=,最后 town=(prisoner recruit 使用 town=...)
+            string? key = ExtractKey(inputSummary, "home=")
+                ?? ExtractKey(inputSummary, "source=")
+                ?? ExtractKey(inputSummary, "village=")
+                ?? ExtractKey(inputSummary, "town=");
+            if (key != null)
+            {
+                PerSettlementActivityRing.Add(key, decisionType, inputSummary, decisionJson);
+            }
+            string? destKey = ExtractKey(inputSummary, "dest=");
+            if (destKey != null && destKey != key)
+            {
+                PerSettlementActivityRing.Add(destKey, decisionType + "(inbound)", inputSummary, decisionJson);
+            }
+
+            switch (decisionType)
+            {
+                case "RecruitFromVillage":
+                    DailyActivityCounters.AddRecruited(ExtractInt(decisionJson, "recruited"));
+                    break;
+                case "DispatchRecruiter":
+                    DailyActivityCounters.AddRecruited(0);  // dispatch ≠ recruited; counter 由 RecruitFromVillage 增
+                    break;
+                case "DispatchTransfer":
+                    DailyActivityCounters.AddTransferred(ExtractInt(decisionJson, "extracted"));
+                    break;
+                case "create_patrol_party":
+                    DailyActivityCounters.AddPatrolDispatched(1);
+                    break;
+                case "create_sally_party":
+                    DailyActivityCounters.AddSallyDispatched(1);
+                    break;
+                case "RecruitPrisoner":
+                    DailyActivityCounters.AddPrisonerRecruited(ExtractInt(decisionJson, "recruited"));
+                    break;
+            }
+        }
+        catch { /* swallow */ }
+    }
+
+    /// <summary>从 "key1=val1 key2=val2" 串里取 prefix 后的 token。失败返 null。</summary>
+    private static string? ExtractKey(string text, string prefix)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        int idx = text.IndexOf(prefix, StringComparison.Ordinal);
+        if (idx < 0) return null;
+        int start = idx + prefix.Length;
+        int end = text.IndexOf(' ', start);
+        if (end < 0) end = text.Length;
+        if (end <= start) return null;
+        return text.Substring(start, end - start);
+    }
+
+    /// <summary>极简 JSON 整数提取:`"key":N`。失败返 0(不抛)。</summary>
+    private static int ExtractInt(string json, string key)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(json)) return 0;
+            string needle = "\"" + key + "\":";
+            int idx = json.IndexOf(needle, StringComparison.Ordinal);
+            if (idx < 0) return 0;
+            int start = idx + needle.Length;
+            int end = start;
+            while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '-')) end++;
+            if (end <= start) return 0;
+            return int.TryParse(json.Substring(start, end - start), out var v) ? v : 0;
+        }
+        catch { return 0; }
     }
 
     /// <summary>关闭审计：取消后台任务并冲刷队列残留。</summary>

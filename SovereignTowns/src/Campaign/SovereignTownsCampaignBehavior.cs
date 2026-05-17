@@ -287,6 +287,33 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             DrainWebConfigSync();
             _capitalLogisticsManager?.EvaluateAll();
+
+            // B17.4 A2：每日活动汇总(IG GarrisonDailyBehavior.cs:50-66 借鉴)
+            // 顺序固定:read snapshot → display → reset(IG 5 年沉淀,顺序错就重复弹窗 / 漏弹)
+            if (ConfigurationManager.Current?.EnabledFeatures?.ShowDailySummary == true)
+            {
+                try
+                {
+                    var snap = SovereignTowns.Audit.DailyActivityCounters.Snapshot();
+                    int total = snap.recruited + snap.transferred + snap.patrols + snap.sallies + snap.prisoners;
+                    if (total > 0)
+                    {
+                        var msg = $"[主权城镇] 今日 招{snap.recruited} 调{snap.transferred} 巡逻{snap.patrols} 出击{snap.sallies} 俘虏招募{snap.prisoners}";
+                        InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green));
+                    }
+                }
+                catch (Exception sumEx) { Logger.Warn($"daily summary display failed: {sumEx.Message}"); }
+                finally
+                {
+                    // ★ 严格在 display 之后(包括异常路径)清零,避免次日重复计数
+                    SovereignTowns.Audit.DailyActivityCounters.ResetAll();
+                }
+            }
+            else
+            {
+                // feature off — 仍然清零,免得后续打开时一次性涌出累计值
+                SovereignTowns.Audit.DailyActivityCounters.ResetAll();
+            }
         }
         catch (Exception ex)
         {
