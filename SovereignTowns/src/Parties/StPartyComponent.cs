@@ -69,8 +69,27 @@ public abstract class StPartyComponent : CustomPartyComponent
         try
         {
             if (!ValidateAliveAndManaged(self, out var capital)) return;
+
+            // B17.4 A1 reset：玩家上次锁定我导致 DoNotMakeNewDecisions=true，本 hour 入口先无条件复位。
+            // 只有当下面 TryHoldForPlayerTarget 命中时才会再次设为 true。
+            // sally Returning 不需要 DoNotMakeNewDecisions=true（sally 的 TransitionToReturning 已 SetDoNotMakeNewDecisions(false)）。
+            try { self.Ai?.SetDoNotMakeNewDecisions(false); } catch { /* swallow */ }
+
+            // B17.4 B7：玩家被自家 ST 队伍俘获 → 立刻送回首府（IG MobileGarrison.CheckIfPlayerIsPrisonerInParty）
+            if (TryReturnIfPlayerCaptured(self)) return;
+
+            // B17.4 A1：玩家右键 attack/follow 我 → SetMoveModeHold 让玩家追上（IG OrderStopIfPlayerTarget）。
+            // 注意：sally 队不应套用（冲锋中被玩家拦说明出问题），仍正常运行。
+            if (!AvoidsPlayerTargetHold && TryHoldForPlayerTarget(self)) return;
+
             if (IsAtHome(self)) { OnArrivedHome(self); return; }
             OnHourlyTickCore(self, capital!);
+
+            // B17.4 A6：tick 末尾通用维护 — 俘虏 cap。失败不影响 core 已完成的工作。
+            // B5 食物补给已 deferred（out-of-scope）— IG 实现是凭空塞，与项目"非作弊基调"冲突；
+            // vanilla 没有合适的 settlement-级 ItemRoster API 做"经济闭环"扣减。
+            try { TryEnforcePrisonerCap(self); }
+            catch (Exception capEx) { Logger.Warn($"{GetType().Name}.TryEnforcePrisonerCap failed: {capEx.Message}"); }
         }
         catch (Exception ex)
         {
@@ -146,6 +165,9 @@ public abstract class StPartyComponent : CustomPartyComponent
 
     /// 是否应用回城解散条件（PartyReturnConditionChecker）。调拨队 override 为 false。
     protected virtual bool AppliesReturnDisbandCondition => true;
+
+    /// <summary>B17.4 A1：sally 队等"冲锋型"队伍应 override = true，避免被玩家拦截后停下让冲锋失败。</summary>
+    protected virtual bool AvoidsPlayerTargetHold => false;
 
     // ── 基类提供的通用动作（protected，子类可直接调用）──
 
@@ -237,6 +259,99 @@ public abstract class StPartyComponent : CustomPartyComponent
         Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' merged {transferred} troops into fallback '{fallback.Name}', disbanding");
         PartyMergeService.Instance.DisbandAndUntrack(self, $"{GetType().Name}.MergeToFallback");
     }
+
+    // ── B17.4 共享 helpers ──
+
+    /// <summary>
+    /// B17.4 B7：MainHero 被本 party 俘获 → 立刻返回 home 走 vanilla Dungeon 路径。返回 true 表示本 hour 提前结束。
+    /// </summary>
+    private bool TryReturnIfPlayerCaptured(MobileParty self)
+    {
+        try
+        {
+            var mainHero = Hero.MainHero;
+            if (mainHero == null) return false;
+            var prisoners = self.PrisonRoster;
+            if (prisoners == null) return false;
+            // PrisonRoster.Contains(CharacterObject) 在 v1.3.15 走 GetTroopRoster + element.Character 比对，
+            // 对玩家 hero 也走这条路径（vanilla 把 MainHero 也封成 CharacterObject）。
+            var characterObj = mainHero.CharacterObject;
+            if (characterObj == null) return false;
+            bool isPrisoner = false;
+            foreach (var elt in prisoners.GetTroopRoster())
+            {
+                if (elt.Character == characterObj) { isPrisoner = true; break; }
+            }
+            if (!isPrisoner) return false;
+
+            Logger.Warn($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' captured MainHero — returning home '{HomeSettlementOrNull?.Name}' for normal release path");
+            ReturnToHome(self);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryReturnIfPlayerCaptured failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// B17.4 A1：玩家氏族主队若 target == self（玩家右键 attack/follow），SetMoveModeHold 让玩家追上。
+    /// 玩家放弃 target 后下一 hour 自然恢复（本方法只在 tick 入口短路）。返回 true 表示本 hour 提前结束。
+    /// </summary>
+    private bool TryHoldForPlayerTarget(MobileParty self)
+    {
+        try
+        {
+            var playerParty = Hero.MainHero?.PartyBelongedTo;
+            if (playerParty == null || playerParty == self) return false;
+            if (playerParty.TargetParty != self) return false;
+            // 玩家锁定我 → hold + 让 AI 不再做新决策（仅本 hour 内）
+            try { self.SetMoveModeHold(); }
+            catch (Exception holdEx) { Logger.Warn($"SetMoveModeHold failed: {holdEx.Message}"); }
+            try { self.Ai?.SetDoNotMakeNewDecisions(true); }
+            catch (Exception aiEx) { Logger.Warn($"SetDoNotMakeNewDecisions(true) failed: {aiEx.Message}"); }
+            Logger.Debug($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' holding for player target");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryHoldForPlayerTarget failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// B17.4 A6：俘虏 roster 超 cap 时随机踢非英雄。0 cap 关闭此功能。
+    /// </summary>
+    private void TryEnforcePrisonerCap(MobileParty self)
+    {
+        int cap = ConfigurationManager.Current?.Thresholds?.PatrolPrisonerCap ?? 0;
+        if (cap <= 0) return;
+        var prisoners = self.PrisonRoster;
+        if (prisoners == null) return;
+        int total = prisoners.TotalManCount;
+        if (total <= cap) return;
+        int excess = total - cap;
+        try
+        {
+            // IG MobileGarrison.CheckIfPrisonersIsAboveThreshold 走的就是 RemoveNumberOfNonHeroTroopsRandomly。
+            // 不要用 RemoveIf(closure) — 闭包里的 excess 不会被 decrement,会一次性删光所有非英雄俘虏。
+            prisoners.RemoveNumberOfNonHeroTroopsRandomly(excess);
+            Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' prisoner overflow {total} > {cap}, dropped {excess} non-hero");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryEnforcePrisonerCap RemoveNumberOfNonHeroTroopsRandomly failed: {ex.Message}");
+        }
+    }
+
+    // B17.4 B5（食物补给）已 deferred — 留空。下面解释：
+    // - IG GivePartyFood（PartyManager.cs:329）是凭空塞食物（party.ItemRoster.AddToCounts(item, N)，无源头扣减），
+    //   IG 论坛投诉过"无限粮草作弊"。
+    // - "从 home town ItemRoster 扣减"做不到：vanilla Town.Owner 是 Hero（无 ItemRoster），settlement 级也没有公开的市场粮食操作 API。
+    // - 项目 CLAUDE.md "非作弊基调" + B5 是 Tier B（非关键），现阶段直接放弃；
+    //   ST idle 检测（PartyLifecycleManager.IdleHoursBeforeDisband=36）会兜底"完全卡死饿死的队伍"。
 
     // ── 构造函数：透传 vanilla CustomPartyComponent 既有 protected 形参 ──
     protected StPartyComponent(

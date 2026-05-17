@@ -32,6 +32,10 @@ public sealed class StPatrolPartyComponent : StPartyComponent
     private const float InitiativeResetHours = 4f;
 
     [CachedData] private TextObject? _cachedName;
+    // B17.4 B6：防御日志去抖 — 只在 target 切换时 Info，否则 Debug。
+    [CachedData] private Settlement? _lastLoggedDefenseTarget;
+    // B17.4 A5：连续 stuck 计数 — scheduler 重发指令后仍卡死多少 hour 后触发瞬移。
+    [CachedData] private int _stuckHoursAfterReissue;
 
     public override TextObject Name
     {
@@ -146,12 +150,42 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             }
             else
             {
-                Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' defending '{PartyNameFormatter.SafeName(defenseTarget)}' (under siege)");
+                // B17.4 B6：日志去抖 — 只在 defense target 切换时 Info，否则 Debug。
+                if (_lastLoggedDefenseTarget != defenseTarget)
+                {
+                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' defending '{PartyNameFormatter.SafeName(defenseTarget)}' (under siege)");
+                    _lastLoggedDefenseTarget = defenseTarget;
+                }
+                else
+                {
+                    Logger.Debug($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' still defending '{PartyNameFormatter.SafeName(defenseTarget)}'");
+                }
                 SafeSetMoveDefendSettlement(self, defenseTarget);
                 SafeSetInitiative(self, attack: 0.3f, avoid: 0.7f, hours: InitiativeResetHours);
+
+                // B17.4 B8：若 defense 目标 IsUnderSiege/IsUnderRaid 已转 false，立刻让 scheduler PickNextStop（不等下一 hour）。
+                try
+                {
+                    bool stillThreat = defenseTarget.IsUnderSiege || (defenseTarget.IsVillage && defenseTarget.Village?.VillageState == Village.VillageStates.BeingRaided);
+                    if (!stillThreat)
+                    {
+                        var nextEarly = scheduler.PickNextStop(self);
+                        if (nextEarly != null && nextEarly != defenseTarget)
+                        {
+                            try { self.SetMoveGoToSettlement(nextEarly, MobileParty.NavigationType.Default, false); }
+                            catch (Exception ex) { Logger.Error($"early-return SetMoveGoToSettlement failed", ex); }
+                            Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' defense target safe — early-return to '{nextEarly.Name}'");
+                            _lastLoggedDefenseTarget = null;  // 重置去抖状态
+                        }
+                    }
+                }
+                catch (Exception threatEx) { Logger.Warn($"early-return threat check failed: {threatEx.Message}"); }
                 return;
             }
         }
+
+        // 离开 defense 路径 → 重置日志去抖
+        _lastLoggedDefenseTarget = null;
 
         // 2) 支援出击战斗（B7.27）
         var sallyDispatcher = SovereignTowns.Campaign.SovereignTownsCampaignBehavior.SallyDispatcher;
@@ -185,11 +219,36 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         var stuckTimeout = ConfigurationManager.Current.ClanPatrol.StuckTimeoutHours;
         if (scheduler.IsStuck(self, stuckTimeout))
         {
+            // B17.4 A5：scheduler 重发指令后还卡死 → 累计 hours。一段瞬移阈值后强制传送回 home.GatePosition（IG BoundedParty.IfStuckPortToHome）。
+            float teleportHours = ConfigurationManager.Current?.Thresholds?.StuckTeleportHours ?? 0f;
+            if (teleportHours > 0 && _stuckHoursAfterReissue >= teleportHours)
+            {
+                try
+                {
+                    var home = HomeSettlementOrNull;
+                    if (home != null)
+                    {
+                        // IG BoundedParty.cs:53 用的是 mobileParty.Position（不是 Position2D）。
+                        // IG 是发布的 mod，证明 v1.3.15 该 setter 公开可写。
+                        self.Position = home.GatePosition;
+                        Logger.Warn($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {teleportHours}h after re-issue — teleport to '{home.Name}' GatePosition (二段救济)");
+                        _stuckHoursAfterReissue = 0;
+                        return;
+                    }
+                }
+                catch (Exception tpEx) { Logger.Error($"二段瞬移失败 for '{PartyNameFormatter.SafeName(self)}'", tpEx); }
+            }
+
             var next = scheduler.PickNextStop(self);
             var dest = next ?? capital;
             try { self.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false); }
             catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(dest)}'", ex); }
-            Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {stuckTimeout}h — re-pick next='{PartyNameFormatter.SafeName(dest)}'");
+            Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {stuckTimeout}h — re-pick next='{PartyNameFormatter.SafeName(dest)}' (stuck cycles since reissue={_stuckHoursAfterReissue})");
+            _stuckHoursAfterReissue++;
+        }
+        else
+        {
+            _stuckHoursAfterReissue = 0;  // 不再 stuck，重置计数
         }
     }
 

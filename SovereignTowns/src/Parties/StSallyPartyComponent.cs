@@ -57,6 +57,9 @@ public sealed class StSallyPartyComponent : StPartyComponent
 
     public override bool AvoidHostileActions => false;
 
+    // B17.4 A1：sally 是冲锋型任务，被玩家拦下让冲锋失败 — 跳过 player-target hold。
+    protected override bool AvoidsPlayerTargetHold => true;
+
     private StSallyPartyComponent(
         Settlement home, MobileParty? initialTarget,
         TextObject name, Hero owner,
