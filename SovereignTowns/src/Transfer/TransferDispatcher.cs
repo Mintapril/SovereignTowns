@@ -109,8 +109,7 @@ public sealed class TransferDispatcher
             }
 
             _lifecycle.RegisterTrackedParty(party, source, PartyKind);
-            try { party.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false); }
-            catch (Exception ex) { Logger.Error("SetMoveGoToSettlement initial failed", ex); }
+            SafeMoveHelper.GoTo(party, destination, "TransferDispatcher initial dispatch");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchTransfer",

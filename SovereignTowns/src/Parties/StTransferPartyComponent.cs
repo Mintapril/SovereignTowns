@@ -138,8 +138,7 @@ public sealed class StTransferPartyComponent : StPartyComponent
                 else if (self.TargetSettlement != fallback)
                 {
                     Logger.Warn($"StTransferParty '{self.Name}': destination '{dest.Name}' owner changed; rerouting to '{fallback.Name}'");
-                    try { self.SetMoveGoToSettlement(fallback, MobileParty.NavigationType.Default, false); }
-                    catch (Exception ex) { Logger.Error("rerouting failed", ex); }
+                    SafeMoveHelper.GoTo(self, fallback, "reroute-to-fallback");
                 }
             }
             else
@@ -158,8 +157,7 @@ public sealed class StTransferPartyComponent : StPartyComponent
             if (src != null && self.TargetSettlement != src)
             {
                 Logger.Warn($"StTransferParty '{self.Name}': 目的地 '{dest.Name}' risk={risk.Level}，改返 '{src.Name}'");
-                try { self.SetMoveGoToSettlement(src, MobileParty.NavigationType.Default, false); }
-                catch (Exception ex) { Logger.Error("reroute to source failed", ex); }
+                SafeMoveHelper.GoTo(self, src, "risk-reroute-to-source");
             }
         }
     }
@@ -182,8 +180,39 @@ public sealed class StTransferPartyComponent : StPartyComponent
             if (partyClan == null) return null;
             var src = _source;
             if (src != null && src.OwnerClan == partyClan) return src;
-            return CapitalRegistry.Instance?.GetCapitalForClan(partyClan);
+            var capital = CapitalRegistry.Instance?.GetCapitalForClan(partyClan);
+            if (capital != null) return capital;
+
+            // B17.4 B4：第三 fallback — 本 clan 名下任意 fortification(town/castle)，路径附近优先
+            // (按 party 当前 2D 位置最近排序)。绝不跨 clan，防止把 ST 兵塞给别人。
+            return FindNearestClanFortification(partyClan);
         }
         catch { return null; }
+    }
+
+    private Settlement? FindNearestClanFortification(Clan partyClan)
+    {
+        try
+        {
+            var settlements = partyClan?.Settlements;
+            if (settlements == null) return null;
+            var party = MobileParty;  // 'this' StPartyComponent.MobileParty (inherited from CustomPartyComponent)
+            var partyPos = party?.GetPosition2D ?? default;
+            Settlement? best = null;
+            float bestDist = float.MaxValue;
+            foreach (var s in settlements)
+            {
+                if (s == null) continue;
+                if (s.OwnerClan != partyClan) continue;  // 防御：Clan.Settlements 在 ownership 转移瞬间可能 lag
+                if (!s.IsFortification) continue;
+                if (s.IsUnderSiege) continue;
+                float d = (s.GetPosition2D - partyPos).Length;
+                if (d < bestDist) { bestDist = d; best = s; }
+            }
+            if (best != null)
+                Logger.Info($"StTransferParty: third-tier fallback selected '{best.Name}' (dist={bestDist:F1})");
+            return best;
+        }
+        catch (Exception ex) { Logger.Warn($"FindNearestClanFortification failed: {ex.Message}"); return null; }
     }
 }
