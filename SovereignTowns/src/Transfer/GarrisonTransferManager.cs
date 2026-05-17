@@ -37,7 +37,7 @@ public sealed class GarrisonTransferManager
     public GarrisonTransferManager(PartyLifecycleManager lifecycle)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
-        _mergeService = new PartyMergeService(_lifecycle);
+        _mergeService = PartyMergeService.Instance;
     }
 
     /// <summary>

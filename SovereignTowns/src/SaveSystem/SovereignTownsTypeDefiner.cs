@@ -38,5 +38,8 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
 
         // local id 3: 出击队伍组件
         AddClassDefinition(typeof(Parties.SallyForthPartyComponent), 3);
+
+        // local id 4: StPartyComponent 抽象基类（vanilla SaveSystem 要求抽象基类也注册）
+        AddClassDefinition(typeof(Parties.StPartyComponent), 4);
     }
 }

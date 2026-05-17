@@ -9,16 +9,30 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Lifecycle;
 
 /// <summary>
-/// Shared lifecycle helper for ST-created mobile parties: merge non-hero troops into a garrison,
-/// then safely disband/destroy and untrack the party.
+/// Process-wide singleton. 通过 <see cref="Initialize"/> 在 OnSessionLaunched 注入 lifecycle 引用，
+/// 之后所有调用方使用 <see cref="Instance"/> 直接访问，避免每个 Manager 自带一份实例。
 /// </summary>
 public sealed class PartyMergeService
 {
+    private static PartyMergeService? _instance;
+    public static PartyMergeService Instance =>
+        _instance ?? throw new InvalidOperationException(
+            "PartyMergeService.Initialize must be called once during OnSessionLaunched before Instance access");
+
+    public static void Initialize(PartyLifecycleManager lifecycle)
+    {
+        if (lifecycle is null) throw new ArgumentNullException(nameof(lifecycle));
+        _instance = new PartyMergeService(lifecycle);
+    }
+
+    /// 仅用于测试 / 卸载场景（mod unload 时清空，下次 Initialize 重建）。
+    public static void ResetForReload() => _instance = null;
+
     private readonly PartyLifecycleManager _lifecycle;
 
-    public PartyMergeService(PartyLifecycleManager lifecycle)
+    private PartyMergeService(PartyLifecycleManager lifecycle)
     {
-        _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
+        _lifecycle = lifecycle;
     }
 
     public int MergeNonHeroTroopsIntoGarrison(MobileParty? party, Settlement? targetSettlement, string context)

@@ -65,7 +65,7 @@ public sealed class RecruitmentManager
     public RecruitmentManager(PartyLifecycleManager lifecycle, CapitalRegistry? capitalRegistry = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
-        _mergeService = new PartyMergeService(_lifecycle);
+        _mergeService = PartyMergeService.Instance;
         _capitalRegistry = capitalRegistry;
 
         // 订阅销毁事件，确保 _visitedPerParty 不会因招募队战斗死亡 / 被俘而泄漏。

@@ -73,7 +73,7 @@ public sealed class SallyForthManager
         BattleLootManager? battleLootManager = null)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
-        _mergeService = new PartyMergeService(_lifecycle);
+        _mergeService = PartyMergeService.Instance;
         _capitalRegistry = capitalRegistry;
         _battleLootManager = battleLootManager;
     }

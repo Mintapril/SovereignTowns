@@ -144,6 +144,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _lifecycle = new PartyLifecycleManager();
             _lifecycle.Initialize();
 
+            // B16.0：PartyMergeService 改为 singleton — 所有调用方通过 Instance 访问。必须在
+            // _lifecycle 构造之后、任何 Manager 构造（它们的字段初始化器会读 Instance）之前。
+            SovereignTowns.Lifecycle.PartyMergeService.Initialize(_lifecycle);
+
             // 注：3 个自定义 GameModel (STPartySizeLimitModel/STPartySpeedModel/STPartyWageModel)
             // 必须在 OnGameStart(Game, IGameStarter) 内调 AddModel —— 此处 OnSessionLaunched 太晚，
             // Campaign 已 finalized，AddModel 会破坏内部 model list 致后续 vanilla 计算崩溃。

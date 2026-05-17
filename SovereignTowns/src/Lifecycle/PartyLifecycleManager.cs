@@ -296,7 +296,7 @@ public sealed class PartyLifecycleManager
             int migratedTroops = 0;
             int partiesDisbanded = 0;
             int skippedOtherClan = 0;
-            var mergeService = new PartyMergeService(this);
+            var mergeService = PartyMergeService.Instance;
 
             // 拷贝 keys 快照，避免边迭代边修改
             var snapshot = new List<MobileParty>(_tracked.Keys);
@@ -357,7 +357,7 @@ public sealed class PartyLifecycleManager
             var fallbackName = fallback?.Name?.ToString() ?? "<none>";
             int migrated = 0;
             int disbanded = 0;
-            var mergeService = new PartyMergeService(this);
+            var mergeService = PartyMergeService.Instance;
 
             var snapshot = new List<MobileParty>(_tracked.Keys);
             foreach (var party in snapshot)
