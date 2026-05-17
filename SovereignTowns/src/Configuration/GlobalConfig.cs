@@ -120,6 +120,9 @@ public sealed class EnabledFeatures
     /// 防止"派出去又因没钱半截失败"的混乱体验。关闭时允许金币负余额（与 vanilla 玩家自身行为一致）。
     /// </summary>
     public bool PauseSpendingWhenBroke { get; set; } = true;
+
+    /// <summary>A2：每日活动汇总 InformationManager 弹窗（"今日招/调/巡逻 N 人"）。默认 true。</summary>
+    public bool ShowDailySummary { get; set; } = true;
 }
 
 /// <summary>
@@ -219,4 +222,25 @@ public sealed class PartyThresholds
 
     /// <summary>出击队创建下限：计算后得到的出击队人数低于此值时不出击。默认 30。</summary>
     public int SallyCreateMinPartyCount { get; set; } = 30;
+
+    // ── B17 借鉴 IG 沉淀 ──
+    /// <summary>A3：派征兵队要求首府驻军 ≥ 此值（IG 边界：空 garrison 派征兵队即裸车送死）。
+    /// 默认 0 = 不闸（保留 B7.24 "用户明确不要 floor" 的产品决定）。玩家想保护可调到 1+。
+    /// 闸门代码仍在，default=0 时是 no-op。</summary>
+    public int RecruiterMinHomeGarrison { get; set; } = 0;
+
+    /// <summary>A6：巡逻队 prisoner roster 上限，超过后每 hour 随机踢出非英雄。原 IG MobileGarrison.CheckIfPrisonersIsAboveThreshold。默认 30。</summary>
+    public int PatrolPrisonerCap { get; set; } = 30;
+
+    /// <summary>A5：scheduler.IsStuck 重发指令后仍卡死多少 hour 触发二段瞬移到 home.GatePosition。0 关闭。默认 24。</summary>
+    public float StuckTeleportHours { get; set; } = 24f;
+
+    /// <summary>B2：RecruitmentPlanner.RankCandidates 第一轮 maxDistance=100 无候选时第二轮的上限。0 关闭降级搜索。默认 200。</summary>
+    public float RecruitmentFallbackMaxDistance { get; set; } = 200f;
+
+    /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
+    public float FoodReplenishMinDays { get; set; } = 2f;
+
+    /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
+    public float FoodReplenishTopUpDays { get; set; } = 5f;
 }
