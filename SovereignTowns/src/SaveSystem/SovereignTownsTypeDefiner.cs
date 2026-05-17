@@ -30,17 +30,9 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
 
     protected override void DefineClassTypes()
     {
-        // local id 1: 招募队伍组件
         AddClassDefinition(typeof(Parties.RecruitingPartyComponent), 1);
-
-        // local id 2 弃用：旧 TransferPartyComponent 已被 StTransferPartyComponent (local id 7) 替代
-        // local id 3: 出击队伍组件
         AddClassDefinition(typeof(Parties.SallyForthPartyComponent), 3);
-
-        // local id 4: StPartyComponent 抽象基类（vanilla SaveSystem 要求抽象基类也注册）
         AddClassDefinition(typeof(Parties.StPartyComponent), 4);
-
-        // local id 7: 调拨队伍组件（B16.1 替代 local id 2 TransferPartyComponent）
         AddClassDefinition(typeof(Parties.StTransferPartyComponent), 7);
     }
 }

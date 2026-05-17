@@ -164,15 +164,9 @@ public sealed class StTransferPartyComponent : StPartyComponent
         }
     }
 
-    /// 调拨队的 IsAtHome 含义复用为"已抵达 source"——意味着 dest 危险被改回，到家后解散。
-    /// 已通过 OnHourlyTickCore 分支 1 单独处理 LastVisitedSettlement == destination 的"到 dest"路径。
-    /// 此处覆盖 OnArrivedHome 为返 source 时的 DeliverAndDisband。
-    protected override void OnArrivedHome(MobileParty self)
-    {
-        var src = _source;
-        if (src == null) { base.OnArrivedHome(self); return; }
-        DeliverAndDisband(self, src);
-    }
+    // 调拨队的 IsAtHome 含义即"已抵达 source"——dest 危险被改回，到家后解散。
+    // 由基类 DefaultMergeAndDisband 处理（home == source，行为等价于把兵塞回源城驻军 + 解散）。
+    // "到 dest"路径单独由 OnHourlyTickCore 分支 1 触发 DeliverAndDisband(self, dest)。
 
     private void DeliverAndDisband(MobileParty self, Settlement target)
     {
