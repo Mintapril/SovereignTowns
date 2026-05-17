@@ -190,7 +190,7 @@ public sealed class PartyThresholds
     /// <summary>新建巡逻队时从首府驻军抽走 garrison × 此比例的兵员。原硬编码 15/150 = 0.10。</summary>
     public float PatrolTroopBatchRatio { get; set; } = 0.10f;
 
-    // ── 征兵队（RecruitmentManager） ────────────────────────────────────────
+    // ── 征兵队（RecruitmentDispatcher） ────────────────────────────────────
     /// <summary>派出征兵队时从首府驻军抽取的护卫比例（0–1）。原硬编码 = 0.10（10%）。</summary>
     public float RecruiterEscortRatio { get; set; } = 0.10f;
 

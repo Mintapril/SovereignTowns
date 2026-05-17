@@ -1029,7 +1029,7 @@
           { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
         ],
 
-        // 原先散落在 PatrolManager / RecruitmentManager / CapitalLogisticsManager / SallyForthManager 内的阈值。
+        // 原先散落在 PatrolDispatcher / RecruitmentDispatcher / CapitalLogisticsManager / SallyDispatcher 内的阈值。
         // 人数阈值统一按当前实际驻军比例派生；面板调整后下次 tick 生效（无须重启）。
         thresholdSpecs: [
           { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: '通用：回城解散兵员比例', hint: '本mod除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散（默认 0.5）', min: 0, max: 1, discrete: false, step: 0.05 },
