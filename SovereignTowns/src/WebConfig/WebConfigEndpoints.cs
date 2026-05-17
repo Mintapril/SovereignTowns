@@ -7,8 +7,6 @@ using Newtonsoft.Json;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Templates;
-using TaleWorlds.CampaignSystem;
-using TaleWorlds.CampaignSystem.Settlements;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -42,15 +40,41 @@ internal static class WebConfigEndpoints
         }
     }
 
+    /// <summary>PUT /api/config body 大小上限。超过则 413（防 DoS / 误传大文件灌爆 server 进程内存）。</summary>
+    private const long MaxConfigPayloadBytes = 1L * 1024 * 1024; // 1 MiB
+
     /// <summary>
     /// PUT /api/config body=完整 GlobalConfig JSON。
     /// 反序列化 → 替换 in-memory → ValidateCurrent → Save 写盘。
     /// 验证失败回 422，不污染磁盘 last-known-good。
+    /// P1-5：先做 Content-Type 与 payload 大小校验，避免误传大文件或非 JSON 内容时
+    /// 一路读到 StreamReader.ReadToEnd 才报错（更友好且节省内存）。
     /// </summary>
     public static void PutConfig(HttpListenerContext ctx)
     {
         try
         {
+            // P1-5 修复 B：Content-Type 必须是 application/json（允许带 charset 等参数，因此用 StartsWith）。
+            // 浏览器 fetch 默认 form-encoded → 早期拒绝避免 Newtonsoft 拿到完全不像 JSON 的 body 才 throw。
+            string contentType = ctx.Request.ContentType ?? "";
+            if (!contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Warn($"PUT /api/config rejected: Content-Type='{contentType}' (expected application/json)");
+                WebConfigServer.WriteError(ctx, 415, "unsupported_media_type",
+                    $"Content-Type must be application/json (got '{contentType}')");
+                return;
+            }
+
+            // P1-5 修复 A：payload 上限。HttpListener 设了 -1 = 未知，宽松通过（chunked encoding 走 ReadBody）。
+            long declared = ctx.Request.ContentLength64;
+            if (declared > MaxConfigPayloadBytes)
+            {
+                Logger.Warn($"PUT /api/config rejected: declared Content-Length={declared} 超过 {MaxConfigPayloadBytes}");
+                WebConfigServer.WriteError(ctx, 413, "payload_too_large",
+                    $"Request body {declared} bytes exceeds limit {MaxConfigPayloadBytes} bytes");
+                return;
+            }
+
             string body = ReadBody(ctx.Request);
             if (string.IsNullOrWhiteSpace(body))
             {
@@ -146,36 +170,17 @@ internal static class WebConfigEndpoints
         }
     }
 
-    /// <summary>GET /api/settlements → 玩家拥有的城/堡列表。</summary>
+    /// <summary>
+    /// GET /api/settlements → 玩家拥有的城/堡列表。
+    /// P0-6：HTTP handler 跑在 ThreadPool 线程，不能直接读 vanilla Town/Settlement/Clan。
+    /// 改读 <see cref="SettlementsSnapshot"/> 缓存（由 CampaignBehavior 在主线程刷新）。
+    /// </summary>
     public static void GetSettlements(HttpListenerContext ctx)
     {
         try
         {
-            var list = new List<object>();
-            var playerClan = Clan.PlayerClan;
-            if (playerClan != null)
-            {
-                foreach (var t in Town.AllTowns)
-                {
-                    try
-                    {
-                        if (t?.Settlement is null) continue;
-                        if (t.OwnerClan != playerClan) continue;
-                        var s = t.Settlement;
-                        list.Add(new
-                        {
-                            stringId = s.StringId ?? "",
-                            name = s.Name?.ToString() ?? s.StringId,
-                            isCastle = s.IsCastle,
-                        });
-                    }
-                    catch (Exception inner)
-                    {
-                        Logger.Error("GetSettlements: skipping one entry on error", inner);
-                    }
-                }
-            }
-            WebConfigServer.WriteJson(ctx, 200, new { settlements = list });
+            var snapshot = SettlementsSnapshot.Read();
+            WebConfigServer.WriteJson(ctx, 200, new { settlements = snapshot });
         }
         catch (Exception ex)
         {

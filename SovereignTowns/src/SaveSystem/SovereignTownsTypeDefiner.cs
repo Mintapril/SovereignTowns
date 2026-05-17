@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.SaveSystem;
 
 namespace SovereignTowns.SaveSystem;
@@ -44,5 +46,14 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         // 存档读写时序列化层无法识别该 enum 字段。
         AddEnumDefinition(typeof(Parties.StSallyPartyComponent.SallyPhase), 100);
         AddEnumDefinition(typeof(Parties.StRecruiterPartyComponent.RecruiterPhase), 101);
+    }
+
+    protected override void DefineContainerDefinitions()
+    {
+        // List<Settlement> 用于 StRecruiterPartyComponent._visitedThisTrip（B16.4a 修复 P1-2：
+        // 由 [CachedData] 改为 [SaveableField(23)] 以跨重启保留已访问村庄集合，
+        // 防止重启后候选评估推荐已访问村庄）。
+        // Settlement 本身由 vanilla MBObjectManager 注册，无需此处声明；只需声明 List<Settlement> 容器。
+        ConstructContainerDefinition(typeof(List<Settlement>));
     }
 }

@@ -230,6 +230,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
                 Logger.Info("  HINT: AutoPatrol 已禁用。global.json 改为 true 启用");
 
+            // P0-6：在玩家首次能打开网页面板之前先 seed 一次 settlements snapshot,避免
+            // daily tick 来之前 UI 调 /api/settlements 拿到空 list。Refresh 自带 try/catch。
+            SovereignTowns.WebConfig.SettlementsSnapshot.Refresh();
+
             // B7.5: 提示玩家打开网页面板 — 但 URL 含 session token，不能写日志 / 聊天面板（玩家分享
             // ModLogs 截图就会泄漏，攻击者可在 session 期间写任意配置）。改为只提示从城镇菜单进入。
             try
@@ -324,6 +328,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             DrainWebConfigSync();
             _sallyDispatcher?.OnHourlyTickSettlement(settlement);
+            // Round-1 P0-1：玩家驻自家首府时 vanilla 跳 HourlyTickSettlement → patrol 永远不新派。
+            // PatrolDispatcher 内部已有 cap 检查（CountExistingPatrolsAtHome），daily 多调一次幂等。
+            _patrolDispatcher?.OnHourlyTickSettlement(settlement);
             // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨由 CapitalLogisticsManager 在 DailyTick 统一调度。
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
             var mgr = _capitalRegistry?.GetForSettlement(settlement);
@@ -339,6 +346,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 Upgrades.GarrisonXpInjector.GiveDailyXpToGarrison(settlement);
                 _prisonerRecruitmentManager?.OnDailyTickSettlement(settlement);
             }
+
+            // P0-6 修复：刷新 SettlementsSnapshot,供 HTTP /api/settlements 端点读取(HTTP 线程
+            // 不能直接 touch vanilla 对象)。在 settlement-tick 末尾刷新,频率 ~ 1× 每城每日,
+            // 对一个玩家氏族 < 20 城来说总开销可忽略;UI 5 秒轮询不要求实时,daily 粒度足够。
+            SettlementsSnapshot.Refresh();
         }
         catch (Exception ex)
         {

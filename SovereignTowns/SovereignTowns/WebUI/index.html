@@ -1132,6 +1132,13 @@
 
         async reloadAll() {
           this.warning = '';
+          // 先让后端从磁盘 reload（POST /api/reload）—— 玩家手编 global.json 后点「↻ 重读」
+          // 才能拉到新值；否则 fetchConfig 拉到的还是进程内缓存。
+          // soft-fail：reload 失败仍继续刷新各面板，banner 提示而非 hard error。
+          const r = await this.http('POST', '/api/reload');
+          if (!r.ok) {
+            this.warning = `后端 reload 失败 HTTP ${r.status}: ${r.body?.message || '?'}（继续刷新面板）`;
+          }
           await Promise.all([
             this.fetchConfig(), this.fetchStatus(), this.fetchTroops(),
             this.fetchSettlements(),

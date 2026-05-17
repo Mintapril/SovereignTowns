@@ -45,10 +45,7 @@ public sealed class TownGarrisonRule
     /// <summary>允许招募的最高 Tier（含）。与 MinTier 配对使用。</summary>
     public int MaxTier { get; set; } = 5;
 
-    /// <summary>true = 仅允许 Town 所属王国文化的兵种；false = 不做文化限制。通用匹配默认不限制文化/阵营。</summary>
-    public bool RestrictToFactionCultures { get; set; } = false;
-
-    /// <summary>显式允许的文化 stringId 列表（空 = 全部允许，受 RestrictToFactionCultures 进一步约束）。</summary>
+    /// <summary>显式允许的文化 stringId 列表（空 = 全部允许）。</summary>
     public List<string> AllowedCultureIds { get; set; } = new();
 
     /// <summary>优先招募的兵种 stringId 列表。注意：本字段允许玩家显式指定，但 mod 默认 **不预填任何兵种 id**（RBM 兼容硬规则）。</summary>
@@ -56,9 +53,6 @@ public sealed class TownGarrisonRule
 
     /// <summary>禁止出现在驻军中的兵种 stringId 列表。默认也是空。</summary>
     public List<string> BannedTroopIds { get; set; } = new();
-
-    /// <summary>允许在缺人时招募 Tier &lt; MinTier 的填充兵。</summary>
-    public bool AllowLowTierFiller { get; set; } = true;
 
     /// <summary>允许招募贵族兵种（如 noble line）。</summary>
     public bool AllowNobleTroops { get; set; } = true;
@@ -109,11 +103,9 @@ public sealed class TownGarrisonRule
         RangedRatio = this.RangedRatio,
         MinTier = this.MinTier,
         MaxTier = this.MaxTier,
-        RestrictToFactionCultures = this.RestrictToFactionCultures,
         AllowedCultureIds = new List<string>(this.AllowedCultureIds ?? new List<string>()),
         PriorityTroopIds = new List<string>(this.PriorityTroopIds ?? new List<string>()),
         BannedTroopIds = new List<string>(this.BannedTroopIds ?? new List<string>()),
-        AllowLowTierFiller = this.AllowLowTierFiller,
         AllowNobleTroops = this.AllowNobleTroops,
         AllowPrisonerConversion = this.AllowPrisonerConversion,
         AllowAutoUpgrade = this.AllowAutoUpgrade,

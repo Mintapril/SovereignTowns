@@ -53,41 +53,45 @@ public static class DiagnosticGameMenu
 
         try
         {
-            // 常驻状态行：在玩家自有城显示「当前首府: <名>」（即使本城就是首府，也能让玩家确认）
-            starter.AddGameMenuOption(
-                menuId: "town",
-                optionId: "sovereign_towns_capital_status",
-                optionText: "{=!}{ST_CAPITAL_STATUS}",
-                condition: new GameMenuOption.OnConditionDelegate(IsCapitalStatusVisible),
-                consequence: new GameMenuOption.OnConsequenceDelegate(OnCapitalStatusSelected),
-                isLeave: false,
-                index: -1,
-                isRepeatable: true);
-            Logger.Info("DiagnosticGameMenu: registered 'sovereign_towns_capital_status'");
+            // 注册到 town + castle 两套菜单 — castle-only 玩家（早期氏族、攻陷后仅持城堡）也要能开网页面板。
+            // 「设为首府」的 condition 自身仍仅 s.IsTown == true 才显示（首府语义只允许 Town），
+            // 所以注册到 castle 菜单后该选项不会渲染，但 capital_status 和 open_web_config 在 castle 内会出现。
+            foreach (var menu in new[] { "town", "castle" })
+            {
+                // 常驻状态行：在玩家自有城/堡显示「当前首府: <名>」（IsCapitalStatusVisible 内做 town/castle 联合判定）
+                starter.AddGameMenuOption(
+                    menuId: menu,
+                    optionId: "sovereign_towns_capital_status",
+                    optionText: "{=!}{ST_CAPITAL_STATUS}",
+                    condition: new GameMenuOption.OnConditionDelegate(IsCapitalStatusVisible),
+                    consequence: new GameMenuOption.OnConsequenceDelegate(OnCapitalStatusSelected),
+                    isLeave: false,
+                    index: -1,
+                    isRepeatable: true);
 
-            starter.AddGameMenuOption(
-                menuId: "town",
-                optionId: "sovereign_towns_set_capital",
-                optionText: "主权城镇：设为首府",
-                condition: new GameMenuOption.OnConditionDelegate(IsSetCapitalAvailable),
-                consequence: new GameMenuOption.OnConsequenceDelegate(OnSetCapitalSelected),
-                isLeave: false,
-                index: -1,
-                isRepeatable: false);
-            Logger.Info("DiagnosticGameMenu: registered 'sovereign_towns_set_capital'");
+                starter.AddGameMenuOption(
+                    menuId: menu,
+                    optionId: "sovereign_towns_set_capital",
+                    optionText: "主权城镇：设为首府",
+                    condition: new GameMenuOption.OnConditionDelegate(IsSetCapitalAvailable),
+                    consequence: new GameMenuOption.OnConsequenceDelegate(OnSetCapitalSelected),
+                    isLeave: false,
+                    index: -1,
+                    isRepeatable: false);
 
-            // B7.5: web config entry. Available in any town menu — once we pivot to web-only
-            // configuration in Phase 2 this is the only player-facing config touchpoint.
-            starter.AddGameMenuOption(
-                menuId: "town",
-                optionId: "sovereign_towns_open_web_config",
-                optionText: "主权城镇：打开网页控制面板",
-                condition: new GameMenuOption.OnConditionDelegate(IsOpenWebConfigAvailable),
-                consequence: new GameMenuOption.OnConsequenceDelegate(OnOpenWebConfigSelected),
-                isLeave: false,
-                index: -1,
-                isRepeatable: true);
-            Logger.Info("DiagnosticGameMenu: registered 'sovereign_towns_open_web_config'");
+                // B7.5: web config entry. Available in any town/castle menu — once we pivot to web-only
+                // configuration in Phase 2 this is the only player-facing config touchpoint.
+                starter.AddGameMenuOption(
+                    menuId: menu,
+                    optionId: "sovereign_towns_open_web_config",
+                    optionText: "主权城镇：打开网页控制面板",
+                    condition: new GameMenuOption.OnConditionDelegate(IsOpenWebConfigAvailable),
+                    consequence: new GameMenuOption.OnConsequenceDelegate(OnOpenWebConfigSelected),
+                    isLeave: false,
+                    index: -1,
+                    isRepeatable: true);
+            }
+            Logger.Info("DiagnosticGameMenu: registered capital_status / set_capital / open_web_config on town + castle");
         }
         catch (Exception ex)
         {
@@ -120,7 +124,7 @@ public static class DiagnosticGameMenu
             if (string.IsNullOrEmpty(url))
             {
                 SafeDisplay("[主权城镇] 网页服务未启动；查看日志了解原因。", Colors.Yellow);
-                TryReturnToTownMenu();
+                TryReturnToSettlementMenu();
                 return;
             }
 
@@ -137,8 +141,14 @@ public static class DiagnosticGameMenu
             catch (Exception procEx)
             {
                 Logger.Error("Process.Start for web config URL failed", procEx);
-                // 启动失败时玩家需要 URL 来手动访问，无可避免；但仅写聊天面板，不进 Logger。
-                SafeDisplay($"[主权城镇] 浏览器启动失败。请手动访问：{url}", Colors.Yellow);
+                // 启动失败时玩家需要手动打开浏览器；但绝不能把含 token 的完整 URL 写进 chat
+                // —— 玩家若截图分享 mod 配置/驻军面板会泄漏 token 给本机其他进程。
+                // 只给 host:port 提示，token 由玩家自己从 Documents 下 auth.txt 读出。
+                int port = WebConfigServer.Port;
+                SafeDisplay(
+                    $"[主权城镇] 浏览器启动失败。请手动访问 http://127.0.0.1:{port}/ ，" +
+                    $"并从 Documents\\Mount and Blade II Bannerlord\\Configs\\SovereignTowns\\auth.txt 读取 token。",
+                    Colors.Yellow);
             }
         }
         catch (Exception ex)
@@ -147,7 +157,7 @@ public static class DiagnosticGameMenu
         }
         finally
         {
-            TryReturnToTownMenu();
+            TryReturnToSettlementMenu();
         }
     }
 
@@ -157,7 +167,7 @@ public static class DiagnosticGameMenu
     /// the capital subsystem is unavailable.
     /// </summary>
     /// <summary>
-    /// 「当前首府」常驻状态行 — 仅在玩家自有 town 显示。
+    /// 「当前首府」常驻状态行 — 在玩家自有 town/castle 显示。
     /// 通过 MBTextManager.SetTextVariable 把动态首府名注入 optionText 模板「{ST_CAPITAL_STATUS}」。
     /// </summary>
     private static bool IsCapitalStatusVisible(MenuCallbackArgs args)
@@ -165,7 +175,7 @@ public static class DiagnosticGameMenu
         try
         {
             var s = Settlement.CurrentSettlement;
-            if (s == null || !s.IsTown || s.OwnerClan != Clan.PlayerClan) return false;
+            if (s == null || (!s.IsTown && !s.IsCastle) || s.OwnerClan != Clan.PlayerClan) return false;
 
             var playerMgr = PlayerCapital;
             var capital = playerMgr?.GetCapital();
@@ -190,10 +200,10 @@ public static class DiagnosticGameMenu
         }
     }
 
-    /// <summary>状态行点击 consequence — 不应触发，但作为防御回弹回 town 菜单。</summary>
+    /// <summary>状态行点击 consequence — 不应触发，但作为防御回弹回原菜单。</summary>
     private static void OnCapitalStatusSelected(MenuCallbackArgs args)
     {
-        try { GameMenu.SwitchToMenu("town"); } catch { /* swallow */ }
+        TryReturnToSettlementMenu();
     }
 
     private static bool IsSetCapitalAvailable(MenuCallbackArgs args)
@@ -248,7 +258,7 @@ public static class DiagnosticGameMenu
         }
         finally
         {
-            TryReturnToTownMenu();
+            TryReturnToSettlementMenu();
         }
     }
 
@@ -269,19 +279,22 @@ public static class DiagnosticGameMenu
     }
 
     /// <summary>
-    /// Try to switch the player back to the vanilla "town" menu. <see cref="GameMenu.SwitchToMenu"/>
-    /// is the canonical API since v1.0; wrapped in try/catch as a paranoia measure in case a
-    /// future build renames or restricts it.
+    /// Try to switch the player back to the vanilla settlement menu the option was triggered from
+    /// ("town" or "castle"). <see cref="GameMenu.SwitchToMenu"/> is the canonical API since v1.0;
+    /// wrapped in try/catch as a paranoia measure. Falls back to "town" if the current settlement
+    /// is somehow null (defensive — shouldn't happen inside a settlement menu consequence).
     /// </summary>
-    private static void TryReturnToTownMenu()
+    private static void TryReturnToSettlementMenu()
     {
         try
         {
-            GameMenu.SwitchToMenu("town");
+            var s = Settlement.CurrentSettlement;
+            string menuId = (s != null && s.IsCastle) ? "castle" : "town";
+            GameMenu.SwitchToMenu(menuId);
         }
         catch (Exception ex)
         {
-            Logger.Error("DiagnosticGameMenu.TryReturnToTownMenu failed", ex);
+            Logger.Error("DiagnosticGameMenu.TryReturnToSettlementMenu failed", ex);
         }
     }
 }

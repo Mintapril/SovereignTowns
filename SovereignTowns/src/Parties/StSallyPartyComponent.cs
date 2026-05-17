@@ -48,7 +48,9 @@ public sealed class StSallyPartyComponent : StPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var settlementName = HomeSettlement?.Name?.ToString() ?? "未知";
+            // B16.4a P1-7：Name 必须容忍 _homeSettlement 为 null（损坏存档 / 序列化未完成时调用），
+            // 用 HomeSettlementOrNull 而非 HomeSettlement 以避免抛 InvalidOperationException。
+            var settlementName = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
             _cachedName = new TextObject("{=ST_SallyPartyName}出击队 - " + settlementName);
             return _cachedName;
         }
@@ -117,7 +119,10 @@ public sealed class StSallyPartyComponent : StPartyComponent
                 return null;
             }
             // B7.22：0 攻击性 — sally 仍会攻击指定 target（通过 SetMoveEngageParty），但不会半路追散兵
-            try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
+            // B16.4a P1-9：不再静默吞异常。Aggressiveness 是 vanilla 属性，setter 失败极罕见，
+            // 但若失败可能让 sally 队伍主动追散兵，需 warn 出来定位。
+            try { mobileParty.Aggressiveness = 0f; }
+            catch (Exception ex) { Logger.Warn($"StSallyPartyComponent.CreateForTown: failed to set Aggressiveness=0 for '{stringId}': {ex.Message}"); }
 
             // 注：troops 由 SallyDispatcher 通过 TroopTransferHelper.TransferFromGarrison 注入 + SnapshotInitialMembers
             return mobileParty;
@@ -140,7 +145,7 @@ public sealed class StSallyPartyComponent : StPartyComponent
                 {
                     if (!_forceReturnLogged)
                     {
-                        Logger.Warn($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' away {hoursAway:F1}h > {MaxSallyHours}h, force return to '{HomeSettlement?.Name}'");
+                        Logger.Warn($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' away {hoursAway:F1}h > {MaxSallyHours}h, force return to '{HomeSettlementOrNull?.Name}'");
                         _forceReturnLogged = true;
                     }
                     TransitionToReturning(self);
@@ -193,7 +198,8 @@ public sealed class StSallyPartyComponent : StPartyComponent
     /// </summary>
     protected override void OnArrivedHome(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：保留 null 防御分支 —— 用 HomeSettlementOrNull 避免抛诊断异常。
+        var home = HomeSettlementOrNull;
         if (home == null)
         {
             PartyMergeService.Instance.DisbandAndUntrack(self, "StSallyPartyComponent null home");
@@ -213,7 +219,8 @@ public sealed class StSallyPartyComponent : StPartyComponent
     {
         try
         {
-            var home = HomeSettlement;
+            // B16.4a P1-7：销毁路径必须容忍 null home（party 已损坏）—— 用 OrNull 跳过抛异常。
+            var home = HomeSettlementOrNull;
             var partyClan = self.ActualClan ?? home?.OwnerClan;
             Settlement? rescueTarget = null;
             var registry = CapitalRegistry.Instance;
@@ -262,11 +269,12 @@ public sealed class StSallyPartyComponent : StPartyComponent
     {
         try
         {
-            var home = HomeSettlement;
+            // B16.4a P1-7：保留 null 防御 —— 用 OrNull 优雅跳过。
+            var home = HomeSettlementOrNull;
             if (home == null) return;
             var dispatcher = SovereignTowns.Campaign.SovereignTownsCampaignBehavior.SallyDispatcher;
             dispatcher?.NotifySallyEnded(home);
         }
-        catch { /* swallow */ }
+        catch (Exception ex) { Logger.Warn($"NotifyDispatcherEnded: {ex.Message}"); }
     }
 }

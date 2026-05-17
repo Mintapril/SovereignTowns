@@ -468,6 +468,8 @@ public static class ConfigurationManager
         { reason = $"Thresholds.RecruiterEscortRatio invalid ({t.RecruiterEscortRatio}); must be in [0,1]"; return false; }
         if (t.RecruiterReturnRecruitedCount < 1)
         { reason = $"Thresholds.RecruiterReturnRecruitedCount invalid ({t.RecruiterReturnRecruitedCount}); must be >= 1"; return false; }
+        if (t.RecruiterReturnRecruitedCount > 1000)
+        { reason = $"Thresholds.RecruiterReturnRecruitedCount {t.RecruiterReturnRecruitedCount} 超过上限 1000"; return false; }
         if (!IsRatio(t.TransferCriticalProjectedRatio))
         { reason = $"Thresholds.TransferCriticalProjectedRatio invalid ({t.TransferCriticalProjectedRatio}); must be in [0,1]"; return false; }
         if (!IsRatio(t.TransferRatio))
@@ -482,8 +484,12 @@ public static class ConfigurationManager
         { reason = $"Thresholds.SallyExtractionRatio invalid ({t.SallyExtractionRatio}); must be in [0,1]"; return false; }
         if (!IsNonNegativeFloat(t.SallyTargetPartySizeMultiplier))
         { reason = $"Thresholds.SallyTargetPartySizeMultiplier invalid ({t.SallyTargetPartySizeMultiplier})"; return false; }
+        if (t.SallyTargetPartySizeMultiplier > 100f)
+        { reason = $"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} 超过上限 100"; return false; }
         if (t.SallyCreateMinPartyCount < 1)
         { reason = $"Thresholds.SallyCreateMinPartyCount invalid ({t.SallyCreateMinPartyCount}); must be >= 1"; return false; }
+        if (t.SallyCreateMinPartyCount > 1000)
+        { reason = $"Thresholds.SallyCreateMinPartyCount {t.SallyCreateMinPartyCount} 超过上限 1000"; return false; }
 
         reason = "";
         return true;
@@ -500,6 +506,11 @@ public static class ConfigurationManager
         if (rule.TargetTotalCount < 0)
         {
             reason = $"{ctx}.TargetTotalCount < 0";
+            return false;
+        }
+        if (rule.TargetTotalCount > 100_000)
+        {
+            reason = $"{ctx}.TargetTotalCount {rule.TargetTotalCount} 超过上限 100000";
             return false;
         }
         if (rule.ExactTroopTemplate is null)
@@ -520,9 +531,21 @@ public static class ConfigurationManager
                 return false;
             }
         }
-        if (rule.MinTier < 1 || rule.MaxTier < rule.MinTier || rule.MaxTier > 7)
+        // Vanilla CharacterObject.Tier 实际范围 1..6（spnpccharacters.xml + native CharacterTiers），
+        // 上限设 6 防止玩家手填 7 后通用匹配始终查不到兵种、模式静默失效。
+        if (rule.MinTier < 1 || rule.MinTier > 6)
         {
-            reason = $"{ctx}.MinTier/MaxTier invalid ({rule.MinTier}..{rule.MaxTier})";
+            reason = $"{ctx}.MinTier {rule.MinTier} 必须在 [1,6]";
+            return false;
+        }
+        if (rule.MaxTier > 6)
+        {
+            reason = $"{ctx}.MaxTier {rule.MaxTier} 超过 vanilla 上限 6";
+            return false;
+        }
+        if (rule.MaxTier < rule.MinTier)
+        {
+            reason = $"{ctx}.MaxTier {rule.MaxTier} < MinTier {rule.MinTier}";
             return false;
         }
         if (!IsRatio(rule.MinimumDefenderRatio))
@@ -535,9 +558,24 @@ public static class ConfigurationManager
             reason = $"{ctx}.BudgetLimit < 0";
             return false;
         }
+        if (rule.BudgetLimit > 10_000_000)
+        {
+            reason = $"{ctx}.BudgetLimit {rule.BudgetLimit} 超过上限 10000000";
+            return false;
+        }
         if (rule.WartimeMultiplier < 0f || rule.PeacetimeMultiplier < 0f)
         {
             reason = $"{ctx}.WartimeMultiplier/PeacetimeMultiplier must be >= 0";
+            return false;
+        }
+        if (rule.WartimeMultiplier > 10f)
+        {
+            reason = $"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} 超过上限 10";
+            return false;
+        }
+        if (rule.PeacetimeMultiplier > 10f)
+        {
+            reason = $"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} 超过上限 10";
             return false;
         }
         if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)

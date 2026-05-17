@@ -30,7 +30,24 @@ public abstract class StPartyComponent : CustomPartyComponent
 
     // ── vanilla CustomPartyComponent 抽象成员 ──
     // 注：Name cache 留给子类（每个子类的 Name 文案不同），基类不持有 _cachedName。
-    public override Settlement HomeSettlement => _homeSettlement!;
+    public override Settlement HomeSettlement
+    {
+        get
+        {
+            if (_homeSettlement == null)
+                throw new InvalidOperationException($"{GetType().Name}.HomeSettlement is null — likely caused by corrupted save or missing SaveableField(10).");
+            return _homeSettlement;
+        }
+    }
+
+    /// <summary>
+    /// 仅用于"必须容忍 null"的诊断 / 恢复路径（B16.4a P1-7 修复）：
+    /// 例如 <see cref="SovereignTowns.Lifecycle.PartyLifecycleManager.RebuildFromCampaign"/>
+    /// 在 collect 阶段需要安静跳过损坏存档中 _homeSettlement 为 null 的 component。
+    /// 常规运行路径请仍走 <see cref="HomeSettlement"/>，由其抛出明确异常以便定位损坏数据。
+    /// </summary>
+    public Settlement? HomeSettlementOrNull => _homeSettlement;
+
     public override Hero? PartyOwner => _homeSettlement?.OwnerClan?.Leader;
     public abstract override TextObject Name { get; }
     public abstract override bool AvoidHostileActions { get; }
@@ -121,7 +138,8 @@ public abstract class StPartyComponent : CustomPartyComponent
         var registry = CapitalRegistry.Instance;
         if (registry == null) return false;
 
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义；HomeSettlement 在损坏存档下会抛诊断异常。
+        var home = HomeSettlementOrNull;
         capital = registry.GetCapitalForClan(partyClan);
         if (home == null) return false;
 
@@ -148,7 +166,8 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// party 当前位置是否在 home。基类判定：CurrentSettlement == home OR LastVisitedSettlement == home。
     protected bool IsAtHome(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
+        var home = HomeSettlementOrNull;
         if (home == null) return false;
         return self.CurrentSettlement == home || self.LastVisitedSettlement == home;
     }
@@ -156,7 +175,8 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// 把 party 设回 home 方向（vanilla AI 接管移动）。
     protected void ReturnToHome(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
+        var home = HomeSettlementOrNull;
         if (home == null) return;
         try { self.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false); }
         catch (Exception ex)
@@ -168,7 +188,8 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// 转兵进 home garrison + 解散 + untrack。
     protected void DefaultMergeAndDisband(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
+        var home = HomeSettlementOrNull;
         if (home == null)
         {
             PartyMergeService.Instance.DisbandAndUntrack(self, $"{GetType().Name} null home in DefaultMergeAndDisband");

@@ -61,7 +61,6 @@ public static class AiCulturePresets
         rule.UseGenericMatching = true;
         rule.MinTier = 1;
         rule.MaxTier = 6;
-        rule.RestrictToFactionCultures = false;
         rule.AllowedCultureIds = new List<string> { cultureStringId! };
         rule.CavalryRatio = r.Cav;
         rule.HorseArcherRatio = r.HorseArcher;

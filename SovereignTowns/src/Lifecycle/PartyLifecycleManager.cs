@@ -179,7 +179,9 @@ public sealed class PartyLifecycleManager
                             if (party == null) continue;
                             if (party.PartyComponent is SovereignTowns.Parties.StPartyComponent stc)
                             {
-                                var home = stc.HomeSettlement;
+                                // B16.4a P1-7：损坏存档防御 — _homeSettlement 可能为 null。
+                                // 使用 HomeSettlementOrNull 避免触发 HomeSettlement 的诊断异常。
+                                var home = stc.HomeSettlementOrNull;
                                 if (home == null) { skipped++; continue; }
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
                                 string kind = stc switch
@@ -363,6 +365,7 @@ public sealed class PartyLifecycleManager
             }
 
             // B7.26：通知所有 clan scheduler 该 party 已销毁，清掉瞬态字典里的条目（防 MBGUID 复用脏数据）。
+            // B16.4a P1-8：RecruiterScheduler 同步加入通知，否则 _lastStopChangedAt / _lastSeenLocation 内存泄漏。
             try
             {
                 var reg = SovereignTowns.Capital.CapitalRegistry.Instance;
@@ -371,7 +374,9 @@ public sealed class PartyLifecycleManager
                     foreach (var mgr in reg.AllManagers)
                     {
                         try { mgr?.PatrolScheduler?.NotifyPartyDestroyed(party); }
-                        catch (Exception ex) { Logger.Warn("scheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
+                        catch (Exception ex) { Logger.Warn("PatrolScheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
+                        try { mgr?.RecruiterScheduler?.NotifyPartyDestroyed(party); }
+                        catch (Exception ex) { Logger.Warn("RecruiterScheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
                     }
                 }
             }
@@ -387,12 +392,13 @@ public sealed class PartyLifecycleManager
 
     private void OnHourlyTickParty(MobileParty party)
     {
-        // 首行过滤：非本 Mod 队伍立即返回
-        if (party is null) return;
-        if (!_tracked.TryGetValue(party, out var meta)) return;
-
         try
         {
+            // CLAUDE.md 硬约束 #5：事件 handler 整段必须包在 try / catch 内，
+            // 因此首行过滤也放进 try（B16.4a H2 修复 — 原版 line 391-392 在 try 外）。
+            if (party is null) return;
+            if (!_tracked.TryGetValue(party, out var meta)) return;
+
             // B16.1：StPartyComponent 状态机分派必须在所有 early-return（idle 检测）之前，
             // 否则正常 in-flight 队伍（无 progress + idle < 24h）走不到这里，
             // OnHourlyTickCore（含到达 dest → DeliverAndDisband 分支）永远不触发。

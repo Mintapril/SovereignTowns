@@ -24,10 +24,13 @@ namespace SovereignTowns.Parties;
 /// <summary>
 /// 征兵队伍组件（B16.3）。显式 RecruiterPhase 状态机（Dispatching / AtVillage / Travelling / Returning）。
 ///
-/// 实例化字段 <see cref="_visitedThisTrip"/> 是 [CachedData]：跟随 party 销毁自然 GC，
-/// 不需要全局 Dict + OnMobilePartyDestroyed 清理代码。
+/// 实例化字段 <see cref="_visitedThisTrip"/> 是 [SaveableField(23)] (B16.4a P1-2 修复)：
+/// 由 [CachedData] 改回持久化以保证重启后候选评估不会推荐已访问村庄。
+/// 改用 List&lt;Settlement&gt; 而非 HashSet 因为：(1) vanilla SaveSystem 不直接支持 HashSet 序列化，
+/// (2) 单次招兵 trip 平均访问 &lt; 10 个村庄，O(n) Contains 完全够用。
+/// 容器声明：见 SovereignTownsTypeDefiner.DefineContainerDefinitions。
 ///
-/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 23)。
+/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 24)。
 /// </summary>
 public sealed class StRecruiterPartyComponent : StPartyComponent
 {
@@ -52,10 +55,25 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     [SaveableField(20)] private int _recruitedThisTrip;
     [SaveableField(21)] private Settlement? _assignedTarget;
     [SaveableField(22)] private RecruiterPhase _phase = RecruiterPhase.Dispatching;
+    [SaveableField(23)] private List<Settlement> _visitedThisTrip = new List<Settlement>();
     [CachedData] private TextObject? _cachedName;
-    [CachedData] private HashSet<Settlement>? _visitedThisTrip;
 
-    private HashSet<Settlement> VisitedThisTrip => _visitedThisTrip ??= new HashSet<Settlement>();
+    private List<Settlement> VisitedThisTrip
+    {
+        get
+        {
+            // 读档兼容：旧存档中 _visitedThisTrip 为 null（字段不存在），lazy init 以维持非 null 不变式。
+            if (_visitedThisTrip == null) _visitedThisTrip = new List<Settlement>();
+            return _visitedThisTrip;
+        }
+    }
+
+    private void MarkVisited(Settlement s)
+    {
+        if (s == null) return;
+        var list = VisitedThisTrip;
+        if (!list.Contains(s)) list.Add(s);
+    }
 
     public int RecruitedThisTrip => _recruitedThisTrip;
     public Settlement? AssignedTarget => _assignedTarget;
@@ -69,7 +87,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var s = HomeSettlement?.Name?.ToString() ?? "未知";
+            // B16.4a P1-7：Name 必须容忍 _homeSettlement 为 null（损坏存档 / 序列化未完成时调用），
+            // 用 HomeSettlementOrNull 而非 HomeSettlement 以避免抛 InvalidOperationException。
+            var s = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
             _cachedName = new TextObject("{=ST_RecruiterPartyName}征兵队 - " + s);
             return _cachedName;
         }
@@ -170,7 +190,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     /// </summary>
     private void HandleDispatching(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：保留 null 防御 —— 用 OrNull 而非抛诊断异常版的 HomeSettlement。
+        var home = HomeSettlementOrNull;
         if (home == null) return;
         var next = ResolveDepartureTarget(self, home);
         if (next == null || next == home)
@@ -187,7 +208,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     /// </summary>
     private void HandleAtVillage(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
+        var home = HomeSettlementOrNull;
         if (home == null) return;
 
         var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
@@ -218,7 +240,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         if (!IsRecruitmentTargetStillValid(currentSettlement, home))
         {
             Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，重新规划");
-            VisitedThisTrip.Add(currentSettlement);
+            MarkVisited(currentSettlement);
             var replacement = PlanNextHop(self, home);
             MoveTo(self, replacement ?? home, "invalid arrived village");
             _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
@@ -231,7 +253,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             RecordRecruited(recruited);
             RecruitmentCooldown.MarkRecruited(currentSettlement);
         }
-        VisitedThisTrip.Add(currentSettlement);
+        MarkVisited(currentSettlement);
 
         int returnThreshold = ReturnRecruitedCount;
         if (_recruitedThisTrip >= returnThreshold)
@@ -264,7 +286,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     /// </summary>
     private void HandleTravelling(MobileParty self)
     {
-        var home = HomeSettlement;
+        // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
+        var home = HomeSettlementOrNull;
         if (home == null) return;
 
         // 抵达 _assignedTarget（即 vanilla CurrentSettlement 或 LastVisitedSettlement 与 _assignedTarget 一致）
@@ -310,7 +333,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             if (targetSettlement.IsVillage && !IsRecruitmentTargetStillValid(targetSettlement, home))
             {
                 Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' 已失效，重新规划");
-                VisitedThisTrip.Add(targetSettlement);
+                MarkVisited(targetSettlement);
                 var replacement = PlanNextHop(self, home);
                 MoveTo(self, replacement ?? home, "invalid road target");
                 _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
@@ -321,7 +344,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             if (risk.Level >= RiskLevel.High)
             {
                 Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' risk={risk.Level}，重新规划");
-                VisitedThisTrip.Add(targetSettlement);
+                MarkVisited(targetSettlement);
                 var replacement = PlanNextHop(self, home);
                 MoveTo(self, replacement ?? home, "risky road target");
                 _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;

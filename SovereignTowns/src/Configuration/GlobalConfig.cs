@@ -160,9 +160,6 @@ public sealed class ClanRecruiterConfig
     /// <summary>ETA 估算的余量小时。</summary>
     public float EtaBufferHours { get; set; } = 1.0f;
 
-    /// <summary>单段路超过此时长视为卡死，强制重选下一站村庄。</summary>
-    public float StuckTimeoutHours { get; set; } = 12.0f;
-
     /// <summary>同一村庄的最小回访间隔（防多支征兵队反复同点）。</summary>
     public float MinVisitGapHours { get; set; } = 4.0f;
 
