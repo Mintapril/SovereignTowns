@@ -40,6 +40,12 @@ public sealed class RecruitingPartyComponent : CustomPartyComponent
     [SaveableField(1)]
     private Settlement? _homeSettlement;
 
+    [SaveableField(2)]
+    private int _recruitedThisTrip;
+
+    [SaveableField(3)]
+    private Settlement? _assignedTarget;
+
     [CachedData]
     private TextObject? _cachedName;
 
@@ -63,6 +69,21 @@ public sealed class RecruitingPartyComponent : CustomPartyComponent
     public override Settlement HomeSettlement => _homeSettlement!;
 
     public override bool AvoidHostileActions => true;
+
+    public int RecruitedThisTrip => _recruitedThisTrip;
+
+    public Settlement? AssignedTarget => _assignedTarget;
+
+    public void RecordRecruited(int count)
+    {
+        if (count <= 0) return;
+        _recruitedThisTrip += count;
+    }
+
+    public void SetAssignedTarget(Settlement? target)
+    {
+        _assignedTarget = target;
+    }
 
     /// <summary>
     /// 私有构造器。只被同类的 <see cref="CreateForTown"/> 工厂调用，

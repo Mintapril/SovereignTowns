@@ -767,7 +767,7 @@
             <!-- Party Thresholds -->
             <div>
               <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-2">队 伍 创 建 阈 值</h3>
-              <p class="text-parchment-200 text-[13px] mb-4">原先散落在代码里的硬编码人数 / 比例。默认值不变，调整后立即影响下一次 tick。</p>
+              <p class="text-parchment-200 text-[13px] mb-4">原先散落在代码里的队伍阈值。人数类阈值均按实际驻军比例换算，调整后立即影响下一次 tick。</p>
               <div class="space-y-5">
                 <template x-for="s in thresholdSpecs" :key="s.key">
                   <div class="grid grid-cols-12 gap-4 items-center">
@@ -1010,7 +1010,7 @@
 
         budgetSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true },
-          { key: 'MinimumDefenders', label: '最少防守人数', hint: '仅约束「主动出击」：出击队不会让驻军跌破此值。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 300, discrete: true },
+          { key: 'MinimumDefenderRatio', label: '最少防守比例', hint: '仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 1, discrete: false, step: 0.05 },
           { key: 'BudgetLimit', label: '招募预算上限', hint: '单日招募预算 denar', min: 0, max: 50000, discrete: true },
           { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '战争状态时目标人数倍数', min: 0.5, max: 2.0, discrete: false },
           { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '和平时期目标人数倍数', min: 0.5, max: 2.0, discrete: false },
@@ -1027,28 +1027,30 @@
         resourceSpecs: [
           { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5 },
           { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
-          { key: 'RecruiterReturnThreshold', root: '', label: '征兵队回首府阈值', hint: '征兵队总人数达此值立即回首府 (10–200)', min: 10, max: 200, discrete: true },
         ],
 
-        // 原先散落在 PatrolManager / RecruitmentManager / CapitalLogisticsManager 内的硬编码人数 / 比例。
-        // 默认值与历史 const 一致；面板调整后下次 tick 生效（无须重启）。
+        // 原先散落在 PatrolManager / RecruitmentManager / CapitalLogisticsManager / SallyForthManager 内的阈值。
+        // 人数阈值统一按当前实际驻军比例派生；面板调整后下次 tick 生效（无须重启）。
         thresholdSpecs: [
-          { key: 'PatrolMinCapitalGarrison', root: 'Thresholds', label: '巡逻队：首府驻军最低人数', hint: '首府驻军达到此值才允许创建新巡逻队（默认 40）', min: 0, max: 300, discrete: true },
-          { key: 'PatrolTroopBatchSize', root: 'Thresholds', label: '巡逻队：每次抽兵数', hint: '新建巡逻队时从首府驻军抽走的兵员数（默认 15）', min: 1, max: 100, discrete: true },
-          { key: 'PatrolMinMembersBeforeMerge', root: 'Thresholds', label: '巡逻队：合并阈值', hint: '巡逻队兵员低于此值回首府合并入驻军（默认 5）', min: 0, max: 50, discrete: true },
-          { key: 'PatrolMinMembersForHeal', root: 'Thresholds', label: '巡逻队：治疗阈值', hint: '巡逻队兵员低于此值且健康差时回首府治疗（默认 8）', min: 0, max: 50, discrete: true },
-          { key: 'PatrolHealHealthyRatio', root: 'Thresholds', label: '巡逻队：健康比例下限', hint: '健康兵员比例低于此值视为需要治疗（默认 0.6）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: '通用：回城解散兵员比例', hint: '本mod除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散（默认 0.5）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: '通用：回城解散受伤比例', hint: '本mod除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散（默认 0.3）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: '巡逻队：创建后保留比例', hint: '创建巡逻队后首府至少保留实际驻军 × 此比例（默认 0.8）', min: 0, max: 1, discrete: false, step: 0.01 },
+          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: '巡逻队：每次抽兵比例', hint: '新建巡逻队时从首府实际驻军抽走的比例（默认 0.10）', min: 0, max: 1, discrete: false, step: 0.01 },
           { key: 'RecruiterEscortRatio', root: 'Thresholds', label: '征兵队：护卫比例', hint: '派出征兵队时从首府驻军抽取的护卫比例（默认 0.10）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'TransferCriticalDeficitMultiplier', root: 'Thresholds', label: '调拨：危急缺口乘数', hint: '驻军 < MinimumDefenders × 此值 → 视为危急（默认 1.2）', min: 1.0, max: 3.0, discrete: false, step: 0.1 },
+          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: '征兵队：招募返航人数', hint: '本趟实际招募人数（不含护卫）达到此值即返航（默认 50）', min: 1, max: 500, discrete: true },
+          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: '调拨：危急驻军比例', hint: '预计驻军低于目标驻军 × 此比例时视为危急（默认 0.24）', min: 0, max: 1, discrete: false, step: 0.01 },
           { key: 'TransferRatio', root: 'Thresholds', label: '调拨：源城抽取比例', hint: '从源城驻军中按此比例抽取（默认 0.30）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'TransferMaxTroopsPerTask', root: 'Thresholds', label: '调拨：单次上限', hint: '单次调拨任务最多搬运多少兵员（默认 100）', min: 1, max: 500, discrete: true },
-          { key: 'TransferMinTroops', root: 'Thresholds', label: '调拨：单次下限', hint: '算出来的调拨人数低于此值放弃任务（默认 20）', min: 0, max: 200, discrete: true },
-          { key: 'RecruitmentMinDemand', root: 'Thresholds', label: '征兵：派遣缺口下限', hint: '剩余缺口低于此值不再派征兵队（默认 10）', min: 1, max: 200, discrete: true },
+          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: '调拨：单次上限比例', hint: '单次调拨最多搬运源城实际驻军 × 此比例（默认 0.67）', min: 0, max: 1, discrete: false, step: 0.01 },
+          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: '调拨：单次下限比例', hint: '算出的调拨人数低于源城实际驻军 × 此比例则放弃（默认 0.13）', min: 0, max: 1, discrete: false, step: 0.01 },
+          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: '征兵：派遣缺口比例', hint: '剩余缺口低于首府实际驻军 × 此比例不再派征兵队（默认 0.07）', min: 0, max: 1, discrete: false, step: 0.01 },
+          { key: 'SallyExtractionRatio', root: 'Thresholds', label: '主动出击：驻军上限比例', hint: '主动出击人数不会超过当前实际驻军 × 此比例（默认 0.60）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: '主动出击：目标兵力倍数', hint: '出击队目标人数 = 敌方目标部队人数 × 此倍数（默认 2.0）', min: 0, max: 5, discrete: false, step: 0.25 },
+          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: '主动出击：创建下限人数', hint: '计算后得到的出击队人数低于此值时不出击（默认 30）', min: 1, max: 500, discrete: true },
         ],
 
         perSettlementNumericSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', min: 50, max: 500, discrete: true },
-          { key: 'MinimumDefenders', label: '最少防守人数', min: 0, max: 300, discrete: true },
+          { key: 'MinimumDefenderRatio', label: '最少防守比例', min: 0, max: 1, discrete: false, step: 0.05 },
           { key: 'BudgetLimit', label: '招募预算上限', min: 0, max: 50000, discrete: true },
           { key: 'WartimeMultiplier', label: '战时目标乘数', min: 0.5, max: 2.0, discrete: false },
           { key: 'PeacetimeMultiplier', label: '和平目标乘数', min: 0.5, max: 2.0, discrete: false },
@@ -1159,6 +1161,7 @@
             r.body.GlobalDefaults.ExactTroopTemplate = r.body.GlobalDefaults.ExactTroopTemplate || {};
             r.body.PerSettlementOverrides = r.body.PerSettlementOverrides || {};
             r.body.EnabledFeatures = r.body.EnabledFeatures || {};
+            r.body.Thresholds = r.body.Thresholds || {};
             this.config = r.body;
             this.log('配置已读取', 'ok');
           } else {

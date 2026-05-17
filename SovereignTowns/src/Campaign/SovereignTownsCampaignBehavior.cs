@@ -342,6 +342,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             _battleLootManager?.OnMapEventEnded(mapEvent);
             _sallyForthManager?.OnMapEventEnded(mapEvent);
+            _patrolManager?.OnMapEventEnded(mapEvent);
+            _recruitmentManager?.OnMapEventEnded(mapEvent);
         }
         catch (Exception ex)
         {

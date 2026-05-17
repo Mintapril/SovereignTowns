@@ -26,22 +26,14 @@ public sealed class GlobalConfig
     // B7.20：DailyPrisonerConformityAmount 字段已删除，改为按城镇地牢建筑等级派生
     // （PrisonerRecruitmentManager.ComputeConformityFromDungeon），不再可配置。
 
-    // B7.24：RecruiterEscortSize 字段已删除 — 改为按 garrison × 10% 派生（RecruitmentManager.EscortRatio）。
-    // 算出来 < 50 时 0 护卫派遣，征兵队不被驻军下限限制（用户明确）。
+    // B7.24：RecruiterEscortSize 字段已删除 — 改为按 garrison × RecruiterEscortRatio 派生。
+    // 征兵队护卫不设固定人数 floor，也不被驻军下限限制（用户明确）。
 
     /// <summary>
     /// 同一 village 被征兵队招过之后多少小时内不再被列为候选（等待 vanilla 刷兵）。
     /// vanilla volunteer 大约每 24h 刷新 1 槽位，72h ≈ 完整 6 槽位中刷 3 槽位，避免空跑。
     /// </summary>
     public int VillageCooldownHours { get; set; } = 72;
-
-    /// <summary>
-    /// 征兵队队伍总人数（含基础护卫）达到此值时立刻终止巡回并回首府。
-    /// </summary>
-    public int RecruiterReturnThreshold { get; set; } = 30;
-
-    // B7.20：RecruiterVolunteerMultiplier (硬编码 2.0) 与 RecruiterCostDiscount (硬编码 0.5)
-    // 已删除可配置入口 — 直接写死到 RecruitmentManager.RecruitFromTargetVillage 内的常量。
 
     /// <summary>
     /// B7.26：全氏族巡逻调度配置。由 ClanPatrolScheduler 消费。
@@ -179,44 +171,55 @@ public sealed class ClanRecruiterConfig
 }
 
 /// <summary>
-/// 队伍创建相关的人数 / 比例阈值。所有字段都对应原先散落在各 Manager 内的硬编码常量，
-/// 默认值与历史值等价；玩家可通过网页面板调整。
+/// 队伍创建和调度阈值。所有人数阈值均使用实际驻军（Town.GarrisonParty，不含民兵）
+/// 的比例派生，避免大城与小城共用固定人数造成调度失真。
 /// </summary>
 public sealed class PartyThresholds
 {
+    // ── 通用回城解散条件（适用于本 mod 创建的非调拨部队：巡逻 / 征兵 / 主动出击） ──
+    /// <summary>当前实际兵员低于出发时兵员 × 此比例 → 回首府解散。默认 0.5。</summary>
+    public float PartyReturnSizeRatio { get; set; } = 0.5f;
+
+    /// <summary>当前受伤兵员 / 当前全部兵员 高于此比例 → 回首府解散。默认 0.3。</summary>
+    public float PartyReturnWoundedRatio { get; set; } = 0.3f;
+
     // ── 巡逻队（PatrolManager） ─────────────────────────────────────────────
-    /// <summary>首府驻军达到此值才允许创建新巡逻队（避免抽空驻军）。原硬编码 = 40。</summary>
-    public int PatrolMinCapitalGarrison { get; set; } = 40;
+    /// <summary>创建巡逻队后首府必须保留的实际驻军比例。默认 0.8（高保留，避免抽空驻军）。</summary>
+    public float PatrolReserveAfterCreationRatio { get; set; } = 0.8f;
 
-    /// <summary>新建巡逻队时从首府驻军抽走的兵员数。原硬编码 = 15。</summary>
-    public int PatrolTroopBatchSize { get; set; } = 15;
-
-    /// <summary>巡逻队兵员低于此值时回首府合并入驻军。原硬编码 = 5。</summary>
-    public int PatrolMinMembersBeforeMerge { get; set; } = 5;
-
-    /// <summary>巡逻队兵员低于此值且健康比例不佳时回首府治疗。原硬编码 = 8。</summary>
-    public int PatrolMinMembersForHeal { get; set; } = 8;
-
-    /// <summary>巡逻队健康兵员比例阈值（低于此值触发 Heal）。原硬编码 = 0.6。</summary>
-    public float PatrolHealHealthyRatio { get; set; } = 0.6f;
+    /// <summary>新建巡逻队时从首府驻军抽走 garrison × 此比例的兵员。原硬编码 15/150 = 0.10。</summary>
+    public float PatrolTroopBatchRatio { get; set; } = 0.10f;
 
     // ── 征兵队（RecruitmentManager） ────────────────────────────────────────
     /// <summary>派出征兵队时从首府驻军抽取的护卫比例（0–1）。原硬编码 = 0.10（10%）。</summary>
     public float RecruiterEscortRatio { get; set; } = 0.10f;
 
+    /// <summary>本趟实际招募人数（不含护卫）达到此值即返航。默认 50。</summary>
+    public int RecruiterReturnRecruitedCount { get; set; } = 50;
+
     // ── 调拨 / 调度（CapitalLogisticsManager） ─────────────────────────────
-    /// <summary>驻军 &lt; MinimumDefenders × 此乘数 → 视为危急缺口（优先级最高）。原硬编码 = 1.2。</summary>
-    public float TransferCriticalDeficitMultiplier { get; set; } = 1.2f;
+    /// <summary>预计驻军低于 DesiredTarget × 此比例 → 视为危急缺口。原硬编码 36/150 ≈ 0.24。</summary>
+    public float TransferCriticalProjectedRatio { get; set; } = 0.24f;
 
     /// <summary>从源城驻军中按此比例抽取（再受 dest demand 与 MaxTroopsPerTask 钳制）。原硬编码 = 0.30。</summary>
     public float TransferRatio { get; set; } = 0.30f;
 
-    /// <summary>单次调拨任务最多搬运多少兵员。原硬编码 = 100。</summary>
-    public int TransferMaxTroopsPerTask { get; set; } = 100;
+    /// <summary>单次调拨最多搬运 source garrison × 此比例的兵员。原硬编码 100/150 ≈ 0.67。</summary>
+    public float TransferMaxTroopsPerTaskRatio { get; set; } = 0.67f;
 
-    /// <summary>算出来的调拨人数 &lt; 此值则放弃任务（除非缺口已临界）。原硬编码 = 20。</summary>
-    public int TransferMinTroops { get; set; } = 20;
+    /// <summary>算出的调拨人数低于 source garrison × 此比例则放弃任务（除非缺口已临界）。原硬编码 20/150 ≈ 0.13。</summary>
+    public float TransferMinTroopRatio { get; set; } = 0.13f;
 
-    /// <summary>派征兵队的缺口下限（剩余缺口 &lt; 此值不再派）。原硬编码 = 10。</summary>
-    public int RecruitmentMinDemand { get; set; } = 10;
+    /// <summary>派征兵队的缺口下限：capital garrison × 此比例。原硬编码 10/150 ≈ 0.07。</summary>
+    public float RecruitmentMinDemandRatio { get; set; } = 0.07f;
+
+    // ── 主动出击（SallyForthManager） ─────────────────────────────────────
+    /// <summary>主动出击时抽取当前实际驻军的比例。原硬编码 = 0.60。</summary>
+    public float SallyExtractionRatio { get; set; } = 0.60f;
+
+    /// <summary>主动出击人数 = 目标敌军人数 × 此倍数，再受驻军抽取比例和保留比例钳制。默认 = 2.0。</summary>
+    public float SallyTargetPartySizeMultiplier { get; set; } = 2.0f;
+
+    /// <summary>出击队创建下限：计算后得到的出击队人数低于此值时不出击。默认 30。</summary>
+    public int SallyCreateMinPartyCount { get; set; } = 30;
 }

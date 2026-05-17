@@ -26,18 +26,17 @@ namespace SovereignTowns.Managers;
 /// </summary>
 public sealed class CapitalLogisticsManager
 {
-    // 人数 / 比例阈值改读 PartyThresholds（玩家可在网页面板调）。CriticalDeficitMultiplier
-    // 还在 LogisticsNode 内被读，所以这里用 internal 静态属性而非 const。
-    internal static float CriticalDeficitMultiplier
-        => ConfigurationManager.Current?.Thresholds?.TransferCriticalDeficitMultiplier ?? 1.2f;
+    // 阈值改读 PartyThresholds（玩家可在网页面板调）。人数阈值均按实际驻军比例派生。
+    internal static float CriticalProjectedRatio
+        => ConfigurationManager.Current?.Thresholds?.TransferCriticalProjectedRatio ?? 0.24f;
     private static float TransferRatio
         => ConfigurationManager.Current?.Thresholds?.TransferRatio ?? 0.30f;
-    private static int MaxTroopsPerTask
-        => ConfigurationManager.Current?.Thresholds?.TransferMaxTroopsPerTask ?? 100;
-    private static int MinTransferTroops
-        => ConfigurationManager.Current?.Thresholds?.TransferMinTroops ?? 20;
-    private static int MinRecruitmentDemand
-        => ConfigurationManager.Current?.Thresholds?.RecruitmentMinDemand ?? 10;
+    private static float MaxTroopsPerTaskRatio
+        => ConfigurationManager.Current?.Thresholds?.TransferMaxTroopsPerTaskRatio ?? 0.67f;
+    private static float MinTransferTroopRatio
+        => ConfigurationManager.Current?.Thresholds?.TransferMinTroopRatio ?? 0.13f;
+    private static float MinRecruitmentDemandRatio
+        => ConfigurationManager.Current?.Thresholds?.RecruitmentMinDemandRatio ?? 0.07f;
 
     private const float MaxPairDistance = 100f;
 
@@ -170,7 +169,7 @@ public sealed class CapitalLogisticsManager
             ? rule.WartimeMultiplier
             : rule.PeacetimeMultiplier;
         int scaled = (int)Math.Round(rule.TargetTotalCount * multiplier);
-        return Math.Max(rule.MinimumDefenders, Math.Max(1, scaled));
+        return Math.Max(1, scaled);
     }
 
     private static void AccountInFlightParties(List<LogisticsNode> nodes, Clan? ownerClan)
@@ -341,7 +340,10 @@ public sealed class CapitalLogisticsManager
 
             int remainingDemand = Math.Max(0, totalDemand - inPlace);
             int remainingCriticalDemand = Math.Max(0, criticalDemand - inPlace);
-            if (remainingDemand >= MinRecruitmentDemand || remainingCriticalDemand > 0)
+            int recruitmentDemandThreshold = Math.Max(
+                1,
+                GarrisonThresholdMath.CountFromRatio(capitalNode.CurrentMen, MinRecruitmentDemandRatio, minimumWhenPositive: 1));
+            if (remainingDemand >= recruitmentDemandThreshold || remainingCriticalDemand > 0)
             {
                 _recruitmentManager.TryDispatchRecruiter(capitalNode.Town, Math.Max(remainingDemand, remainingCriticalDemand), reason);
             }
@@ -386,13 +388,16 @@ public sealed class CapitalLogisticsManager
                     if (source == null) break;
 
                     int capacity = remainingCapacity[source.Settlement];
+                    int maxTroopsPerTask = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MaxTroopsPerTaskRatio, minimumWhenPositive: 1);
+                    if (maxTroopsPerTask <= 0) break;
                     int byRatio = Math.Max(1, (int)Math.Round(source.CurrentMen * TransferRatio));
-                    int amount = Math.Min(MaxTroopsPerTask, Math.Min(demand, Math.Min(capacity, byRatio)));
+                    int amount = Math.Min(maxTroopsPerTask, Math.Min(demand, Math.Min(capacity, byRatio)));
                     if (amount <= 0) break;
-                    if (amount < MinTransferTroops && dest.CriticalDemand <= 0)
+                    int minTransferTroops = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MinTransferTroopRatio, minimumWhenPositive: 0);
+                    if (amount < minTransferTroops && dest.CriticalDemand <= 0)
                     {
                         Logger.Debug(
-                            $"CapitalLogistics: skip trivial transfer src='{source.Settlement.Name}' dest='{dest.Settlement.Name}' amount={amount}");
+                            $"CapitalLogistics: skip trivial transfer src='{source.Settlement.Name}' dest='{dest.Settlement.Name}' amount={amount} min={minTransferTroops}");
                         break;
                     }
 
@@ -454,7 +459,8 @@ public sealed class CapitalLogisticsManager
             float distance = Distance(source.Settlement, destination.Settlement);
             if (distance > MaxPairDistance) continue;
 
-            float score = distance - Math.Min(capacity, MaxTroopsPerTask) * 0.05f;
+            int maxTroopsPerTask = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MaxTroopsPerTaskRatio, minimumWhenPositive: 1);
+            float score = distance - Math.Min(capacity, maxTroopsPerTask) * 0.05f;
 
             if (!destination.IsCapital)
             {
@@ -517,13 +523,15 @@ public sealed class CapitalLogisticsManager
         public int ProjectedMen => Math.Max(0, CurrentMen + Inbound);
 
         public int CriticalThreshold =>
-            Math.Max(Rule.MinimumDefenders, (int)Math.Ceiling(Rule.MinimumDefenders * CriticalDeficitMultiplier));
+            CriticalProjectedRatio <= 0f
+                ? 0
+                : Math.Max(1, GarrisonThresholdMath.CountFromRatio(DesiredTarget, CriticalProjectedRatio, minimumWhenPositive: 1));
 
         public int CriticalDemand => Math.Max(0, CriticalThreshold - ProjectedMen);
 
         public int Demand => Math.Max(0, DesiredTarget - ProjectedMen);
 
-        public int Reserve => Math.Max(Rule.MinimumDefenders, DesiredTarget);
+        public int Reserve => DesiredTarget;
 
         public int TransferCapacity => Math.Max(0, CurrentMen - Reserve);
 

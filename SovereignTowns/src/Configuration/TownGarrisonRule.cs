@@ -69,8 +69,11 @@ public sealed class TownGarrisonRule
     /// <summary>允许自动升级低级兵种为高级兵种。</summary>
     public bool AllowAutoUpgrade { get; set; } = true;
 
-    /// <summary>无论目标人数为何，至少保留的最少防守人数（被围时硬下限）。</summary>
-    public int MinimumDefenders { get; set; } = 30;
+    /// <summary>
+    /// 主动出击后必须留在城内的实际驻军比例（不含民兵）。
+    /// 仅约束 SallyForth 抽兵，不参与招募、调拨或驻军目标计算。
+    /// </summary>
+    public float MinimumDefenderRatio { get; set; } = 0.20f;
 
     /// <summary>当所属王国处于战争状态时，TargetTotalCount 的乘数。</summary>
     public float WartimeMultiplier { get; set; } = 1.5f;
@@ -114,7 +117,7 @@ public sealed class TownGarrisonRule
         AllowNobleTroops = this.AllowNobleTroops,
         AllowPrisonerConversion = this.AllowPrisonerConversion,
         AllowAutoUpgrade = this.AllowAutoUpgrade,
-        MinimumDefenders = this.MinimumDefenders,
+        MinimumDefenderRatio = this.MinimumDefenderRatio,
         WartimeMultiplier = this.WartimeMultiplier,
         PeacetimeMultiplier = this.PeacetimeMultiplier,
         BudgetLimit = this.BudgetLimit,

@@ -1,6 +1,6 @@
 using System;
+using SovereignTowns.Configuration;
 using SovereignTowns.Parties;
-using SovereignTowns.SallyForth;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.GameComponents;
 using TaleWorlds.CampaignSystem.Party;
@@ -20,11 +20,6 @@ namespace SovereignTowns.Models;
 /// </summary>
 public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
 {
-    // 各类自定义 party 的上限（loose policy；可以未来挂配置）
-    private const int RecruitingPartyLimit = 60;
-    private const int TransferPartyLimit   = 80;
-    // SallyForth 使用 SallyForthManager.MaxSallyPartySize (=100) 作为单一来源
-
     public override ExplainedNumber GetPartyMemberSizeLimit(PartyBase party, bool includeDescriptions = false)
     {
         try
@@ -36,23 +31,23 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
             if (comp is RecruitingPartyComponent)
             {
                 return new ExplainedNumber(
-                    RecruitingPartyLimit,
+                    ComputeRecruiterLimit(mp),
                     includeDescriptions,
                     new TextObject("{=ST_PartySizeLimit_Recruit}主权城镇 征兵队容量上限"));
             }
 
-            if (comp is TransferPartyComponent)
+            if (comp is TransferPartyComponent transfer)
             {
                 return new ExplainedNumber(
-                    TransferPartyLimit,
+                    ComputeTransferLimit(mp, transfer),
                     includeDescriptions,
                     new TextObject("{=ST_PartySizeLimit_Transfer}主权城镇 调拨队容量上限"));
             }
 
-            if (comp is SallyForthPartyComponent)
+            if (comp is SallyForthPartyComponent sally)
             {
                 return new ExplainedNumber(
-                    SallyForthManager.MaxSallyPartySize,
+                    ComputeSallyLimit(mp, sally),
                     includeDescriptions,
                     new TextObject("{=ST_PartySizeLimit_Sally}主权城镇 出击队容量上限"));
             }
@@ -72,5 +67,39 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(30f, includeDescriptions, null);
             }
         }
+    }
+
+    private static int ComputeRecruiterLimit(MobileParty? party)
+    {
+        int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
+        var comp = party?.PartyComponent as RecruitingPartyComponent;
+        int recruitedThreshold = Math.Max(1, ConfigurationManager.Current?.Thresholds?.RecruiterReturnRecruitedCount ?? 50);
+        int remainingRecruitCapacity = Math.Max(0, recruitedThreshold - (comp?.RecruitedThisTrip ?? 0));
+        return Math.Max(1, currentMembers + remainingRecruitCapacity);
+    }
+
+    private static int ComputeTransferLimit(MobileParty? party, TransferPartyComponent transfer)
+    {
+        int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
+        int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(transfer.Source) + currentMembers;
+        int byRatio = GarrisonThresholdMath.CountFromRatio(
+            baseGarrison,
+            ConfigurationManager.Current?.Thresholds?.TransferMaxTroopsPerTaskRatio ?? 0.67f,
+            minimumWhenPositive: 1);
+        return Math.Max(1, Math.Max(currentMembers, byRatio));
+    }
+
+    private static int ComputeSallyLimit(MobileParty? party, SallyForthPartyComponent sally)
+    {
+        int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
+        int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(sally.HomeSettlement) + currentMembers;
+        int byGarrisonRatio = GarrisonThresholdMath.CountFromRatio(
+            baseGarrison,
+            ConfigurationManager.Current?.Thresholds?.SallyExtractionRatio ?? 0.60f,
+            minimumWhenPositive: 1);
+        int targetMen = Math.Max(0, sally.TargetParty?.MemberRoster?.TotalManCount ?? 0);
+        int byTarget = Math.Max(0, (int)Math.Ceiling(targetMen * (ConfigurationManager.Current?.Thresholds?.SallyTargetPartySizeMultiplier ?? 2.0f)));
+        int limit = byTarget > 0 ? Math.Min(byTarget, byGarrisonRatio) : byGarrisonRatio;
+        return Math.Max(1, Math.Max(currentMembers, limit));
     }
 }

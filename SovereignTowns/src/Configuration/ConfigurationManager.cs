@@ -22,9 +22,8 @@ namespace SovereignTowns.Configuration;
 /// </remarks>
 public static class ConfigurationManager
 {
-    /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对。
-    /// B12：抽出 PartyThresholds（巡逻队 / 调拨阈值原硬编码可配置）。</summary>
-    public const int CurrentConfigVersion = 12;
+    /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
+    public const int CurrentConfigVersion = 15;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -446,11 +445,6 @@ public static class ConfigurationManager
             reason = "VillageCooldownHours < 0";
             return false;
         }
-        if (config.RecruiterReturnThreshold < 1)
-        {
-            reason = "RecruiterReturnThreshold < 1";
-            return false;
-        }
         if (config.Thresholds != null && !ValidateThresholds(config.Thresholds, out reason))
         {
             return false;
@@ -462,28 +456,34 @@ public static class ConfigurationManager
 
     private static bool ValidateThresholds(PartyThresholds t, out string reason)
     {
-        if (t.PatrolMinCapitalGarrison < 0)
-        { reason = "Thresholds.PatrolMinCapitalGarrison < 0"; return false; }
-        if (t.PatrolTroopBatchSize < 1)
-        { reason = "Thresholds.PatrolTroopBatchSize < 1"; return false; }
-        if (t.PatrolMinMembersBeforeMerge < 0)
-        { reason = "Thresholds.PatrolMinMembersBeforeMerge < 0"; return false; }
-        if (t.PatrolMinMembersForHeal < 0)
-        { reason = "Thresholds.PatrolMinMembersForHeal < 0"; return false; }
-        if (!IsRatio(t.PatrolHealHealthyRatio))
-        { reason = $"Thresholds.PatrolHealHealthyRatio invalid ({t.PatrolHealHealthyRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.PartyReturnSizeRatio))
+        { reason = $"Thresholds.PartyReturnSizeRatio invalid ({t.PartyReturnSizeRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.PartyReturnWoundedRatio))
+        { reason = $"Thresholds.PartyReturnWoundedRatio invalid ({t.PartyReturnWoundedRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.PatrolReserveAfterCreationRatio))
+        { reason = $"Thresholds.PatrolReserveAfterCreationRatio invalid ({t.PatrolReserveAfterCreationRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.PatrolTroopBatchRatio))
+        { reason = $"Thresholds.PatrolTroopBatchRatio invalid ({t.PatrolTroopBatchRatio}); must be in [0,1]"; return false; }
         if (!IsRatio(t.RecruiterEscortRatio))
         { reason = $"Thresholds.RecruiterEscortRatio invalid ({t.RecruiterEscortRatio}); must be in [0,1]"; return false; }
-        if (!IsNonNegativeFloat(t.TransferCriticalDeficitMultiplier))
-        { reason = $"Thresholds.TransferCriticalDeficitMultiplier invalid ({t.TransferCriticalDeficitMultiplier})"; return false; }
+        if (t.RecruiterReturnRecruitedCount < 1)
+        { reason = $"Thresholds.RecruiterReturnRecruitedCount invalid ({t.RecruiterReturnRecruitedCount}); must be >= 1"; return false; }
+        if (!IsRatio(t.TransferCriticalProjectedRatio))
+        { reason = $"Thresholds.TransferCriticalProjectedRatio invalid ({t.TransferCriticalProjectedRatio}); must be in [0,1]"; return false; }
         if (!IsRatio(t.TransferRatio))
         { reason = $"Thresholds.TransferRatio invalid ({t.TransferRatio}); must be in [0,1]"; return false; }
-        if (t.TransferMaxTroopsPerTask < 1)
-        { reason = "Thresholds.TransferMaxTroopsPerTask < 1"; return false; }
-        if (t.TransferMinTroops < 0)
-        { reason = "Thresholds.TransferMinTroops < 0"; return false; }
-        if (t.RecruitmentMinDemand < 1)
-        { reason = "Thresholds.RecruitmentMinDemand < 1"; return false; }
+        if (!IsRatio(t.TransferMaxTroopsPerTaskRatio))
+        { reason = $"Thresholds.TransferMaxTroopsPerTaskRatio invalid ({t.TransferMaxTroopsPerTaskRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.TransferMinTroopRatio))
+        { reason = $"Thresholds.TransferMinTroopRatio invalid ({t.TransferMinTroopRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.RecruitmentMinDemandRatio))
+        { reason = $"Thresholds.RecruitmentMinDemandRatio invalid ({t.RecruitmentMinDemandRatio}); must be in [0,1]"; return false; }
+        if (!IsRatio(t.SallyExtractionRatio))
+        { reason = $"Thresholds.SallyExtractionRatio invalid ({t.SallyExtractionRatio}); must be in [0,1]"; return false; }
+        if (!IsNonNegativeFloat(t.SallyTargetPartySizeMultiplier))
+        { reason = $"Thresholds.SallyTargetPartySizeMultiplier invalid ({t.SallyTargetPartySizeMultiplier})"; return false; }
+        if (t.SallyCreateMinPartyCount < 1)
+        { reason = $"Thresholds.SallyCreateMinPartyCount invalid ({t.SallyCreateMinPartyCount}); must be >= 1"; return false; }
 
         reason = "";
         return true;
@@ -525,9 +525,9 @@ public static class ConfigurationManager
             reason = $"{ctx}.MinTier/MaxTier invalid ({rule.MinTier}..{rule.MaxTier})";
             return false;
         }
-        if (rule.MinimumDefenders < 0)
+        if (!IsRatio(rule.MinimumDefenderRatio))
         {
-            reason = $"{ctx}.MinimumDefenders < 0";
+            reason = $"{ctx}.MinimumDefenderRatio invalid ({rule.MinimumDefenderRatio}); must be in [0,1]";
             return false;
         }
         if (rule.BudgetLimit < 0)

@@ -91,13 +91,15 @@ public sealed class PartyLifecycleManager
                 return;
             }
 
+            int initialMembers = PartyNameFormatter.SafeMemberCount(party);
             var meta = new TrackedPartyMeta(
                 home,
                 kind,
                 CampaignTime.Now,
                 party.TargetSettlement,
-                PartyNameFormatter.SafeMemberCount(party),
-                SafeActualClan(party, home));
+                initialMembers,
+                SafeActualClan(party, home),
+                initialMembers);
             _tracked[party] = meta;
             Logger.Info($"RegisterTrackedParty: '{PartyNameFormatter.SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
         }
@@ -184,21 +186,24 @@ public sealed class PartyLifecycleManager
                             {
                                 var home = rp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
+                                int mc = PartyNameFormatter.SafeMemberCount(party);
+                                _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
                                 recruiters++;
                             }
                             else if (comp is TransferPartyComponent tp)
                             {
                                 var home = tp.Source;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
+                                int mc = PartyNameFormatter.SafeMemberCount(party);
+                                _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
                                 transfers++;
                             }
                             else if (comp is SallyForthPartyComponent sp)
                             {
                                 var home = sp.HomeSettlement;
                                 if (home == null) { skipped++; continue; }
-                                _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), SafeActualClan(party, home));
+                                int mc = PartyNameFormatter.SafeMemberCount(party);
+                                _tracked[party] = new TrackedPartyMeta(home, KindSallyForth, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
                                 sallyforths++;
                             }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略
@@ -240,7 +245,8 @@ public sealed class PartyLifecycleManager
                             {
                                 continue;
                             }
-                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, PartyNameFormatter.SafeMemberCount(party), ownerClan);
+                            int mcPatrol = PartyNameFormatter.SafeMemberCount(party);
+                            _tracked[party] = new TrackedPartyMeta(home, KindPatrol, now, party.TargetSettlement, mcPatrol, ownerClan, mcPatrol);
                             patrols++;
                         }
                         catch (Exception oneEx)
@@ -482,6 +488,11 @@ public sealed class PartyLifecycleManager
                     Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeForceReturn}h — forcing return to home '{meta.Home.Name}'");
                     try
                     {
+                        if (party.PartyComponent is RecruitingPartyComponent rp)
+                        {
+                            rp.SetAssignedTarget(meta.Home);
+                        }
+
                         party.SetMoveGoToSettlement(meta.Home, MobileParty.NavigationType.Default, false);
                         // 强制重定向也视为一次"刷新"，避免每小时都重发
                         meta.LastActiveAt = CampaignTime.Now;
@@ -608,6 +619,17 @@ public sealed class PartyLifecycleManager
         }
     }
 
+    /// <summary>
+    /// 查询某 party 出发时的兵员数（用于"当前 / 出发 &lt; 阈值"判定）。
+    /// 未被跟踪 → 返回 0。读档场景下值为读档时的当前兵员数（fallback，可接受）。
+    /// </summary>
+    public int GetInitialMemberCount(MobileParty? party)
+    {
+        if (party is null) return 0;
+        if (_tracked.TryGetValue(party, out var meta)) return meta.InitialMemberCount;
+        return 0;
+    }
+
     /// <summary>跟踪 meta；可变 struct 通过 _tracked[key]=meta 回写保证一致性。</summary>
     private struct TrackedPartyMeta
     {
@@ -617,6 +639,8 @@ public sealed class PartyLifecycleManager
         public CampaignTime LastActiveAt;
         public Settlement? LastTargetSettlement;
         public int LastMemberCount;
+        /// <summary>注册时的兵员数（出发兵员快照），用于"当前/出发"比例判定。</summary>
+        public int InitialMemberCount;
 
         public TrackedPartyMeta(
             Settlement home,
@@ -624,7 +648,8 @@ public sealed class PartyLifecycleManager
             CampaignTime lastActiveAt,
             Settlement? lastTarget,
             int lastMembers,
-            Clan? ownerClan)
+            Clan? ownerClan,
+            int initialMembers)
         {
             Home = home;
             Kind = kind;
@@ -632,6 +657,7 @@ public sealed class PartyLifecycleManager
             LastActiveAt = lastActiveAt;
             LastTargetSettlement = lastTarget;
             LastMemberCount = lastMembers;
+            InitialMemberCount = initialMembers;
         }
     }
 }

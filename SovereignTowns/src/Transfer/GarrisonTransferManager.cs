@@ -22,7 +22,7 @@ namespace SovereignTowns.Transfer;
 /// 到达后把兵员注入目的地驻军并解散队伍。
 ///
 /// 设计要点：
-///   - 抽兵策略：低 Tier 优先（高 Tier 留守源城防御），并强制源城最终人数 &gt;= MinimumDefenders。
+///   - 抽兵策略：低 Tier 优先（高 Tier 留守源城防御）；抽取数量由首府调度器按实际驻军比例预先钳制。
 ///   - 队伍跟踪：通过 <see cref="PartyLifecycleManager"/> 注册 kind="transfer"，
 ///     由 lifecycle manager 负责上限 / 空闲检测。
 ///   - 风险中断：HourlyTick 检测目的地极端危险（Critical），改返回 Source（不转兵）。
@@ -100,26 +100,24 @@ public sealed class GarrisonTransferManager
                 return false;
             }
 
-            var rule = ConfigurationManager.GetRuleFor(sourceTown);
-            int minDefenders = Math.Max(0, rule.MinimumDefenders);
             int totalAvailable = sourceRoster.TotalManCount;
 
-            // 前置：源城必须有富余兵员承担本次调拨（除留下 MinimumDefenders 外仍 >= requested）
-            if (totalAvailable < minDefenders + requested)
+            // 前置：源城必须有足够兵员承担本次调拨。保留比例由首府级调度器计算，避免 MinimumDefenderRatio 误约束调拨。
+            if (totalAvailable < requested)
             {
                 Logger.Info(
-                    $"  GarrisonTransferManager: '{source.Name}' total={totalAvailable} < min({minDefenders})+req({requested}), 跳过");
+                    $"  GarrisonTransferManager: '{source.Name}' total={totalAvailable} < req({requested}), 跳过");
                 return false;
             }
 
             // 从源 GarrisonParty.MemberRoster 抽 roster：低 Tier 优先（高 Tier 留守）
             var transferRoster = TroopRoster.CreateDummyTroopRoster();
             int extracted = ExtractLowestTierTroops(
-                sourceRoster, transferRoster, requested, minDefenders);
+                sourceRoster, transferRoster, requested);
 
             if (extracted <= 0)
             {
-                Logger.Warn($"  GarrisonTransferManager: '{source.Name}' extracted 0 troops (req={requested}, min={minDefenders}, available={totalAvailable})");
+                Logger.Warn($"  GarrisonTransferManager: '{source.Name}' extracted 0 troops (req={requested}, available={totalAvailable})");
                 return false;
             }
 
@@ -220,7 +218,9 @@ public sealed class GarrisonTransferManager
 
             // 3) 若已回到 Source（被改向后抵达原地），把兵员还给源驻军并解散
             var sourceSettlement = tp.Source;
-            if (sourceSettlement != null && party.LastVisitedSettlement == sourceSettlement)
+            if (sourceSettlement != null
+                && (party.CurrentSettlement == sourceSettlement
+                    || (party.LastVisitedSettlement == sourceSettlement && party.TargetSettlement == sourceSettlement)))
             {
                 if (partyClan == null || sourceSettlement.OwnerClan == partyClan)
                 {
@@ -266,14 +266,13 @@ public sealed class GarrisonTransferManager
 
     /// <summary>
     /// 从源驻军 roster 按 Tier 升序抽取兵员到 <paramref name="transferRoster"/>。
-    /// 抽到达到 <paramref name="requested"/> 或源 roster 即将跌破 <paramref name="minDefenders"/> 为止。
+    /// 抽到达到 <paramref name="requested"/> 或源 roster 无可抽非英雄兵员为止。
     /// 返回实际抽出的兵员数。
     /// </summary>
     private static int ExtractLowestTierTroops(
         TroopRoster sourceRoster,
         TroopRoster transferRoster,
-        int requested,
-        int minDefenders)
+        int requested)
     {
         int extracted = 0;
         try
@@ -300,13 +299,8 @@ public sealed class GarrisonTransferManager
                 var ch = elem.Character;
                 if (ch == null) continue;
 
-                // 运行时再卡一次下限：源 roster 总数不可跌破 minDefenders
-                int currentSourceTotal = sourceRoster.TotalManCount;
-                int floor = currentSourceTotal - minDefenders;
-                if (floor <= 0) break;
-
                 int want = Math.Min(elem.Number, requested - extracted);
-                int take = Math.Min(want, floor);
+                int take = Math.Min(want, sourceRoster.TotalManCount);
                 if (take <= 0) break;
 
                 try

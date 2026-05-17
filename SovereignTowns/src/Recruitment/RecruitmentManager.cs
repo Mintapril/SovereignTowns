@@ -25,14 +25,15 @@ namespace SovereignTowns.Recruitment;
 ///
 /// 工作流：
 ///   1. 派遣：仅当 homeTown == 当前首府 时；从首府 garrison 按 <see cref="EscortRatio"/>
-///      抽低 Tier 兵作基础护卫（征兵队不受 50 floor 限制 — 算多少抽多少，0 也派遣）；
+///      抽低 Tier 兵作基础护卫（征兵队不设固定人数 floor — 算多少抽多少，0 也派遣）；
 ///      规划首个目标村庄；<see cref="MobileParty.SetMoveGoToSettlement"/> 出发。
 ///   2. HourlyTick：
 ///      - 抵达 home → TransferAndDisband
-///      - 抵达任一非 home village → RecruitFromTargetVillage + 标记冷却 → 检查阈值/规划下一站
-///      - 总人数 ≥ <see cref="GlobalConfig.RecruiterReturnThreshold"/> → 回首府
+///      - 抵达任一非 home village → RecruitFromTargetVillage + 标记冷却 → 检查本趟招募阈值/规划下一站
+///      - 本趟招募人数 ≥ RecruiterReturnRecruitedCount（绝对数）→ 回首府
 ///      - 候选枯竭 → 回首府
 ///      - 目标风险高 → 回首府
+///   3. <see cref="OnMapEventEnded"/>：战斗结束时检查兵员衰减/受伤超限 → 返航解散
 /// </summary>
 public sealed class RecruitmentManager
 {
@@ -50,6 +51,9 @@ public sealed class RecruitmentManager
     /// 原硬编码 0.10 — 不动面板的玩家不会感知差别。</summary>
     private static float EscortRatio
         => ConfigurationManager.Current?.Thresholds?.RecruiterEscortRatio ?? 0.10f;
+
+    private static int ReturnRecruitedCount
+        => ConfigurationManager.Current?.Thresholds?.RecruiterReturnRecruitedCount ?? 50;
 
     private readonly PartyLifecycleManager _lifecycle;
     private readonly PartyMergeService _mergeService;
@@ -155,7 +159,7 @@ public sealed class RecruitmentManager
             }
             var target = candidates[0];
 
-            // B7.25：征兵队不受 50 floor 限制 — garrison × 10% 算多少抽多少，0 也允许派遣裸车。
+            // 征兵队不设固定人数 floor — garrison × RecruiterEscortRatio 算多少抽多少，0 也允许派遣裸车。
             int garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
             int escortRequested = (int)Math.Round(garrisonForEscort * EscortRatio);
             TroopRoster? escortRoster = null;
@@ -223,14 +227,7 @@ public sealed class RecruitmentManager
             _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);
             _visitedPerParty[party] = new HashSet<Settlement>();
 
-            try
-            {
-                party.SetMoveGoToSettlement(target.VillageSettlement, MobileParty.NavigationType.Default, false);
-            }
-            catch (Exception moveEx)
-            {
-                Logger.Error($"  RecruitmentManager: SetMoveGoToSettlement failed for '{party.Name}' -> '{target.VillageSettlement.Name}'", moveEx);
-            }
+            MoveRecruiterTo(party, target.VillageSettlement, "initial dispatch");
 
             // B7.27：通知 scheduler "刚派遣，首站已选"。后续招到人后由 OnHourlyTickParty 流程接管。
             try
@@ -293,7 +290,7 @@ public sealed class RecruitmentManager
                     else
                     {
                         Logger.Warn($"  Recruiter '{party.Name}' home '{home.Name}' lost; rerouting to capital '{fallback.Name}'");
-                        party.SetMoveGoToSettlement(fallback, MobileParty.NavigationType.Default, false);
+                        MoveRecruiterTo(party, fallback, "lost home fallback");
                     }
                 }
                 else
@@ -305,15 +302,46 @@ public sealed class RecruitmentManager
                 return;
             }
 
-            // 1. 已经回到 home
-            if (party.LastVisitedSettlement == home)
+            var actualCurrentSettlement = party.CurrentSettlement;
+            var lastVisitedSettlement = party.LastVisitedSettlement;
+            var currentSettlement = actualCurrentSettlement ?? lastVisitedSettlement;
+            var targetSettlement = party.TargetSettlement;
+            if (!_visitedPerParty.TryGetValue(party, out var visitedForParty))
+            {
+                visitedForParty = new HashSet<Settlement>();
+                _visitedPerParty[party] = visitedForParty;
+            }
+
+            // 1. 已经回到 home。刚创建/刚出门时 LastVisitedSettlement 可能仍是 home，
+            // 且 vanilla 可能短暂把 TargetSettlement 重置为 home；若本趟还没有访问/招募，
+            // 优先恢复本组件记录的计划目的地，而不是误判为返航。
+            bool targetHomeOrUnset = targetSettlement == null || targetSettlement == home;
+            if ((actualCurrentSettlement == home || lastVisitedSettlement == home)
+                && targetHomeOrUnset
+                && rp.RecruitedThisTrip <= 0
+                && visitedForParty.Count == 0)
+            {
+                var nextFromHome = ResolveDepartureTarget(rp, party, home);
+                if (nextFromHome != null && nextFromHome != home)
+                {
+                    string currentName = actualCurrentSettlement?.Name?.ToString() ?? "<road>";
+                    string lastName = lastVisitedSettlement?.Name?.ToString() ?? "<none>";
+                    string targetName = targetSettlement?.Name?.ToString() ?? "<none>";
+                    string assignedName = rp.AssignedTarget?.Name?.ToString() ?? "<none>";
+                    Logger.Warn($"  Recruiter '{party.Name}' 出门目标被清空/改回首府 (current={currentName}, last={lastName}, target={targetName}, assigned={assignedName})，重新派往 '{nextFromHome.Name}'");
+                    MoveRecruiterTo(party, nextFromHome, "recover initial departure");
+                    return;
+                }
+            }
+
+            if (actualCurrentSettlement == home
+                || (lastVisitedSettlement == home
+                    && targetSettlement == home
+                    && (rp.RecruitedThisTrip > 0 || visitedForParty.Count > 0)))
             {
                 TransferAndDisband(party, home);
                 return;
             }
-
-            var currentSettlement = party.CurrentSettlement ?? party.LastVisitedSettlement;
-            var targetSettlement = party.TargetSettlement;
 
             // 2. 停泊在某个非 home village 且与 TargetSettlement 一致 → 招募 + 标记冷却 + 规划下一站
             if (currentSettlement != null
@@ -324,32 +352,26 @@ public sealed class RecruitmentManager
                 if (!IsRecruitmentTargetStillValid(currentSettlement, home))
                 {
                     Logger.Warn($"  Recruiter '{party.Name}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，重新规划");
-                    if (_visitedPerParty.TryGetValue(party, out var invalidVisited))
-                    {
-                        invalidVisited.Add(currentSettlement);
-                    }
+                    visitedForParty.Add(currentSettlement);
                     var replacement = PlanNextHop(party, home);
-                    party.SetMoveGoToSettlement(replacement ?? home, MobileParty.NavigationType.Default, false);
+                    MoveRecruiterTo(party, replacement ?? home, "invalid arrived village");
                     return;
                 }
 
                 int recruited = RecruitFromTargetVillage(party, currentSettlement, home);
                 if (recruited > 0)
                 {
+                    rp.RecordRecruited(recruited);
                     RecruitmentCooldown.MarkRecruited(currentSettlement);
                 }
-                if (_visitedPerParty.TryGetValue(party, out var visited))
-                {
-                    visited.Add(currentSettlement);
-                }
+                visitedForParty.Add(currentSettlement);
 
-                // 招完检查阈值：到达 ReturnThreshold 立刻回首府
-                int returnThreshold = Math.Max(1, ConfigurationManager.Current?.RecruiterReturnThreshold ?? 30);
-                int memberCount = party.MemberRoster?.TotalManCount ?? 0;
-                if (memberCount >= returnThreshold)
+                // 招完检查阈值：本趟实际招募人数达到固定数值阈值则回首府；护卫不计入。
+                int returnThreshold = ReturnRecruitedCount;
+                if (rp.RecruitedThisTrip >= returnThreshold)
                 {
-                    Logger.Info($"  Recruiter '{party.Name}' 总人数 {memberCount} ≥ 阈值 {returnThreshold}，回 '{home.Name}'");
-                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    Logger.Info($"  Recruiter '{party.Name}' 本趟招募 {rp.RecruitedThisTrip} ≥ 阈值 {returnThreshold}，回 '{home.Name}'");
+                    MoveRecruiterTo(party, home, "recruited threshold");
                     return;
                 }
 
@@ -357,28 +379,36 @@ public sealed class RecruitmentManager
                 var next = PlanNextHop(party, home);
                 if (next != null)
                 {
-                    int visitedCount = _visitedPerParty.TryGetValue(party, out var vs) ? (vs?.Count ?? 0) : 0;
+                    int visitedCount = visitedForParty.Count;
                     Logger.Info($"  Recruiter '{party.Name}' 巡回下一站：'{next.Name}' (此前 visited={visitedCount})");
-                    party.SetMoveGoToSettlement(next, MobileParty.NavigationType.Default, false);
+                    MoveRecruiterTo(party, next, "next village");
                 }
                 else
                 {
                     Logger.Info($"  Recruiter '{party.Name}' 候选枯竭，回 '{home.Name}'");
-                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    MoveRecruiterTo(party, home, "no candidates");
                 }
                 return;
             }
 
             // 3. 在路上 - 检查阈值（即使没到下一个村也可能因之前累积已满）
             {
-                int returnThreshold = Math.Max(1, ConfigurationManager.Current?.RecruiterReturnThreshold ?? 30);
-                int memberCount = party.MemberRoster?.TotalManCount ?? 0;
-                if (memberCount >= returnThreshold && (targetSettlement == null || targetSettlement != home))
+                int returnThreshold = ReturnRecruitedCount;
+                if (rp.RecruitedThisTrip >= returnThreshold
+                    && (targetSettlement == null || targetSettlement != home))
                 {
-                    Logger.Info($"  Recruiter '{party.Name}' 在途中达到阈值 {memberCount}/{returnThreshold}，回 '{home.Name}'");
-                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    Logger.Info($"  Recruiter '{party.Name}' 本趟招募达到阈值 {rp.RecruitedThisTrip}/{returnThreshold}，回 '{home.Name}'");
+                    MoveRecruiterTo(party, home, "road recruited threshold");
                     return;
                 }
+            }
+
+            if (targetSettlement == null)
+            {
+                var replacement = ResolveDepartureTarget(rp, party, home);
+                Logger.Warn($"  Recruiter '{party.Name}' 没有当前目标，{(replacement != null ? $"改去 '{replacement.Name}'" : $"回 '{home.Name}'")}");
+                MoveRecruiterTo(party, replacement ?? home, "missing target");
+                return;
             }
 
             // 4. 目标村庄风险高 → 回城
@@ -386,22 +416,45 @@ public sealed class RecruitmentManager
             {
                 if (targetSettlement.IsVillage && !IsRecruitmentTargetStillValid(targetSettlement, home))
                 {
-                    Logger.Warn($"  Recruiter '{party.Name}': 目标 '{targetSettlement.Name}' 已失效，回 '{home.Name}'");
-                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    Logger.Warn($"  Recruiter '{party.Name}': 目标 '{targetSettlement.Name}' 已失效，重新规划");
+                    visitedForParty.Add(targetSettlement);
+                    var replacement = PlanNextHop(party, home);
+                    MoveRecruiterTo(party, replacement ?? home, "invalid road target");
                     return;
                 }
 
                 var risk = RiskAssessmentService.Assess(targetSettlement);
                 if (risk.Level >= RiskLevel.High)
                 {
-                    Logger.Warn($"  Recruiter '{party.Name}': 目标 '{targetSettlement.Name}' risk={risk.Level}，紧急回城");
-                    party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false);
+                    Logger.Warn($"  Recruiter '{party.Name}': 目标 '{targetSettlement.Name}' risk={risk.Level}，重新规划");
+                    visitedForParty.Add(targetSettlement);
+                    var replacement = PlanNextHop(party, home);
+                    MoveRecruiterTo(party, replacement ?? home, "risky road target");
                 }
             }
         }
         catch (Exception ex)
         {
             Logger.Error("OnHourlyTickParty failed", ex);
+        }
+    }
+
+    private static bool MoveRecruiterTo(MobileParty party, Settlement destination, string reason)
+    {
+        try
+        {
+            if (party?.PartyComponent is RecruitingPartyComponent rp)
+            {
+                rp.SetAssignedTarget(destination);
+            }
+
+            party?.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"  RecruitmentManager: SetMoveGoToSettlement failed for '{party?.Name}' -> '{destination?.Name}' ({reason})", ex);
+            return false;
         }
     }
 
@@ -420,6 +473,30 @@ public sealed class RecruitmentManager
         catch
         {
             return false;
+        }
+    }
+
+    private Settlement? ResolveDepartureTarget(RecruitingPartyComponent rp, MobileParty party, Settlement home)
+    {
+        try
+        {
+            var assigned = rp.AssignedTarget;
+            if (assigned != null && assigned != home)
+            {
+                bool alreadyVisited = _visitedPerParty.TryGetValue(party, out var visited)
+                    && visited.Contains(assigned);
+                if (!alreadyVisited && IsRecruitmentTargetStillValid(assigned, home))
+                {
+                    return assigned;
+                }
+            }
+
+            return PlanNextHop(party, home);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"ResolveDepartureTarget failed for '{party.Name}': {ex.Message}");
+            return PlanNextHop(party, home);
         }
     }
 
@@ -664,7 +741,7 @@ public sealed class RecruitmentManager
     /// <summary>
     /// 从首府 GarrisonParty 抽 <paramref name="want"/> 个低 Tier 兵进入 <paramref name="escortRoster"/>。
     /// 返回实际抽出的人数。低 Tier 优先（高 Tier 留守）。
-    /// B7.24：不受 MinDef 限制；调用方决定 want（按 garrison 百分比，征兵队不设 50 floor）。
+    /// B7.24：不受 MinDef 限制；调用方决定 want（按 garrison 百分比，征兵队不设固定人数 floor）。
     ///
     /// B2 重构（2026-05-14）：实现搬运至 SovereignTowns.Common.TroopTransferHelper（LowestTierFirst）。
     /// 注：原实现用 sourceRoster.RemoveTroop + escortRoster.AddToCounts(+take)；
@@ -720,6 +797,67 @@ public sealed class RecruitmentManager
         catch (Exception ex)
         {
             Logger.Error("TransferAndDisband failed", ex);
+        }
+    }
+
+    // ────────── B15：MapEventEnded 战后回城解散判定 ──────────
+
+    /// <summary>
+    /// 战斗结束回调。遍历参战 recruiter，若兵员衰减 / 受伤超限则改派回家
+    /// （到家由 HourlyTickParty 的"已到 home"分支接管 → TransferAndDisband）。
+    /// </summary>
+    public void OnMapEventEnded(TaleWorlds.CampaignSystem.MapEvents.MapEvent mapEvent)
+    {
+        if (mapEvent == null) return;
+        try
+        {
+            HandleSideEndOfEvent(mapEvent.AttackerSide);
+            HandleSideEndOfEvent(mapEvent.DefenderSide);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RecruitmentManager.OnMapEventEnded failed", ex);
+        }
+    }
+
+    private void HandleSideEndOfEvent(TaleWorlds.CampaignSystem.MapEvents.MapEventSide? side)
+    {
+        if (side == null) return;
+        try
+        {
+            var parties = side.Parties;
+            if (parties == null) return;
+            foreach (var uop in parties)
+            {
+                MobileParty? mp = null;
+                try { mp = uop.Party?.MobileParty; }
+                catch { continue; }
+                if (mp == null || !mp.IsActive) continue;
+                var rp = mp.PartyComponent as RecruitingPartyComponent;
+                if (rp == null) continue;
+
+                var home = rp.HomeSettlement;
+                if (home == null) continue;
+                var partyClan = mp.ActualClan ?? home.OwnerClan;
+                if (_capitalRegistry != null
+                    && (partyClan == null
+                        || !_capitalRegistry.IsManagedClanWithCapital(partyClan)
+                        || home.OwnerClan != partyClan))
+                {
+                    continue;
+                }
+
+                int initial = _lifecycle.GetInitialMemberCount(mp);
+                if (PartyReturnConditionChecker.ShouldReturnAndDisband(mp, initial, out var rReason, out var rDetail))
+                {
+                    Logger.Info($"  Recruiter '{mp.Name}' MapEventEnded return-disband ({rReason}: {rDetail})，回 '{home.Name}'");
+                    MoveRecruiterTo(mp, home, $"MapEventEnded {rReason}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("RecruitmentManager.HandleSideEndOfEvent failed", ex);
         }
     }
 }

@@ -36,13 +36,15 @@ public sealed class SallyForthManager
     // 2026-05-12 审查 B2 调整：15f → 50f 与 GDS 默认 AttackDistance 对齐，
     // 否则 FindBestEnemyTarget 在大多数场景下返回 null，sortie 不会触发。
     private const float DetectionRadius      = 50f;   // 检测半径（地图单位）
-    public  const int   MaxSallyPartySize    = 100;   // 出击队上限（亦由 STPartySizeLimitModel 引用）
-    private const float SallyRatio           = 0.6f;  // 抽 60% 驻军
-    private const int   MinPartyBeforeRetreat = 10;   // 出击途中兵员低于此值 → 回家
-    // B7.24：trivial 抽兵下限 — 算出来的抽兵 < 50 就不出击（避免几人小分队送死）
-    private const int   TrivialExtractionFloor = 50;
     private const float MaxSallyHours        = 12f;   // 12 小时未归 → 强制回程
     private const int   InitialSallyGold     = 100;
+
+    private static float SallyExtractionRatio
+        => ConfigurationManager.Current?.Thresholds?.SallyExtractionRatio ?? 0.60f;
+    private static float SallyTargetPartySizeMultiplier
+        => ConfigurationManager.Current?.Thresholds?.SallyTargetPartySizeMultiplier ?? 2.0f;
+    private static int SallyCreateMinPartyCount
+        => ConfigurationManager.Current?.Thresholds?.SallyCreateMinPartyCount ?? 30;
 
     // B7.22：出击节奏控制（避免一进检测圈就冲、刚回又冲）
     private const float SallyCooldownHours    = 24f; // 上次出击结束后冷却小时数
@@ -104,12 +106,9 @@ public sealed class SallyForthManager
             // 上限：每城最多 1 支 sally
             if (!_lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindSallyForth)) return;
 
-            // B7.24：驻军门槛 — 抽兵按 garrison × 60% 计算；若 < 50 直接不出击。
-            // 同时保留 rule.MinimumDefenders 作为 post-extraction floor，确保出击后驻军 ≥ MinDef。
+            // 驻军门槛均按实际驻军比例派生，不含民兵。
             var garrison = settlement.Town?.GarrisonParty;
             var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
-            var ruleForSally = settlement.Town != null ? ConfigurationManager.GetRuleFor(settlement.Town) : null;
-            int sallyMinDef = ruleForSally?.MinimumDefenders ?? 0;
 
             // 找附近敌方 party（评分：选最弱者）
             var target = FindBestEnemyTarget(settlement);
@@ -210,23 +209,16 @@ public sealed class SallyForthManager
                 return;
             }
 
-            // 1) 已到家 → 转兵 + 销毁
-            if (party.LastVisitedSettlement == home)
+            // 1) 已到家 → 转兵 + 销毁。刚创建/刚出门时 LastVisitedSettlement 可能仍是 home，
+            // 需确认当前确实在 home，或 AI 目标已经是 home。
+            if (party.CurrentSettlement == home
+                || (party.LastVisitedSettlement == home && party.TargetSettlement == home))
             {
                 TransferAndDestroy(party, home);
                 return;
             }
 
-            // 2) 兵员过少 → 回家
-            var memberCount = party.MemberRoster?.TotalManCount ?? 0;
-            if (memberCount < MinPartyBeforeRetreat)
-            {
-                Logger.Info($"SallyForthManager: '{PartyNameFormatter.SafeName(party)}' members={memberCount} < {MinPartyBeforeRetreat}, return home '{home.Name}'");
-                ReleaseAiAndReturnHome(party, home);
-                return;
-            }
-
-            // 3) 超时 → 强制回家
+            // 2) 超时 → 强制回家
             var hoursAway = (CampaignTime.Now - sp.DepartureTime).ToHours;
             if (hoursAway > MaxSallyHours)
             {
@@ -240,7 +232,7 @@ public sealed class SallyForthManager
                 return;
             }
 
-            // 4) B5 F2: target 进入 settlement → 追击队卡在外面（vanilla 已知 bug），立即回家
+            // 3) B5 F2: target 进入 settlement → 追击队卡在外面（vanilla 已知 bug），立即回家
             //    否则 target 已死亡/失效 → 释放 vanilla AI 接管
             //    否则继续 engage（创建时已 SetMoveEngageParty + SetDoNotMakeNewDecisions）
             var target = sp.TargetParty;
@@ -404,15 +396,19 @@ public sealed class SallyForthManager
     {
         try
         {
-            // B7.24：百分比抽兵（60%），保 MinDef，<50 不出击
+            // 目标兵力倍数抽兵，并受实际驻军抽取比例与 MinimumDefenderRatio 钳制。
             var ruleSally = settlement.Town != null ? ConfigurationManager.GetRuleFor(settlement.Town) : null;
-            int minDef = ruleSally?.MinimumDefenders ?? 0;
+            float minimumDefenderRatio = ruleSally?.MinimumDefenderRatio ?? TownGarrisonRule.CreateDefault().MinimumDefenderRatio;
+            int minDef = GarrisonThresholdMath.CountFromRatio(garrisonCount, minimumDefenderRatio, minimumWhenPositive: 0);
             int extractable = Math.Max(0, garrisonCount - minDef);
-            int byRatio = (int)Math.Round(garrisonCount * SallyRatio);
-            int sallySize = Math.Min(MaxSallyPartySize, Math.Min(extractable, byRatio));
-            if (sallySize < TrivialExtractionFloor)
+            int byGarrisonRatio = GarrisonThresholdMath.CountFromRatio(garrisonCount, SallyExtractionRatio, minimumWhenPositive: 0);
+            int targetMen = Math.Max(0, target.MemberRoster?.TotalManCount ?? 0);
+            int byTarget = Math.Max(0, (int)Math.Ceiling(targetMen * SallyTargetPartySizeMultiplier));
+            int sallySize = Math.Min(byTarget, Math.Min(extractable, byGarrisonRatio));
+            int createMin = SallyCreateMinPartyCount;
+            if (sallySize < createMin)
             {
-                Logger.Debug($"SallyForthManager: '{settlement.Name}' sallySize={sallySize} < {TrivialExtractionFloor} (garrison={garrisonCount} × {SallyRatio:P0} → {byRatio}, minDef={minDef}), 抽兵过少，不出击");
+                Logger.Debug($"SallyForthManager: '{settlement.Name}' sallySize={sallySize} < {createMin} (target={targetMen}×{SallyTargetPartySizeMultiplier:F2}->{byTarget}, garrison={garrisonCount}, cap={SallyExtractionRatio:P0}->{byGarrisonRatio}, minDef={minimumDefenderRatio:P0}->{minDef}), 抽兵过少，不出击");
                 return;
             }
 
@@ -447,9 +443,9 @@ public sealed class SallyForthManager
 
             // 从 garrison 抽兵（仿 PatrolManager.TransferTroopsFromGarrison：skip heroes，逐兵种迁移）
             var moved = TransferTroopsFromGarrison(garrison, sallyParty, sallySize);
-            if (moved < MinPartyBeforeRetreat)
+            if (moved < createMin)
             {
-                Logger.Warn($"SallyForthManager: '{settlement.Name}' transferred only {moved} troops < {MinPartyBeforeRetreat}, aborting sally");
+                Logger.Warn($"SallyForthManager: '{settlement.Name}' transferred only {moved} troops < createMin {createMin}, aborting sally");
                 // 把已抽走的兵塞回去 + 销毁空 sally
                 TransferTroopsBackToGarrison(sallyParty, garrison);
                 _mergeService.DestroyAndUntrack(sallyParty, "SallyForthManager rollback", deferIfInMapEvent: false);
@@ -474,8 +470,8 @@ public sealed class SallyForthManager
 
             DecisionAuditLogger.LogRule(
                 decisionType: "create_sally_party",
-                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} moved={moved} target={target.StringId} targetMen={target.MemberRoster?.TotalManCount ?? 0}",
-                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{sallyParty.StringId}\",\"target\":\"{target.StringId}\",\"moved\":{moved},\"radius\":{DetectionRadius}}}",
+                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} moved={moved} target={target.StringId} targetMen={targetMen}",
+                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{sallyParty.StringId}\",\"target\":\"{target.StringId}\",\"moved\":{moved},\"targetMen\":{targetMen},\"targetMultiplier\":{SallyTargetPartySizeMultiplier:F2},\"garrisonCapRatio\":{SallyExtractionRatio:F2},\"radius\":{DetectionRadius}}}",
                 accepted: true);
             Logger.Info($"SallyForthManager: created sally '{PartyNameFormatter.SafeName(sallyParty)}' for '{settlement.Name}' (moved={moved} troops, target='{PartyNameFormatter.SafeName(target)}')");
         }

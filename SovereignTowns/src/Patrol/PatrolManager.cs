@@ -17,18 +17,16 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Patrol;
 
 /// <summary>
-/// 巡逻队 Order 枚举（B7.26 简化版）。
+/// 巡逻队 Order 枚举（B15 简化版：仅保留 Defense / MergeGarrison / Patrol）。
 /// </summary>
 public enum PatrolOrder
 {
     /// <summary>主动防守某座被围攻的同氏族城（attack-initiative 0.3，avoid 0.7）。</summary>
     Defense = 0,
-    /// <summary>回城并入驻军（首府被围 / 队员过少时）。</summary>
+    /// <summary>回城并入驻军（首府被围 / 兵员衰减 / 受伤过多）。</summary>
     MergeGarrison = 2,
     /// <summary>默认 — scheduler 决定下一站，巡视整个氏族领土。</summary>
     Patrol = 3,
-    /// <summary>兵员伤亡过多 — 回首府治疗。</summary>
-    Heal = 5
 }
 
 /// <summary>
@@ -47,18 +45,12 @@ public enum PatrolOrder
 /// </summary>
 public sealed class PatrolManager
 {
-    // 人数 / 比例阈值改读 ConfigurationManager.Current.Thresholds（玩家可在网页面板调）。
+    // 阈值改读 ConfigurationManager.Current.Thresholds；人数阈值由实际驻军比例派生。
     // 通过封装属性 + 兜底默认值访问，避免 config 加载失败时 NRE。
-    private static int MinPatrolGarrisonRequired
-        => ConfigurationManager.Current?.Thresholds?.PatrolMinCapitalGarrison ?? 40;
-    private static int PatrolTroopBatchSize
-        => ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchSize ?? 15;
-    private static int MinPartyMembersBeforeMerge
-        => ConfigurationManager.Current?.Thresholds?.PatrolMinMembersBeforeMerge ?? 5;
-    private static int MinPartyMembersForHeal
-        => ConfigurationManager.Current?.Thresholds?.PatrolMinMembersForHeal ?? 8;
-    private static float HealHealthyRatioThreshold
-        => ConfigurationManager.Current?.Thresholds?.PatrolHealHealthyRatio ?? 0.6f;
+    private static float PatrolReserveAfterCreationRatio
+        => ConfigurationManager.Current?.Thresholds?.PatrolReserveAfterCreationRatio ?? 0.8f;
+    private static float PatrolTroopBatchRatio
+        => ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchRatio ?? 0.10f;
 
     /// <summary>Defense / Patrol 模式应用 SetInitiative 时的有效时长（小时）。</summary>
     private const float InitiativeResetHours = 4f;
@@ -110,12 +102,12 @@ public sealed class PatrolManager
     }
 
     /// <summary>
-    /// HourlyTickPartyEvent 转发（B7.26 重写）：
-    ///   1. 兵员过少 merge：单独检查；
-    ///   2. 防御优先：scheduler.GetDefenseTarget — 首府被围 → MergeGarrison；非首府被围 → Defense；
-    ///   3. Heal 检查：兵员低且健康差 → 回首府治疗；
-    ///   4. 抵达侦测：刚到一个新 settlement → RecordVisit + PickNextStop；
-    ///   5. 卡死保护：超出 stuckTimeout 仍未抵达 → 强制重选。
+    /// HourlyTickPartyEvent 转发（B15）：
+    ///   1. 防御优先：scheduler.GetDefenseTarget — 首府被围 → MergeGarrison；非首府被围 → Defense；
+    ///   2. 支援出击战斗（B7.27）；
+    ///   3. 抵达侦测：刚到一个新 settlement → RecordVisit + PickNextStop；
+    ///   4. 卡死保护：超出 stuckTimeout 仍未抵达 → 强制重选。
+    /// 兵员衰减 / 受伤过多 → 回首府解散：见 <see cref="OnMapEventEnded"/>，仅在战斗结束时检查。
     /// </summary>
     public void OnHourlyTickParty(MobileParty party)
     {
@@ -164,17 +156,7 @@ public sealed class PatrolManager
             if (capitalMgr == null || capital == null) return;  // home 已易主、不再受管或无首府
             var scheduler = capitalMgr.PatrolScheduler;
 
-            int members = PartyNameFormatter.SafeMemberCount(party);
-
-            // 1) 自动 merge：兵员过少
-            if (members < MinPartyMembersBeforeMerge)
-            {
-                Logger.Info($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' members={members} < {MinPartyMembersBeforeMerge} — auto MergeGarrison");
-                HandleMergeGarrison(party, capital ?? home);
-                return;
-            }
-
-            // 2) 防御响应（B7.26）
+            // 1) 防御响应（B7.26）
             var defenseTarget = scheduler.GetDefenseTarget(party);
             if (defenseTarget != null)
             {
@@ -198,7 +180,7 @@ public sealed class PatrolManager
                 }
             }
 
-            // ★ 3) 支援出击战斗（B7.27 新增）
+            // ★ 2) 支援出击战斗（B7.27 新增）
             if (_sallyForthManager != null)
             {
                 var supportSally = FindSupportableSallyBattle(party, capitalMgr);
@@ -210,15 +192,7 @@ public sealed class PatrolManager
                 }
             }
 
-            // 4) Heal 检查
-            if (ShouldHeal(party, members))
-            {
-                Logger.Info($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' members={members} healthy_ratio low — Heal");
-                ApplyHealOrder(party, capital ?? home);
-                return;
-            }
-
-            // 5) 抵达侦测 → RecordVisit + PickNextStop
+            // 3) 抵达侦测 → RecordVisit + PickNextStop
             var visited = party.LastVisitedSettlement;
             if (visited != null && visited.OwnerClan == capitalMgr.OwnerClan
                 && scheduler.TryMarkArrival(party, visited))
@@ -231,7 +205,7 @@ public sealed class PatrolManager
                 return;
             }
 
-            // 6) 卡死保护
+            // 4) 卡死保护
             var stuckTimeout = ConfigurationManager.Current.ClanPatrol.StuckTimeoutHours;
             if (scheduler.IsStuck(party, stuckTimeout))
             {
@@ -260,10 +234,6 @@ public sealed class PatrolManager
                 SafeSetMoveDefendSettlement(party, target);
                 SafeSetInitiative(party, attack: 0.3f, avoid: 0.7f, hours: InitiativeResetHours);
                 Logger.Debug($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' applied Defense (target='{target.Name}')");
-                break;
-
-            case PatrolOrder.Heal:
-                ApplyHealOrder(party, target);
                 break;
 
             case PatrolOrder.MergeGarrison:
@@ -356,9 +326,17 @@ public sealed class PatrolManager
             var town = settlement.Town;
             var garrison = town?.GarrisonParty;
             var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
-            if (garrisonCount < MinPatrolGarrisonRequired)
+            int batchSize = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolTroopBatchRatio, minimumWhenPositive: 1);
+            if (batchSize <= 0)
             {
-                Logger.Debug($"PatrolManager: '{settlement.Name}' garrison={garrisonCount} < {MinPatrolGarrisonRequired}, defer patrol creation");
+                Logger.Debug($"PatrolManager: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
+                return;
+            }
+
+            int reserveAfterCreation = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolReserveAfterCreationRatio, minimumWhenPositive: 0);
+            if (garrisonCount - batchSize < reserveAfterCreation)
+            {
+                Logger.Debug($"PatrolManager: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} (ratio {PatrolReserveAfterCreationRatio:P0}), defer patrol creation");
                 return;
             }
 
@@ -398,8 +376,8 @@ public sealed class PatrolManager
                 return;
             }
 
-            // 从 garrison 抽 PatrolTroopBatchSize 名兵员（skip heroes）
-            var moved = TransferTroopsFromGarrison(garrison!, created, PatrolTroopBatchSize);
+            // 从 garrison 按比例抽兵（skip heroes）
+            var moved = TransferTroopsFromGarrison(garrison!, created, batchSize);
             if (moved <= 0)
             {
                 Logger.Warn($"PatrolManager: '{settlement.Name}' created patrol but moved 0 troops; destroying empty patrol");
@@ -547,56 +525,62 @@ public sealed class PatrolManager
             gRoster, pRoster, batchSize, TroopTransferHelper.SortStrategy.LowestTierFirst);
     }
 
-    // ────────── Heal ──────────
+    // ────────── B15：MapEventEnded 战后回城解散判定 ──────────
 
     /// <summary>
-    /// 判定是否应进入 Heal 状态：
-    ///   - members &lt; MinPartyMembersForHeal（仍 &gt;= MinPartyMembersBeforeMerge，否则上一步已 auto-merge）
-    ///   - 健康兵员比例 &lt; HealHealthyRatioThreshold（伤员太多）
-    /// 两个条件同时成立才触发，避免和正常 Patrol/Defense 抢占。
+    /// 战斗结束回调。遍历参战 patrol，若 <see cref="PartyReturnConditionChecker"/> 触发
+    /// （兵员衰减 / 受伤超限）则 MergeGarrison 回家解散。受管 clan 过滤同 HourlyTick。
     /// </summary>
-    private static bool ShouldHeal(MobileParty party, int members)
+    public void OnMapEventEnded(TaleWorlds.CampaignSystem.MapEvents.MapEvent mapEvent)
     {
+        if (mapEvent == null) return;
         try
         {
-            if (members <= 0) return false;
-            if (members >= MinPartyMembersForHeal) return false;
-
-            var partyBase = party.Party;
-            if (partyBase == null) return false;
-
-            int healthy = partyBase.NumberOfHealthyMembers;
-            int total = members;
-            float ratio = total > 0 ? (float)healthy / total : 1f;
-            return ratio < HealHealthyRatioThreshold;
+            HandleSideEndOfEvent(mapEvent.AttackerSide);
+            HandleSideEndOfEvent(mapEvent.DefenderSide);
         }
         catch (Exception ex)
         {
-            Logger.Error($"ShouldHeal failed for '{PartyNameFormatter.SafeName(party)}'", ex);
-            return false;
+            Logger.Error("PatrolManager.OnMapEventEnded failed", ex);
         }
     }
 
-    /// <summary>
-    /// Heal 行为：回 homeSettlement 治疗。
-    /// 到达 settlement 后由 vanilla 的 garrison/治疗机制接管伤员恢复；本方法只负责把巡逻队送回家。
-    /// </summary>
-    private static void ApplyHealOrder(MobileParty party, Settlement home)
+    private void HandleSideEndOfEvent(TaleWorlds.CampaignSystem.MapEvents.MapEventSide? side)
     {
+        if (side == null) return;
         try
         {
-            // 已在 home：什么都不做（vanilla 治疗逻辑自然生效）
-            if (party.CurrentSettlement == home || party.LastVisitedSettlement == home)
+            var parties = side.Parties;
+            if (parties == null) return;
+
+            foreach (var uop in parties)
             {
-                Logger.Debug($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' already at home '{home.Name}' — Heal in place");
-                return;
+                MobileParty? mp = null;
+                try { mp = uop.Party?.MobileParty; }
+                catch { continue; }
+                if (mp == null || !mp.IsActive) continue;
+                var pp = mp.PartyComponent as PatrolPartyComponent;
+                if (pp == null) continue;
+
+                var home = pp.HomeSettlement;
+                if (home == null) continue;
+                var partyClan = mp.ActualClan;
+                if (_capitalRegistry == null || partyClan == null) continue;
+                var capital = _capitalRegistry.GetCapitalForClan(partyClan);
+                if (capital == null) continue;
+                if (home.OwnerClan != partyClan) continue;
+
+                int initial = _lifecycle.GetInitialMemberCount(mp);
+                if (PartyReturnConditionChecker.ShouldReturnAndDisband(mp, initial, out var rReason, out var rDetail))
+                {
+                    Logger.Info($"PatrolManager.MapEventEnded: '{PartyNameFormatter.SafeName(mp)}' return-disband ({rReason}: {rDetail}) — MergeGarrison");
+                    HandleMergeGarrison(mp, capital);
+                }
             }
-            SafeSetMoveGoToSettlement(party, home);
-            Logger.Debug($"PatrolManager: '{PartyNameFormatter.SafeName(party)}' applied Heal (returning to home='{home.Name}')");
         }
         catch (Exception ex)
         {
-            Logger.Error($"ApplyHealOrder failed for '{PartyNameFormatter.SafeName(party)}' -> '{PartyNameFormatter.SafeName(home)}'", ex);
+            Logger.Error("PatrolManager.HandleSideEndOfEvent failed", ex);
         }
     }
 
