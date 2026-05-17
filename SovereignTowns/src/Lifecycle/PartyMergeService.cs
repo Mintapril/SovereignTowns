@@ -117,6 +117,9 @@ public sealed class PartyMergeService
     public void DisbandAndUntrack(MobileParty? party, string context)
     {
         if (party == null) return;
+        // B17.4 S3：IG 五年沉淀的固定顺序 — disband 前必须先 LeaveSettlementAction,
+        // 否则 party 在 settlement 内时 vanilla 的 _stationaryParties 留 dangling ref。
+        TryLeaveSettlementBeforeRemoval(party, context);
         try
         {
             DisbandPartyAction.StartDisband(party);
@@ -151,6 +154,8 @@ public sealed class PartyMergeService
             // If MapEvent access itself fails, continue to the vanilla action fallback chain.
         }
 
+        // B17.4 S3：destroy 前同样需要 LeaveSettlementAction（vanilla DestroyPartyAction 不会自动处理 stationaryParties）。
+        TryLeaveSettlementBeforeRemoval(party, context);
         try
         {
             DestroyPartyAction.Apply(null, party);
@@ -171,6 +176,23 @@ public sealed class PartyMergeService
                 Logger.Error($"{context}: fallback disband failed for '{party.Name}'", fallbackEx);
                 return false;
             }
+        }
+    }
+
+    /// <summary>
+    /// B17.4 S3：尝试在 disband/destroy 前先把 party 移出 settlement，避免 _stationaryParties 残留 dangling ref。
+    /// 单次幂等：CurrentSettlement == null 时直接跳过。失败仅 Warn,不阻塞主流程。
+    /// </summary>
+    private static void TryLeaveSettlementBeforeRemoval(MobileParty party, string context)
+    {
+        try
+        {
+            if (party?.CurrentSettlement == null) return;
+            LeaveSettlementAction.ApplyForParty(party);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"{context}: LeaveSettlementAction.ApplyForParty failed for '{party?.Name}' (continuing anyway): {ex.Message}");
         }
     }
 }
