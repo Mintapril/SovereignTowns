@@ -57,6 +57,17 @@ public sealed class TransferDispatcher
                 Logger.Debug($"  TransferDispatcher: skipped '{source.Name}' -> '{destination.Name}' — TroopTransfers disabled");
                 return false;
             }
+            // B17.4 S1：围城下不派调拨队。
+            if (source.Town?.IsUnderSiege == true)
+            {
+                Logger.Info($"  TransferDispatcher: source '{source.Name}' is under siege — skip");
+                return false;
+            }
+            if (destination.Town?.IsUnderSiege == true)
+            {
+                Logger.Info($"  TransferDispatcher: destination '{destination.Name}' is under siege — skip");
+                return false;
+            }
             if (!_lifecycle.CanCreateAnotherParty(source, PartyKind))
             {
                 Logger.Info($"  TransferDispatcher: '{source.Name}' 已达调拨队上限，跳过");

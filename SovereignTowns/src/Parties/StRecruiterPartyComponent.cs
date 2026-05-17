@@ -442,6 +442,23 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 excludeSettlements: exclude,
                 matchingRule: rule);
 
+            // B17.4 B2：第一轮(maxDistance=100)无候选 → 第二轮扩大到 Thresholds.RecruitmentFallbackMaxDistance（默认 200）。
+            // 防止前线村庄全枯竭/全被劫时 recruiter 空手回家。
+            if (candidates.Count == 0)
+            {
+                float fallbackDist = ConfigurationManager.Current?.Thresholds?.RecruitmentFallbackMaxDistance ?? 0f;
+                if (fallbackDist > PlanMaxDistance)
+                {
+                    Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(party)}': 第一轮(maxDistance={PlanMaxDistance}) 无候选，第二轮扩大到 {fallbackDist}");
+                    candidates = RecruitmentPlanner.RankCandidates(
+                        homeTown,
+                        maxDistance: fallbackDist,
+                        maxResults: CandidateBatchSize,
+                        excludeSettlements: exclude,
+                        matchingRule: rule);
+                }
+            }
+
             if (candidates.Count == 0) return null;
             return candidates[0].VillageSettlement;
         }

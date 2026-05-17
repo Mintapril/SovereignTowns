@@ -78,6 +78,13 @@ public sealed class PatrolDispatcher
     {
         try
         {
+            // B17.4 S1：围城下不派巡逻队（出门即冲撞围攻军）。
+            if (settlement?.Town?.IsUnderSiege == true)
+            {
+                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' is under siege — skip patrol creation");
+                return;
+            }
+
             // B7.16：cap 来自 town 的兵营建筑（settlement_garrison）等级 + 1。
             // 统计该 settlement 的 ST 巡逻队总数；只有 < cap 才允许再创建。
             // B16.4：vanilla auto-spawn 的 PatrolPartyComponent 不再纳入计数 — 与我们独立共存。

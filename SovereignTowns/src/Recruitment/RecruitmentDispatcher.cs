@@ -83,6 +83,13 @@ public sealed class RecruitmentDispatcher
 
             var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
 
+            // B17.4 S1：围城下不派征兵队（"开门即送"）。
+            if (homeTown.IsUnderSiege)
+            {
+                Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' is under siege — skip dispatch");
+                return false;
+            }
+
             // B1 #7: pause when food trend below threshold
             if (FoodGuard.IsRecruitmentPausedForFood(homeTown, rule, "RecruitmentDispatcher"))
                 return false;
@@ -99,6 +106,21 @@ public sealed class RecruitmentDispatcher
                 maxResults: CandidateBatchSize,
                 excludeSettlements: null,
                 matchingRule: rule);
+            // B17.4 B2：第一轮无候选 → 第二轮扩大到 Thresholds.RecruitmentFallbackMaxDistance。
+            if (candidates.Count == 0)
+            {
+                float fallbackDist = ConfigurationManager.Current?.Thresholds?.RecruitmentFallbackMaxDistance ?? 0f;
+                if (fallbackDist > PlanMaxDistance)
+                {
+                    Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 第一轮无候选，第二轮扩大到 {fallbackDist}");
+                    candidates = RecruitmentPlanner.RankCandidates(
+                        homeTown,
+                        maxDistance: fallbackDist,
+                        maxResults: CandidateBatchSize,
+                        excludeSettlements: null,
+                        matchingRule: rule);
+                }
+            }
             if (candidates.Count == 0)
             {
                 Logger.Warn($"  RecruitmentDispatcher: '{homeTown.Name}' 无可招募村庄候选 — 周边 village notable 没有符合规则 (Tier {rule.MinTier}-{rule.MaxTier} / 比例非零兵种) 的兵。考虑放宽 MinTier。");
@@ -106,16 +128,40 @@ public sealed class RecruitmentDispatcher
             }
             var target = candidates[0];
 
-            // 征兵队不设固定人数 floor — 算多少抽多少，0 也允许派遣裸车。
+            // B17.4 A3：空 garrison floor — 0 兵裸车遭遇即没。RecruiterMinHomeGarrison=1 时仍允许 1 兵护卫（兼容历史"0 兵裸车"语义需玩家手动调到 0）。
             int garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+            int minHomeGarrison = ConfigurationManager.Current?.Thresholds?.RecruiterMinHomeGarrison ?? 1;
+            if (garrisonForEscort < minHomeGarrison)
+            {
+                Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' garrison={garrisonForEscort} < RecruiterMinHomeGarrison={minHomeGarrison}, skip");
+                return false;
+            }
+
+            // B17.4 S2：garrison 重建（vanilla 在 garrison 清 0 后会移除整个 GarrisonParty 对象，
+            // 再访问 GarrisonParty 永远 null；line ~127 的 `homeTown.GarrisonParty!.MemberRoster` 会 NRE）。
+            if (garrisonForEscort > 0 && homeTown.GarrisonParty == null)
+            {
+                try
+                {
+                    homeTown.Settlement.AddGarrisonParty();
+                    garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+                    Logger.Info($"  RecruitmentDispatcher: rebuilt missing GarrisonParty for '{homeTown.Name}' before escort extraction");
+                }
+                catch (Exception addEx)
+                {
+                    Logger.Error($"  RecruitmentDispatcher: AddGarrisonParty failed for '{homeTown.Name}'", addEx);
+                    return false;
+                }
+            }
+
             int escortRequested = (int)Math.Round(garrisonForEscort * EscortRatio);
             TroopRoster? escortRoster = null;
             int escortActual = 0;
-            if (escortRequested > 0)
+            if (escortRequested > 0 && homeTown.GarrisonParty != null)
             {
                 escortRoster = TroopRoster.CreateDummyTroopRoster();
                 escortActual = TroopTransferHelper.TransferFromGarrison(
-                    homeTown.GarrisonParty!.MemberRoster, escortRoster, escortRequested, TroopTransferHelper.SortStrategy.LowestTierFirst);
+                    homeTown.GarrisonParty.MemberRoster, escortRoster, escortRequested, TroopTransferHelper.SortStrategy.LowestTierFirst);
                 if (escortActual <= 0)
                 {
                     escortRoster = null;
@@ -140,7 +186,8 @@ public sealed class RecruitmentDispatcher
                     Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 玩家金币不足 ({Hero.MainHero?.Gold ?? 0} < {DefaultInitialGold})，跳过派遣");
                     if (escortRoster != null && escortActual > 0)
                     {
-                        TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty!.MemberRoster);
+                        if (homeTown.GarrisonParty?.MemberRoster != null)
+                            TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
                     }
                     return false;
                 }
@@ -149,7 +196,8 @@ public sealed class RecruitmentDispatcher
                     Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' ModTreasury.Charge 拒绝，跳过派遣");
                     if (escortRoster != null && escortActual > 0)
                     {
-                        TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty!.MemberRoster);
+                        if (homeTown.GarrisonParty?.MemberRoster != null)
+                            TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
                     }
                     return false;
                 }
@@ -161,7 +209,8 @@ public sealed class RecruitmentDispatcher
                 Logger.Warn($"  RecruitmentDispatcher: CreateForTown 返回 null for '{homeTown.Name}'");
                 if (escortRoster != null && escortActual > 0)
                 {
-                    TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty!.MemberRoster);
+                    if (homeTown.GarrisonParty?.MemberRoster != null)
+                        TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
                 }
                 if (shouldChargeDispatch)
                 {
