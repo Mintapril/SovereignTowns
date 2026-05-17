@@ -156,7 +156,7 @@ public sealed class PartyLifecycleManager
     /// 读档恢复后由 <c>OnGameLoadedEvent</c> 调用：清空 <see cref="_tracked"/> 并基于 vanilla
     /// 已恢复的 <see cref="MobileParty"/> 列表重建索引。
     /// 必须的过滤（与各 Manager 创建端保持一致）：
-    ///   - RecruitingPartyComponent / TransferPartyComponent：本 Mod 自有类型，直接收编；
+    ///   - RecruitingPartyComponent / StTransferPartyComponent：本 Mod 自有类型，直接收编；
     ///   - vanilla PatrolPartyComponent：仅在 HomeSettlement.OwnerClan 属于 ST 受管 clan
     ///     时纳入（registry 尚未就绪时退回玩家氏族过滤）。
     /// 单 party 失败 try-catch，不影响整体；幂等：可多次调用。
@@ -170,7 +170,7 @@ public sealed class PartyLifecycleManager
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             var now = CampaignTime.Now;
 
-            // 1) RecruitingPartyComponent / TransferPartyComponent（均继承自 CustomPartyComponent）
+            // 1) RecruitingPartyComponent / StTransferPartyComponent / SallyForthPartyComponent（均继承自 CustomPartyComponent）
             try
             {
                 var customs = MobileParty.AllCustomParties;
@@ -190,9 +190,9 @@ public sealed class PartyLifecycleManager
                                 _tracked[party] = new TrackedPartyMeta(home, KindRecruiter, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
                                 recruiters++;
                             }
-                            else if (comp is TransferPartyComponent tp)
+                            else if (comp is SovereignTowns.Parties.StTransferPartyComponent stp)
                             {
-                                var home = tp.Source;
+                                var home = stp.Source;
                                 if (home == null) { skipped++; continue; }
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
                                 _tracked[party] = new TrackedPartyMeta(home, KindTransfer, now, party.TargetSettlement, mc, SafeActualClan(party, home), mc);
@@ -440,6 +440,17 @@ public sealed class PartyLifecycleManager
 
         try
         {
+            // B16.1：StPartyComponent 状态机分派必须在所有 early-return（idle 检测）之前，
+            // 否则正常 in-flight 队伍（无 progress + idle < 24h）走不到这里，
+            // OnHourlyTickCore（含到达 dest → DeliverAndDisband 分支）永远不触发。
+            if (party.PartyComponent is SovereignTowns.Parties.StPartyComponent stc)
+            {
+                try { stc.OnHourlyTick(party); }
+                catch (Exception ex) { Logger.Error($"StPartyComponent.OnHourlyTick failed for '{PartyNameFormatter.SafeName(party)}'", ex); }
+                // component 可能已 DisbandAndUntrack（如 DeliverAndDisband）：移除条目后不再跑 idle 兜底
+                if (!_tracked.TryGetValue(party, out meta)) return;
+            }
+
             // 1) 进展检测：TargetSettlement 改变 或 兵员数量改变 → 视为有进展，刷新 LastActiveAt
             var currentTarget = party.TargetSettlement;
             var currentMembers = PartyNameFormatter.SafeMemberCount(party);
@@ -509,6 +520,48 @@ public sealed class PartyLifecycleManager
         catch (Exception ex)
         {
             Logger.Error($"OnHourlyTickParty failed for '{PartyNameFormatter.SafeName(party)}'", ex);
+        }
+    }
+
+    /// <summary>
+    /// B16.1：vanilla MapEventEnded 路由入口。由 SovereignTownsCampaignBehavior 转发，
+    /// 单点分派给所有参战 StPartyComponent。
+    /// </summary>
+    public void OnMapEventEnded(TaleWorlds.CampaignSystem.MapEvents.MapEvent ev)
+    {
+        if (ev == null) return;
+        try
+        {
+            HandleSideEndOfEvent(ev.AttackerSide, ev);
+            HandleSideEndOfEvent(ev.DefenderSide, ev);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("PartyLifecycleManager.OnMapEventEnded failed", ex);
+        }
+    }
+
+    private void HandleSideEndOfEvent(TaleWorlds.CampaignSystem.MapEvents.MapEventSide? side, TaleWorlds.CampaignSystem.MapEvents.MapEvent ev)
+    {
+        if (side?.Parties == null) return;
+        try
+        {
+            foreach (var uop in side.Parties)
+            {
+                MobileParty? mp = null;
+                try { mp = uop.Party?.MobileParty; }
+                catch { continue; }
+                if (mp == null || !mp.IsActive) continue;
+                if (mp.PartyComponent is SovereignTowns.Parties.StPartyComponent stc)
+                {
+                    try { stc.OnMapEventEnded(ev, mp); }
+                    catch (Exception ex) { Logger.Error($"StPartyComponent.OnMapEventEnded failed for '{PartyNameFormatter.SafeName(mp)}'", ex); }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("HandleSideEndOfEvent iteration failed", ex);
         }
     }
 

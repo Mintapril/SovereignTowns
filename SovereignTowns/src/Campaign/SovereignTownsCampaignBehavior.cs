@@ -37,7 +37,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
     private CapitalLogisticsManager? _capitalLogisticsManager;
     private BattleLootManager? _battleLootManager;
-    private GarrisonTransferManager? _transferManager;
+    private TransferDispatcher? _transferDispatcher;
     private PatrolManager? _patrolManager;
     private SallyForthManager? _sallyForthManager;
     private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
@@ -164,7 +164,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             }
             _capitalRegistry.Initialize();
 
-            _transferManager = new GarrisonTransferManager(_lifecycle);
+            _transferDispatcher = new TransferDispatcher(_lifecycle);
             _battleLootManager = new BattleLootManager(_capitalRegistry);
             // B7.27：sally 先构造，patrol 接受 sally 引用以做支援判定
             _sallyForthManager = new SallyForthManager(_lifecycle, _capitalRegistry, _battleLootManager);
@@ -198,7 +198,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _capitalLogisticsManager = new CapitalLogisticsManager(
                 _capitalRegistry,
                 _recruitmentManager,
-                _transferManager);
+                _transferDispatcher);
 
             // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
             // 时序：必须在 RecruitmentManager 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
@@ -280,7 +280,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             DrainWebConfigSync();
             // 首行性能：每个 Manager 内部都有 PartyComponent 类型过滤
             _recruitmentManager?.OnHourlyTickParty(party);
-            _transferManager?.OnHourlyTickParty(party);
+            // B16.1：TransferDispatcher 不再持有 OnHourlyTickParty —
+            // StTransferPartyComponent 由 PartyLifecycleManager 单点路由。
             _patrolManager?.OnHourlyTickParty(party);
             _sallyForthManager?.OnHourlyTickParty(party);
         }
@@ -345,6 +346,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             _battleLootManager?.OnMapEventEnded(mapEvent);
+            _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1：单点路由到 StPartyComponent
+            // 仍保留旧 Manager 转发，它们在后续 Step 才迁移
             _sallyForthManager?.OnMapEventEnded(mapEvent);
             _patrolManager?.OnMapEventEnded(mapEvent);
             _recruitmentManager?.OnMapEventEnded(mapEvent);

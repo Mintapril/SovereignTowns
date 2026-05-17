@@ -11,7 +11,7 @@ namespace SovereignTowns.Models;
 
 /// <summary>
 /// 为 Mod 自定义的 3 类 MobileParty
-/// (<see cref="RecruitingPartyComponent"/> / <see cref="TransferPartyComponent"/> / <see cref="SallyForthPartyComponent"/>)
+/// (<see cref="RecruitingPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="SallyForthPartyComponent"/>)
 /// 强制 clan-wage = 0：这些队伍由 town 出资，不应再扣家族金币。
 /// SallyForth 短命 12h 内通常无 wage tick，但跨整点会扣 → 这里强制 0。
 /// 其它 party fall-through 到 vanilla <see cref="DefaultPartyWageModel"/>。
@@ -31,7 +31,7 @@ public sealed class STPartyWageModel : DefaultPartyWageModel
         {
             var comp = mobileParty?.PartyComponent;
             if (comp is RecruitingPartyComponent
-                || comp is TransferPartyComponent
+                || comp is StTransferPartyComponent
                 || comp is SallyForthPartyComponent)
             {
                 return new ExplainedNumber(

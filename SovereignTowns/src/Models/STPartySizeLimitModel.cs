@@ -11,7 +11,7 @@ namespace SovereignTowns.Models;
 
 /// <summary>
 /// 为 Mod 自定义的 3 类 MobileParty
-/// (<see cref="RecruitingPartyComponent"/> / <see cref="TransferPartyComponent"/> / <see cref="SallyForthPartyComponent"/>)
+/// (<see cref="RecruitingPartyComponent"/> / <see cref="StTransferPartyComponent"/> / <see cref="SallyForthPartyComponent"/>)
 /// 提供独立的兵员上限；其它 party 一律 fall-through 到 vanilla
 /// <see cref="DefaultPartySizeLimitModel"/>。
 ///
@@ -36,7 +36,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                     new TextObject("{=ST_PartySizeLimit_Recruit}主权城镇 征兵队容量上限"));
             }
 
-            if (comp is TransferPartyComponent transfer)
+            if (comp is StTransferPartyComponent transfer)
             {
                 return new ExplainedNumber(
                     ComputeTransferLimit(mp, transfer),
@@ -78,7 +78,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
         return Math.Max(1, currentMembers + remainingRecruitCapacity);
     }
 
-    private static int ComputeTransferLimit(MobileParty? party, TransferPartyComponent transfer)
+    private static int ComputeTransferLimit(MobileParty? party, StTransferPartyComponent transfer)
     {
         int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
         int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(transfer.Source) + currentMembers;

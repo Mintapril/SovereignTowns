@@ -42,16 +42,16 @@ public sealed class CapitalLogisticsManager
 
     private readonly CapitalRegistry _capitalRegistry;
     private readonly RecruitmentManager _recruitmentManager;
-    private readonly GarrisonTransferManager _transferManager;
+    private readonly TransferDispatcher _transferDispatcher;
 
     public CapitalLogisticsManager(
         CapitalRegistry capitalRegistry,
         RecruitmentManager recruitmentManager,
-        GarrisonTransferManager transferManager)
+        TransferDispatcher transferDispatcher)
     {
         _capitalRegistry = capitalRegistry ?? throw new ArgumentNullException(nameof(capitalRegistry));
         _recruitmentManager = recruitmentManager ?? throw new ArgumentNullException(nameof(recruitmentManager));
-        _transferManager = transferManager ?? throw new ArgumentNullException(nameof(transferManager));
+        _transferDispatcher = transferDispatcher ?? throw new ArgumentNullException(nameof(transferDispatcher));
     }
 
     public void EvaluateAll()
@@ -198,7 +198,7 @@ public sealed class CapitalLogisticsManager
                 int men = party.MemberRoster?.TotalManCount ?? 0;
                 if (men <= 0) continue;
 
-                if (party.PartyComponent is TransferPartyComponent transfer)
+                if (party.PartyComponent is StTransferPartyComponent transfer)
                 {
                     var source = transfer.Source;
                     var destination = transfer.Destination;
@@ -243,7 +243,7 @@ public sealed class CapitalLogisticsManager
         try
         {
             if (party.ActualClan != null) return party.ActualClan;
-            if (party.PartyComponent is TransferPartyComponent transfer) return transfer.Source?.OwnerClan;
+            if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
             if (party.PartyComponent is RecruitingPartyComponent recruiter) return recruiter.HomeSettlement?.OwnerClan;
         }
         catch
@@ -408,7 +408,7 @@ public sealed class CapitalLogisticsManager
                         $"destCritical={dest.CriticalDemand} destRisk={dest.Risk.Level}";
 
                     var task = new TransferTask(source.Settlement, dest.Settlement, amount, dest.Priority, reason);
-                    bool ok = _transferManager.TryDispatchTransfer(task);
+                    bool ok = _transferDispatcher.TryDispatchTransfer(task);
                     if (ok)
                     {
                         remainingCapacity[source.Settlement] = Math.Max(0, capacity - amount);
