@@ -25,7 +25,8 @@ public static class Logger
     private const int FlushIntervalMs = 200;
 
     private static readonly ConcurrentQueue<LogEntry> _queue = new ConcurrentQueue<LogEntry>();
-    private static readonly CancellationTokenSource _cts = new CancellationTokenSource();
+    // R8：CTS 必须可替换。Shutdown 之后用户重新启用 mod / 重载 → Initialize 需要全新 token。
+    private static CancellationTokenSource _cts = new CancellationTokenSource();
     private static readonly object _fileLock = new object();
 
     private static Task? _writerTask;
@@ -61,6 +62,12 @@ public static class Logger
     public static void Info(string message)  => Enqueue(LogLevel.Info, message);
     public static void Warn(string message)  => Enqueue(LogLevel.Warn, message);
 
+    public static void Warn(string message, Exception? ex)
+    {
+        if (ex is null) Enqueue(LogLevel.Warn, message);
+        else Enqueue(LogLevel.Warn, message + Environment.NewLine + ex);
+    }
+
     public static void Error(string message, Exception? ex = null)
     {
         if (ex is null) Enqueue(LogLevel.Error, message);
@@ -77,6 +84,14 @@ public static class Logger
             while (_queue.TryDequeue(out var entry)) WriteOne(entry);
         }
         catch { /* swallow on shutdown */ }
+        finally
+        {
+            // R8：复位状态，允许同进程内 re-Initialize（如 mod hot reload）。
+            try { _cts.Dispose(); } catch { }
+            _cts = new CancellationTokenSource();
+            _writerTask = null;
+            _initialized = false;
+        }
     }
 
     private static void Enqueue(LogLevel level, string message)

@@ -84,7 +84,7 @@ public sealed class PartyMergeService
                 }
                 catch (Exception addEx)
                 {
-                    Logger.Warn($"{context}: AddToCounts failed for '{element.Character.StringId}' x{element.Number}; element skipped: {addEx.Message}");
+                    Logger.Warn($"{context}: AddToCounts failed for '{element.Character.StringId}' x{element.Number}; element skipped", addEx);
                     continue;
                 }
 
@@ -192,7 +192,7 @@ public sealed class PartyMergeService
         }
         catch (Exception ex)
         {
-            Logger.Warn($"{context}: LeaveSettlementAction.ApplyForParty failed for '{party?.Name}' (continuing anyway): {ex.Message}");
+            Logger.Warn($"{context}: LeaveSettlementAction.ApplyForParty failed for '{party?.Name}' (continuing anyway)", ex);
         }
     }
 }

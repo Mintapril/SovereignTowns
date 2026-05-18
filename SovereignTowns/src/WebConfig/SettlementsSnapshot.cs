@@ -80,7 +80,7 @@ internal static class SettlementsSnapshot
                         isTown = s.IsTown,
                         isCastle = s.IsCastle,
                         prosperity = (int)(t.Prosperity),
-                        currentGarrisonCount = t.GarrisonParty?.MemberRoster?.TotalManCount ?? 0,
+                        currentGarrisonCount = Math.Min(t.GarrisonParty?.MemberRoster?.TotalManCount ?? 0, 10000),  // B1: 防御性上界
                     });
                 }
                 catch (Exception inner)

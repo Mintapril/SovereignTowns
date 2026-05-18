@@ -235,9 +235,8 @@ public sealed class CapitalRegistry
     /// <summary>
     /// 用户 toggle ApplyToAiSettlementsToo 后调（网页 PUT /api/config / POST /api/reload）。
     /// - 开启：补齐所有有 Town/Castle 的 AI clan。
-    /// - 关闭：移除所有 AI clan manager（玩家保留）；不主动清理 in-flight party，让现有
-    ///   AI 招募队跑完最后一段任务后自然结束（解散在 StRecruiterPartyComponent / LifecycleManager 的
-    ///   IsManagedClan 检查里抑制新派遣即可）。
+    /// - 关闭（R2 修复）：先主动迁移/解散每个 AI clan 的 in-flight ST party 到该 clan 的首府
+    ///   (兵员注入 garrison + 队伍 disband)，再移除 manager。UI 的"即将解散"提示与后端行为一致。
     /// </summary>
     public void SyncFromConfig()
     {
@@ -262,12 +261,30 @@ public sealed class CapitalRegistry
                 }
                 foreach (var c in aiKeys)
                 {
+                    // R2：迁移 / 解散此 AI clan 的所有 in-flight ST party。fallback 优先取该 clan 当前
+                    // 首府；若 manager 已无可用首府再退化到 clan 名下任意 town/castle；都没有就让兵员蒸发。
+                    Settlement? fallback = GetCapitalForClan(c);
+                    if (fallback == null)
+                    {
+                        try
+                        {
+                            foreach (var s in c.Settlements)
+                            {
+                                if (s != null && (s.IsTown || s.IsCastle)) { fallback = s; break; }
+                            }
+                        }
+                        catch (Exception sEx) { Logger.Warn($"SyncFromConfig: clan '{c.StringId}' settlement scan failed", sEx); }
+                    }
+
+                    try { _lifecycle.MigrateAllOrDisband(c, fallback); }
+                    catch (Exception migEx) { Logger.Warn($"SyncFromConfig: MigrateAllOrDisband for AI clan '{c.StringId}' failed", migEx); }
+
                     _managers.Remove(c);
                     removed++;
                 }
                 if (removed > 0)
                 {
-                    Logger.Info($"CapitalRegistry.SyncFromConfig: removed {removed} AI manager(s) (toggle off)");
+                    Logger.Info($"CapitalRegistry.SyncFromConfig: dissolved AI manager(s) and their in-flight parties (toggle off, removed={removed})");
                 }
             }
         }

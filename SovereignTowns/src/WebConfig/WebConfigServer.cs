@@ -98,7 +98,14 @@ public static class WebConfigServer
             }
 
             _cts = new CancellationTokenSource();
-            _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
+            // R2: AcceptLoopAsync 内部已 try/catch，但仍可能因极端环境（端口被回收 / listener 被强杀）抛出 unobserved；
+            // 用 ContinueWith.OnlyOnFaulted 显式记录，避免 silently fade。
+            var acceptTask = Task.Run(() => AcceptLoopAsync(_cts.Token));
+            acceptTask.ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                    Logger.Error("WebConfigServer.AcceptLoopAsync faulted (HTTP server stopped accepting connections)", t.Exception?.GetBaseException());
+            }, TaskContinuationOptions.OnlyOnFaulted);
 
             // 写一份 port.txt 仅用于诊断（前端走 URL 直接拿到 port，不读这文件）。
             try
@@ -275,6 +282,23 @@ public static class WebConfigServer
         catch { }
     }
 
+    /// <summary>
+    /// 强制浏览器不缓存 mod 控制面板（HTML + JSON API）。理由：
+    ///   - 玩家修改 mod 代码 / 重启游戏后磁盘 index.html 已变，但浏览器启发式缓存可能仍发旧版
+    ///   - /api/config 等数据响应永远是 in-memory 实时状态，缓存会撒谎
+    /// 必须三件套同时设置：Cache-Control no-store + Pragma + Expires=0，覆盖 HTTP/1.0 + 1.1 + 历史代理。
+    /// </summary>
+    private static void SetNoCacheHeaders(HttpListenerContext ctx)
+    {
+        try
+        {
+            ctx.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0";
+            ctx.Response.Headers["Pragma"] = "no-cache";
+            ctx.Response.Headers["Expires"] = "0";
+        }
+        catch { }
+    }
+
     private static void ServeStatic(HttpListenerContext ctx, string path)
     {
         try
@@ -317,6 +341,8 @@ public static class WebConfigServer
             ctx.Response.StatusCode = 200;
             ctx.Response.ContentType = GuessContentType(fullPath);
             ctx.Response.ContentLength64 = data.Length;
+            // 静态文件（index.html / index.css / 其他 WebUI 资源）禁缓存。
+            SetNoCacheHeaders(ctx);
             ctx.Response.OutputStream.Write(data, 0, data.Length);
             ctx.Response.OutputStream.Close();
         }
@@ -370,6 +396,8 @@ public static class WebConfigServer
             ctx.Response.StatusCode = status;
             ctx.Response.ContentType = "application/json; charset=utf-8";
             ctx.Response.ContentLength64 = data.Length;
+            // /api/* 数据响应永远是 in-memory 实时状态，禁缓存避免回传旧值。
+            SetNoCacheHeaders(ctx);
             ctx.Response.OutputStream.Write(data, 0, data.Length);
             ctx.Response.OutputStream.Close();
         }

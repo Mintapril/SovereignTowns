@@ -165,6 +165,14 @@ public sealed class PartyLifecycleManager
             _tracked.Clear();
 
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
+            // R7 (DeepSeek audit 2026-05-18)：在某些模组冲突场景下 OnGameLoadedEvent 可能在
+            // Campaign / CampaignTime 完全就绪前触发。Campaign.Current 为 null 时直接退出，
+            // 避免给所有重建 party 一个零基线，进而被错判 idle 立即遣返 / 解散。
+            if (TaleWorlds.CampaignSystem.Campaign.Current == null)
+            {
+                Logger.Error("RebuildFromCampaign: Campaign.Current is null — skipping rebuild to avoid corrupting LastActiveAt baselines");
+                return;
+            }
             var now = CampaignTime.Now;
 
             try
@@ -374,13 +382,13 @@ public sealed class PartyLifecycleManager
                     foreach (var mgr in reg.AllManagers)
                     {
                         try { mgr?.PatrolScheduler?.NotifyPartyDestroyed(party); }
-                        catch (Exception ex) { Logger.Warn("PatrolScheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
+                        catch (Exception ex) { Logger.Warn("PatrolScheduler NotifyPartyDestroyed (per-mgr) failed", ex); }
                         try { mgr?.RecruiterScheduler?.NotifyPartyDestroyed(party); }
-                        catch (Exception ex) { Logger.Warn("RecruiterScheduler NotifyPartyDestroyed (per-mgr) failed: " + ex.Message); }
+                        catch (Exception ex) { Logger.Warn("RecruiterScheduler NotifyPartyDestroyed (per-mgr) failed", ex); }
                     }
                 }
             }
-            catch (Exception ex) { Logger.Warn("scheduler NotifyPartyDestroyed iteration failed: " + ex.Message); }
+            catch (Exception ex) { Logger.Warn("scheduler NotifyPartyDestroyed iteration failed", ex); }
         }
         catch (Exception ex)
         {
@@ -432,12 +440,16 @@ public sealed class PartyLifecycleManager
             if (party.BesiegedSettlement != null) return;
 
             var idleHours = ComputeIdleHours(meta.LastActiveAt);
-            if (idleHours < IdleHoursBeforeForceReturn) return;
+            // R1 (DeepSeek audit 2026-05-18)：从 const 切换为 PartyThresholds，玩家可配。
+            // ConfigurationManager.Current 为 null 时回退到 const 默认值。
+            float forceReturnHours = SovereignTowns.Configuration.ConfigurationManager.Current?.Thresholds?.IdleHoursBeforeForceReturn ?? IdleHoursBeforeForceReturn;
+            float disbandHours = SovereignTowns.Configuration.ConfigurationManager.Current?.Thresholds?.IdleHoursBeforeDisband ?? IdleHoursBeforeDisband;
+            if (idleHours < forceReturnHours) return;
 
             // 3) 超过 disband 阈值 → 解散
-            if (idleHours >= IdleHoursBeforeDisband)
+            if (idleHours >= disbandHours)
             {
-                Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeDisband}h — issuing DisbandPartyAction.StartDisband");
+                Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {disbandHours}h — issuing DisbandPartyAction.StartDisband");
                 try
                 {
                     DisbandPartyAction.StartDisband(party);
@@ -451,11 +463,11 @@ public sealed class PartyLifecycleManager
             }
 
             // 4) 超过 force-return 阈值 → 重定向至 home
-            if (idleHours >= IdleHoursBeforeForceReturn)
+            if (idleHours >= forceReturnHours)
             {
                 if (meta.Home != null && party.TargetSettlement != meta.Home)
                 {
-                    Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {IdleHoursBeforeForceReturn}h — forcing return to home '{meta.Home.Name}'");
+                    Logger.Warn($"HourlyTick '{PartyNameFormatter.SafeName(party)}': idle {idleHours:F1}h >= {forceReturnHours}h — forcing return to home '{meta.Home.Name}'");
                     try
                     {
                         if (party.PartyComponent is SovereignTowns.Parties.StRecruiterPartyComponent rp)
@@ -505,7 +517,20 @@ public sealed class PartyLifecycleManager
         if (side?.Parties == null) return;
         try
         {
-            foreach (var uop in side.Parties)
+            // E22 (DeepSeek audit 2026-05-18)：vanilla side.Parties 在 MapEvent 收尾阶段可能被
+            // vanilla 自身修改（DisbandPartyAction 链入俘虏迁移等）→ 直接 foreach 会抛
+            // InvalidOperationException。先快照再迭代。
+            var snapshot = new System.Collections.Generic.List<TaleWorlds.CampaignSystem.MapEvents.MapEventParty>();
+            try
+            {
+                foreach (var uop in side.Parties) snapshot.Add(uop);
+            }
+            catch (Exception snapEx)
+            {
+                Logger.Error("HandleSideEndOfEvent snapshot failed", snapEx);
+                return;
+            }
+            foreach (var uop in snapshot)
             {
                 MobileParty? mp = null;
                 try { mp = uop.Party?.MobileParty; }
