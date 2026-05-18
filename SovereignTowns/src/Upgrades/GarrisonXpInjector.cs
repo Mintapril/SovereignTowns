@@ -48,7 +48,7 @@ public static class GarrisonXpInjector
             else if (settlement.OwnerClan != Clan.PlayerClan) return;
 
             var features = ConfigurationManager.Current?.EnabledFeatures;
-            if (features == null || !features.AutoGarrison) return;
+            if (features == null || !features.AutoRecruitment) return;
 
             var town = settlement.Town;
             if (town == null) return;
@@ -95,6 +95,26 @@ public static class GarrisonXpInjector
                     int baseXp = model.CalculateDailyTroopXpBonus(town);
                     float mult = model.CalculateGarrisonXpBonusMultiplier(town);
                     townBonus = TaleWorlds.Library.MathF.Round(baseXp * mult);
+                    // doc §13.4：按首府拥有者所属城镇/城堡数量额外乘算（城 1.5、堡 0.5）
+                    if (townBonus > 0)
+                    {
+                        int townCount = 0, castleCount = 0;
+                        var ownerClan = town.OwnerClan;
+                        if (ownerClan?.Settlements != null)
+                        {
+                            foreach (var s in ownerClan.Settlements)
+                            {
+                                if (s == null) continue;
+                                if (s.IsTown) townCount++;
+                                else if (s.IsCastle) castleCount++;
+                            }
+                        }
+                        float ownerMult = townCount * 1.5f + castleCount * 0.5f;
+                        if (ownerMult > 0f)
+                        {
+                            townBonus = TaleWorlds.Library.MathF.Round(townBonus * ownerMult);
+                        }
+                    }
                     if (townBonus < 0) townBonus = 0;
                 }
             }

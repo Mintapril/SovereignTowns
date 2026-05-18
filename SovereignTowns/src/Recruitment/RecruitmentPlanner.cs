@@ -67,11 +67,11 @@ public static class RecruitmentPlanner
 
     /// <summary>
     /// 给定 <paramref name="homeTown"/>，返回按 <see cref="VillageRecruitOption.PriorityScore"/> 倒序的候选村庄。
-    /// 候选范围：homeTown 直接隶属村庄 + 其它同氏族自有 town 的村庄（仅当与 home town 距离 ≤ <paramref name="maxDistance"/>）。
+    /// 候选范围：homeTown 直接隶属村庄 + 其它同氏族自有 town 的村庄。doc §7.2 "无距离要求" — 任何距离均允许。
     /// 不扫描全图全部 settlement —— 仅遍历本氏族自有 town 的 villages 集合。
     /// </summary>
     /// <param name="homeTown">发起招募的受管城镇。null 时返回空数组。</param>
-    /// <param name="maxDistance">最大允许的二维地图距离（默认 100f）。</param>
+    /// <param name="maxDistance">保留参数（doc §7.2 "无距离要求"），距离不再用作硬过滤；调用方传入的值仅用于评分中的 distance penalty。</param>
     /// <param name="maxResults">最多返回的候选数（默认 10）。</param>
     public static IReadOnlyList<VillageRecruitOption> RankCandidates(
         Town homeTown,
@@ -118,7 +118,7 @@ public static class RecruitmentPlanner
                 }
             }
 
-            // 2) 其它 *同氏族* 自有 town 的村庄（仅当 ≤ maxDistance）。
+            // 2) 其它 *同氏族* 自有 town 的村庄。doc §7.2 "无距离要求"——距离不再用作硬过滤。
             // B7.15: 多 clan 化 — 用 homeTown.OwnerClan 而非硬编码 PlayerClan，让 AI clan
             // 的征兵队也能跨自家其他城的辐射范围招兵（玩家走同样路径仍正确）。
             var homeClan = homeTown.OwnerClan;
@@ -140,9 +140,33 @@ public static class RecruitmentPlanner
                         if (s == null) continue;
                         if (!seen.Add(s)) continue;
                         TryAdd(options, s, homeSettlement, homeFaction, homePos, maxDistance,
-                            includeDistanceFilter: true, excludeSet: excludeSet, matchingRule: matchingRule);
+                            includeDistanceFilter: false, excludeSet: excludeSet, matchingRule: matchingRule);
                     }
                 }
+            }
+
+            // 3) doc §7.2 第3类：非同氏族、与首府非交战状态（同阵营友军或中立第三方）所属的村庄。
+            //    扫描全图 village；TryAdd 内的 not-at-war 过滤会排除敌方。同氏族（已在前两类）跳过避免重复。
+            try
+            {
+                var allSettlements = Settlement.All;
+                if (allSettlements != null)
+                {
+                    for (int i = 0; i < allSettlements.Count; i++)
+                    {
+                        var s = allSettlements[i];
+                        if (s == null) continue;
+                        if (!s.IsVillage) continue;
+                        if (!seen.Add(s)) continue;
+                        if (s.OwnerClan == homeClan) continue;  // 已在前两类
+                        TryAdd(options, s, homeSettlement, homeFaction, homePos, maxDistance,
+                            includeDistanceFilter: false, excludeSet: excludeSet, matchingRule: matchingRule);
+                    }
+                }
+            }
+            catch (Exception cat3Ex)
+            {
+                Logger.Warn($"RecruitmentPlanner.RankCandidates: 第3类扫描失败 — {cat3Ex.Message}");
             }
 
             // 按 PriorityScore 倒序，再截断到 maxResults
@@ -186,8 +210,16 @@ public static class RecruitmentPlanner
         // 冷却中（vanilla 还未刷新足够 volunteer 槽位）
         if (RecruitmentCooldown.IsOnCooldown(villageSettlement)) return;
 
-        // 不去敌方阵营
-        if (villageSettlement.MapFaction != homeFaction) return;
+        // doc §7.2: 不去敌方阵营；允许同阵营友军和中立第三方。
+        // 等价 "非交战"：villageFaction == homeFaction（含同氏族）天然 not-at-war；
+        //                villageFaction != homeFaction 时必须能判定关系（双方均非 null）且非 at-war。
+        var villageFaction = villageSettlement.MapFaction;
+        if (villageFaction == null) return;
+        if (villageFaction != homeFaction)
+        {
+            if (homeFaction == null) return;
+            if (homeFaction.IsAtWarWith(villageFaction)) return;
+        }
 
         // 村庄状态屏蔽：被洗劫 / 正在被劫
         var village = villageSettlement.Village;

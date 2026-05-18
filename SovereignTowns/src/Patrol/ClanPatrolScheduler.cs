@@ -46,6 +46,16 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
         if (s.IsUnderSiege) return false;
         var config = ConfigurationManager.Current.ClanPatrol;
         if (s.IsVillage && config.AvoidRaidedVillages && IsVillageRaided(s)) return false;
+        // 2026-05-18 产品语义：巡逻队不应"回家"作为正常巡逻站 — 回家 = 销毁。
+        // 把巡逻队自己的 HomeSettlement 排除出候选集，强制它只在 home 之外的 settlement 之间循环。
+        try
+        {
+            if (party?.PartyComponent is SovereignTowns.Parties.StPatrolPartyComponent patrol)
+            {
+                if (s == patrol.HomeSettlementOrNull) return false;
+            }
+        }
+        catch { /* swallow */ }
         return true;
     }
 
@@ -81,17 +91,25 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
         if (patrolParty == null) return null;
         try
         {
-            // 收集本氏族正被围攻的 settlement
+            // doc §9.4: 收集本氏族正被围攻的 settlement + 被劫掠中的村庄。
+            // 优先级：首府被围 > 非首府被围（最近）> 村庄被劫（最近）。
             var besieged = new List<Settlement>();
+            var raidedVillages = new List<Settlement>();
             foreach (var s in _clan.Settlements)
             {
-                if (s != null && s.OwnerClan == _clan && s.IsUnderSiege)
+                if (s == null || s.OwnerClan != _clan) continue;
+                if (s.IsUnderSiege)
+                {
                     besieged.Add(s);
+                }
+                else if (s.IsVillage && s.Village?.VillageState == Village.VillageStates.BeingRaided)
+                {
+                    raidedVillages.Add(s);
+                }
             }
-            if (besieged.Count == 0) return null;
+            if (besieged.Count == 0 && raidedVillages.Count == 0) return null;
 
-            // 找首府：首府被围 → 所有 patrol 直接 MergeGarrison（调用方据返回值判断）
-            // 这里只负责"返回目标 settlement"；调用方据 settlement == 首府 来决定 Order
+            // 首府被围 → 所有 patrol 直接 MergeGarrison（调用方据返回值判断）
             var capital = CapitalRegistry.Instance?.GetCapitalForClan(_clan);
             if (capital != null)
             {
@@ -101,11 +119,23 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
                 }
             }
 
-            // 非首府：选距离本 party 最近的围攻点
+            // 非首府围攻：选距离本 party 最近
             Settlement? closest = null;
             float closestDist = float.MaxValue;
             var partyPos = patrolParty.GetPosition2D;
             foreach (var s in besieged)
+            {
+                float d = (partyPos - s.GetPosition2D).Length;
+                if (d < closestDist)
+                {
+                    closestDist = d;
+                    closest = s;
+                }
+            }
+            if (closest != null) return closest;
+
+            // 无围攻 → 被劫掠村庄：选距离本 party 最近
+            foreach (var s in raidedVillages)
             {
                 float d = (partyPos - s.GetPosition2D).Length;
                 if (d < closestDist)
