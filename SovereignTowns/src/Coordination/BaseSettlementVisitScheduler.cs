@@ -67,26 +67,44 @@ public abstract class BaseSettlementVisitScheduler
             Settlement? best = null;
             float bestScore = float.MaxValue;
 
+            int total = 0, filteredOut = 0, bookedOut = 0, gapOut = 0, passed = 0;
+            var diag = new System.Text.StringBuilder();
+            float gap = MinVisitGapHours;
+            float weight = DistanceWeightHoursPerTile;
+
             foreach (var s in EnumerateCandidates(party))
             {
                 if (s == null) continue;
-                if (!PassesCandidateFilter(s, party)) continue;
+                total++;
+                if (!PassesCandidateFilter(s, party)) { filteredOut++; diag.Append($" filtered:'{s.Name}'"); continue; }
 
                 // 多队互补：被他队预占且未到期 → 跳过
                 if (_bookedUntil.TryGetValue(s.StringId, out var booked) && booked > now)
+                {
+                    bookedOut++;
+                    diag.Append($" booked:'{s.Name}'(until={(booked - now).ToHours:F1}h)");
                     continue;
+                }
 
                 // 最小回访间隔
                 if (_lastVisitedAt.TryGetValue(s.StringId, out var lva))
                 {
-                    if (lva.ElapsedHoursUntilNow < MinVisitGapHours) continue;
+                    var sinceHrs = lva.ElapsedHoursUntilNow;
+                    if (sinceHrs < gap)
+                    {
+                        gapOut++;
+                        diag.Append($" gap:'{s.Name}'(visited={sinceHrs:F1}h<{gap}h)");
+                        continue;
+                    }
                 }
 
                 float hoursSinceVisit = _lastVisitedAt.TryGetValue(s.StringId, out var l)
                     ? (float)l.ElapsedHoursUntilNow
                     : 1e6f;
                 float distance = (partyPos - s.GetPosition2D).Length;
-                float score = -hoursSinceVisit + DistanceWeightHoursPerTile * distance;
+                float score = -hoursSinceVisit + weight * distance;
+                passed++;
+                diag.Append($" cand:'{s.Name}'(sinceH={hoursSinceVisit:F1} dist={distance:F1} score={score:F2})");
 
                 if (score < bestScore)
                 {
@@ -94,6 +112,8 @@ public abstract class BaseSettlementVisitScheduler
                     best = s;
                 }
             }
+
+            Logger.Info($"[DIAG] {SchedulerLogTag}.PickNext party='{party?.Name?.ToString() ?? "null"}' total={total} filtered={filteredOut} booked={bookedOut} gap={gapOut} passed={passed} → best='{best?.Name?.ToString() ?? "null"}'{diag}");
 
             if (best != null)
             {

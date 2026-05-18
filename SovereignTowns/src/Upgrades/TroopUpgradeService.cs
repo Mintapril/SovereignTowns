@@ -201,6 +201,7 @@ public static class TroopUpgradeService
 
                     // B7.27：升级金币改走玩家个人金币（不再从城金库），统一记账走 ModTreasury。
                     // AI clan 升级跳过扣费（AI 经济保持原 vanilla 行为）。
+                    bool didCharge = false;
                     if (goldCost > 0 && CapitalRegistry.ShouldChargeClan(homeTown.OwnerClan))
                     {
                         bool charged = ModTreasury.Charge(ExpenseCategory.Upgrade, goldCost, $"upgrade {ch.StringId}->{target.StringId} town={homeTown.Settlement.StringId}");
@@ -209,11 +210,34 @@ public static class TroopUpgradeService
                             skipped++;
                             continue;
                         }
+                        didCharge = true;
                     }
 
-                    // 执行兵员置换：从原兵种扣 1，目标兵种 +1。扣费已成功，避免免费升级。
-                    roster.RemoveTroop(ch, 1, default, 0);
-                    roster.AddToCounts(target, 1);
+                    // R1：原子兵员置换 — target +1 先做（失败→扣款已退、roster 不变），再 source -1。
+                    // source 扣减失败 → target -1 回滚 + 扣款退回，防止"扣钱了 + 兵复制了"。
+                    bool targetAdded = false;
+                    try
+                    {
+                        roster.AddToCounts(target, 1);
+                        targetAdded = true;
+
+                        roster.RemoveTroop(ch, 1, default, 0);
+                    }
+                    catch (Exception swapEx)
+                    {
+                        Logger.Error($"TroopUpgradeService: roster mutation failed for '{ch.StringId}'->'{target.StringId}'", swapEx);
+                        if (targetAdded)
+                        {
+                            try { roster.AddToCounts(target, -1); }
+                            catch (Exception undoEx) { Logger.Error("TroopUpgradeService: target rollback failed — DUPLICATE may exist", undoEx); }
+                        }
+                        if (didCharge)
+                        {
+                            ModTreasury.Refund(ExpenseCategory.Upgrade, goldCost, $"refund_upgrade_failed {ch.StringId}->{target.StringId}");
+                        }
+                        skipped++;
+                        continue;
+                    }
 
                     // 扣 XP：在 ch 剩余 element 上扣（若 ch 已被完全移除，FindIndexOfTroop 返回 < 0）
                     var idx = roster.FindIndexOfTroop(ch);

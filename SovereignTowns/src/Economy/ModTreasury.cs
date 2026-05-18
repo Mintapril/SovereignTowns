@@ -155,6 +155,8 @@ public enum ExpenseCategory
     SallySeed,
     /// <summary>派出巡逻队的初始本钱（2000 denar）</summary>
     PatrolSeed,
+    /// <summary>派出调拨队的初始本钱（200 denar）</summary>
+    TransferSeed,
     /// <summary>兜底</summary>
     Other
 }

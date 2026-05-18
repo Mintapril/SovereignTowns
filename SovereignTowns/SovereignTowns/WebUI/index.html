@@ -457,32 +457,64 @@
             </div>
           </div>
 
-          <!-- =========== TAB 2: 数量与预算 =========== -->
+          <!-- =========== TAB 2: 策略参数 =========== -->
           <div x-show="activeTab === 1" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">数量 与 预算</h2>
-            <p class="text-parchment-200 text-sm mb-6">应用于 GlobalDefaults — 「按城堡覆盖」tab 可对单个领地再次微调。</p>
+            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">策略 参数</h2>
+            <p class="text-parchment-200 text-sm mb-6">
+              合并原「数量预算」与「资源调度」。全局规则应用于所有受管领地，单个领地仍可在「按领地覆盖」里微调。
+            </p>
             <div class="diamond-divider mb-6"></div>
 
-            <div class="space-y-6">
-              <template x-for="s in budgetSpecs" :key="s.key">
-                <div class="grid grid-cols-12 gap-4 items-center">
-                  <div class="col-span-12 md:col-span-4">
-                    <div class="text-[15px] text-parchment-50 font-medium" x-text="s.label"></div>
-                    <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
-                  </div>
-                  <div class="col-span-9 md:col-span-6">
-                    <input type="range" class="w-full"
-                           :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                           :value="config.GlobalDefaults[s.key]"
-                           @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
-                  </div>
-                  <div class="col-span-3 md:col-span-2">
-                    <input type="number"
-                           class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
-                           :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                           :value="config.GlobalDefaults[s.key]"
-                           @input="config.GlobalDefaults[s.key] = s.discrete ? parseInt($event.target.value) : parseFloat($event.target.value)" />
-                  </div>
+            <div class="flex flex-wrap gap-2 mb-7">
+              <template x-for="group in settingsGroups" :key="group.key">
+                <button @click="activeSettingsGroup = group.key"
+                        :class="activeSettingsGroup === group.key ? 'chip-filter active' : 'chip-filter'"
+                        x-text="group.label"></button>
+              </template>
+            </div>
+
+            <div class="mb-6">
+              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-1"
+                  x-text="activeSettingsGroupData?.label"></h3>
+              <p class="text-parchment-300 text-[13px]" x-text="activeSettingsGroupData?.hint"></p>
+            </div>
+
+            <div class="space-y-5">
+              <template x-for="s in activeSettingsGroupData.specs" :key="(s.root || '') + ':' + s.key">
+                <div>
+                  <template x-if="s.type === 'bool'">
+                    <label class="toggle-row flex items-center gap-4 px-3 py-3 cursor-pointer">
+                      <input type="checkbox" class="gold-check shrink-0"
+                             :checked="!!getConfigValue(s)"
+                             @change="setConfigValue(s, $event.target.checked)" />
+                      <div class="flex-1 min-w-0">
+                        <div class="text-[15px] text-parchment-50 font-medium" x-text="s.label"></div>
+                        <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
+                      </div>
+                    </label>
+                  </template>
+
+                  <template x-if="s.type !== 'bool'">
+                    <div class="grid grid-cols-12 gap-4 items-center">
+                      <div class="col-span-12 md:col-span-4">
+                        <div class="text-[15px] text-parchment-50 font-medium" x-text="s.label"></div>
+                        <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
+                      </div>
+                      <div class="col-span-9 md:col-span-6">
+                        <input type="range" class="w-full"
+                               :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                               :value="getConfigValue(s)"
+                               @input="setConfigValue(s, $event.target.value)" />
+                      </div>
+                      <div class="col-span-3 md:col-span-2">
+                        <input type="number"
+                               class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
+                               :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
+                               :value="getConfigValue(s)"
+                               @input="setConfigValue(s, $event.target.value)" />
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </template>
             </div>
@@ -728,75 +760,9 @@
             </div>
           </div>
 
-          <!-- =========== TAB 5: 资源与调度 =========== -->
+          <!-- =========== TAB 5: 按领地覆盖 =========== -->
           <div x-show="activeTab === 4" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">资源 与 调度</h2>
-            <p class="text-parchment-200 text-sm mb-6">招募节奏 / XP 注入 / 俘虏教化 等运行时调度参数。改完点上方「保存到游戏」生效。</p>
-            <div class="diamond-divider mb-6"></div>
-
-            <!-- Resources -->
-            <div>
-              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-4">资 源 与 调 度</h3>
-              <div class="space-y-5">
-                <template x-for="s in resourceSpecs" :key="s.key">
-                  <div class="grid grid-cols-12 gap-4 items-center">
-                    <div class="col-span-12 md:col-span-4">
-                      <div class="text-[15px] text-parchment-50" x-text="s.label"></div>
-                      <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
-                    </div>
-                    <div class="col-span-9 md:col-span-6">
-                      <input type="range" class="w-full"
-                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                             :value="getResourceValue(s)"
-                             @input="setResourceValue(s, $event.target.value)" />
-                    </div>
-                    <div class="col-span-3 md:col-span-2">
-                      <input type="number"
-                             class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
-                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                             :value="getResourceValue(s)"
-                             @input="setResourceValue(s, $event.target.value)" />
-                    </div>
-                  </div>
-                </template>
-              </div>
-            </div>
-
-            <div class="diamond-divider my-8"></div>
-
-            <!-- Party Thresholds -->
-            <div>
-              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-2">队 伍 创 建 阈 值</h3>
-              <p class="text-parchment-200 text-[13px] mb-4">原先散落在代码里的队伍阈值。人数类阈值均按实际驻军比例换算，调整后立即影响下一次 tick。</p>
-              <div class="space-y-5">
-                <template x-for="s in thresholdSpecs" :key="(s.root || '') + ':' + s.key">
-                  <div class="grid grid-cols-12 gap-4 items-center">
-                    <div class="col-span-12 md:col-span-4">
-                      <div class="text-[15px] text-parchment-50" x-text="s.label"></div>
-                      <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
-                    </div>
-                    <div class="col-span-9 md:col-span-6">
-                      <input type="range" class="w-full"
-                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                             :value="getResourceValue(s)"
-                             @input="setResourceValue(s, $event.target.value)" />
-                    </div>
-                    <div class="col-span-3 md:col-span-2">
-                      <input type="number"
-                             class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
-                             :min="s.min" :max="s.max" :step="s.step || (s.discrete ? 1 : 0.01)"
-                             :value="getResourceValue(s)"
-                             @input="setResourceValue(s, $event.target.value)" />
-                    </div>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <!-- =========== TAB 6: 按城堡覆盖 =========== -->
-          <div x-show="activeTab === 5" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">按 城堡 覆盖</h2>
+            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">按 领地 覆盖</h2>
             <p class="text-parchment-200 text-sm mb-6">
               单个领地可使用独立规则。取消「覆盖」勾选会删除该 entry，恢复 GlobalDefaults。
             </p>
@@ -849,8 +815,8 @@
             </div>
           </div>
 
-          <!-- =========== TAB 7: 财务 =========== -->
-          <div x-show="activeTab === 6" class="tab-content p-8">
+          <!-- =========== TAB 6: 财务 =========== -->
+          <div x-show="activeTab === 5" class="tab-content p-8">
             <h2 class="font-display text-xl text-gold-200 mb-4 tracking-wider">财 务 报 告</h2>
             <p class="text-parchment-200 text-sm mb-6">
               本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。
@@ -964,13 +930,13 @@
       return {
         token: '',
         activeTab: 0,
+        activeSettingsGroup: 'targets',
         tabs: [
           { label: '功能开关' },
-          { label: '数量预算' },
+          { label: '策略参数' },
           { label: '兵种编制' },
           { label: '兵员模板' },
-          { label: '资源调度' },
-          { label: '按城堡覆盖' },
+          { label: '按领地覆盖' },
           { label: '财务' },
         ],
         config: null,
@@ -996,14 +962,11 @@
         // off the dumped troop list.
 
         toggleSpecs: [
-          { key: 'AutoGarrison', root: 'EnabledFeatures', label: '自动驻军', hint: '自动维持驻军规模到 TargetTotalCount' },
-          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '在领地内自动招募新兵补充驻军' },
+          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '首府原地招募、外派征兵、俘虏转化和驻军训练，用来补充驻军兵源' },
           { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地' },
           { key: 'TroopTransfers', root: 'EnabledFeatures', label: '兵力调拨', hint: '由首府统一协调自有城镇与城堡之间的补兵' },
-          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '无巡逻队时附近有敌对势力则出城攻击' },
-          { key: 'AutoRecruitMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：招募匹配俘虏', hint: '巡逻/出击战后兵种匹配的俘虏直接进首府驻军' },
-          { key: 'AutoSellNonMatchingPrisoners', root: 'EnabledFeatures', label: '战利品：出售非匹配俘虏', hint: '剩余非匹配俘虏自动卖到最近自家 town' },
-          { key: 'AutoSellLoot', root: 'EnabledFeatures', label: '战利品：出售装备物品', hint: '战后缴获装备/物品自动卖到最近自家 town' },
+          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击' },
+          // T2 (doc §20 #2)：3 个战利品集中处理 toggle 已删除；所有 ST 队伍走基类自资金路径
           { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
           { key: 'ApplyToAiSettlementsToo', root: 'EnabledFeatures', label: 'AI 城镇纳入 ST 规则', hint: '把有首府的 AI 氏族纳入首府、驻军评估、招募、调拨、主动出击、俘虏转化和巡逻等 ST 路径；AI 只招同文化兵，且招兵免费。' },
           { key: 'PauseSpendingWhenBroke', root: 'EnabledFeatures', label: '金币不足时暂停支出', hint: '玩家金币不足时拒绝扣款 / 派遣 / 升级，防止"派出去又因没钱半截失败"' },
@@ -1013,9 +976,9 @@
         budgetSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true },
           { key: 'MinimumDefenderRatio', label: '最少防守比例', hint: '仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'BudgetLimit', label: '招募预算上限', hint: '单日招募预算 denar', min: 0, max: 50000, discrete: true },
-          { key: 'WartimeMultiplier', label: '战时目标乘数', hint: '战争状态时目标人数倍数', min: 0.5, max: 2.0, discrete: false },
-          { key: 'PeacetimeMultiplier', label: '和平目标乘数', hint: '和平时期目标人数倍数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'BudgetLimit', label: '招募预算基准', hint: '外派征兵队单次到村招募预算；自动升级预算也按此派生', min: 0, max: 50000, discrete: true },
+          { key: 'WartimeMultiplier', label: '高威胁目标乘数', hint: '城镇威胁评估达到 High/Critical 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'PeacetimeMultiplier', label: '常态目标乘数', hint: '城镇威胁评估低于 High 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false },
         ],
 
         troopRatioSpecs: [
@@ -1066,16 +1029,15 @@
           { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: '升级：触发 Tier 比例', hint: 'T1+T2 兵占总兵比例 ≥ 此值时尝试升级（默认 0.30）', min: 0, max: 1, discrete: false, step: 0.05 },
           { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: '升级：单次最低预算', hint: '实际预算 = max(规则.BudgetLimit/4, 此值)（默认 500）', min: 0, max: 50000, discrete: true },
           { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: '升级：单次最大升级数', hint: '单次升级最多升 N 个兵（默认 20）', min: 1, max: 500, discrete: true },
-          { key: 'RecruiterSeedGold', root: 'Thresholds', label: '征兵队：初始金币', hint: '派征兵队时玩家扣的初始本钱；AI 跳过此扣费（默认 1000）', min: 0, max: 100000, discrete: true },
-          { key: 'SallySeedGold', root: 'Thresholds', label: '主动出击：初始金币', hint: '派出击队时玩家扣的初始本钱；AI 跳过此扣费（默认 100）', min: 0, max: 100000, discrete: true },
+          // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，不再可配置；
+          // 移除 RecruiterSeedGold / SallySeedGold spec。
           { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: '征兵：每轮候选数', hint: 'RankCandidates 每轮返回的候选村庄数（默认 8）', min: 1, max: 50, discrete: true },
           { key: 'RecruitmentPlanMaxDistance', root: 'Thresholds', label: '征兵：第一轮搜索距离', hint: '第一轮的最大搜索距离；无候选时再扩展到 FallbackMaxDistance（默认 100）', min: 0, max: 1000, discrete: false, step: 10 },
           // ClanPatrol scheduler (H17)
           { key: 'EtaBufferHours', root: 'ClanPatrol', label: '巡逻调度：ETA 缓冲', hint: '预占时长 = ETA + 此值（默认 1.0）', min: 0, max: 168, discrete: false, step: 0.5 },
           { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: '巡逻调度：卡死超时', hint: '单段路超过此时长视为卡死，强制重选下一站（默认 12）', min: 1, max: 720, discrete: false, step: 1 },
           { key: 'MinVisitGapHours', root: 'ClanPatrol', label: '巡逻调度：回访间隔', hint: '同定居点的最小回访间隔（默认 4）', min: 0, max: 720, discrete: false, step: 1 },
-          // 注：ClanPatrol.AvoidRaidedVillages 是 bool，thresholdSpecs 渲染只支持数值；
-          // 玩家可手编 global.json 修改，UI 暴露留作单独 toggle 区任务。
+          // ClanPatrol.AvoidRaidedVillages 是 bool，由 settingsGroups 的巡逻调拨二级菜单渲染。
           { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: '巡逻调度：距离评分权重', hint: 'score = -hoursSinceVisit + 此值 × Vec2 距离（默认 0.5）', min: 0, max: 100, discrete: false, step: 0.1 },
           { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: '巡逻调度：支援 ETA 阈值', hint: '巡逻队 ETA ≤ 此值时转去支援 Sally（默认 2.0）', min: 0, max: 168, discrete: false, step: 0.5 },
           // ClanRecruiter scheduler (H17)
@@ -1087,13 +1049,113 @@
         perSettlementNumericSpecs: [
           { key: 'TargetTotalCount', label: '目标驻军总数', min: 50, max: 500, discrete: true },
           { key: 'MinimumDefenderRatio', label: '最少防守比例', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'BudgetLimit', label: '招募预算上限', min: 0, max: 50000, discrete: true },
-          { key: 'WartimeMultiplier', label: '战时目标乘数', min: 0.5, max: 2.0, discrete: false },
-          { key: 'PeacetimeMultiplier', label: '和平目标乘数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'BudgetLimit', label: '招募预算基准', min: 0, max: 50000, discrete: true },
+          { key: 'WartimeMultiplier', label: '高威胁目标乘数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'PeacetimeMultiplier', label: '常态目标乘数', min: 0.5, max: 2.0, discrete: false },
           { key: 'FoodSafetyThreshold', label: '食物安全阈值', min: -50, max: 50, discrete: false, step: 0.5 },
         ],
 
         // ============ computed ============
+        get settingsGroups() {
+          const budget = this.budgetSpecs.map(s => ({ root: 'GlobalDefaults', ...s }));
+          const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs];
+          const spec = (root, key) => {
+            const normalizedRoot = root || '';
+            const found = all.find(s => (s.root || '') === normalizedRoot && s.key === key);
+            return found ? { ...found, root: normalizedRoot } : null;
+          };
+          const boolSpec = (root, key, label, hint) => ({ root, key, label, hint, type: 'bool' });
+          const clean = specs => specs.filter(Boolean);
+
+          return [
+            {
+              key: 'targets',
+              label: '目标预算',
+              hint: '驻军目标、预算和安全阈值；这些值决定每个领地想维持多少兵以及什么时候暂停招募。',
+              specs: clean([
+                spec('GlobalDefaults', 'TargetTotalCount'),
+                spec('GlobalDefaults', 'MinimumDefenderRatio'),
+                spec('GlobalDefaults', 'BudgetLimit'),
+                spec('GlobalDefaults', 'WartimeMultiplier'),
+                spec('GlobalDefaults', 'PeacetimeMultiplier'),
+                spec('GlobalDefaults', 'FoodSafetyThreshold'),
+              ]),
+            },
+            {
+              key: 'recruitment',
+              label: '招募',
+              hint: '外派征兵队、村庄候选搜索、回访节奏和初始资金。',
+              specs: clean([
+                spec('', 'VillageCooldownHours'),
+                spec('Thresholds', 'RecruitmentMinDemandRatio'),
+                spec('Thresholds', 'RecruiterEscortRatio'),
+                spec('Thresholds', 'RecruiterReturnRecruitedCount'),
+                spec('Thresholds', 'RecruiterMinHomeGarrison'),
+                spec('Thresholds', 'RecruitmentCandidateBatchSize'),
+                spec('Thresholds', 'RecruitmentPlanMaxDistance'),
+                spec('Thresholds', 'RecruitmentFallbackMaxDistance'),
+                spec('ClanRecruiter', 'EtaBufferHours'),
+                spec('ClanRecruiter', 'MinVisitGapHours'),
+                spec('ClanRecruiter', 'DistanceWeightHoursPerTile'),
+              ]),
+            },
+            {
+              key: 'patrol_transfer',
+              label: '巡逻调拨',
+              hint: '巡逻队创建、巡逻站点选择、Sally 支援和领地间兵力调拨。',
+              specs: clean([
+                spec('Thresholds', 'PatrolReserveAfterCreationRatio'),
+                spec('Thresholds', 'PatrolTroopBatchRatio'),
+                boolSpec('ClanPatrol', 'AvoidRaidedVillages', '巡逻：避开被劫掠村庄', '开启后，被劫掠中的村庄不会被选为普通巡逻访问点'),
+                spec('ClanPatrol', 'EtaBufferHours'),
+                spec('ClanPatrol', 'StuckTimeoutHours'),
+                spec('ClanPatrol', 'MinVisitGapHours'),
+                spec('ClanPatrol', 'DistanceWeightHoursPerTile'),
+                spec('ClanPatrol', 'SupportEtaThresholdHours'),
+                spec('Thresholds', 'TransferCriticalProjectedRatio'),
+                spec('Thresholds', 'TransferRatio'),
+                spec('Thresholds', 'TransferMaxTroopsPerTaskRatio'),
+                spec('Thresholds', 'TransferMinTroopRatio'),
+                spec('Thresholds', 'TransferMaxPairDistance'),
+                spec('Thresholds', 'TransferCapacityWeight'),
+                spec('Thresholds', 'TransferBranchToBranchPenalty'),
+                spec('Thresholds', 'TransferCapitalSourcePenalty'),
+              ]),
+            },
+            {
+              key: 'sally',
+              label: '主动出击',
+              hint: '敌军搜索、出击规模、冷却和持续可见判定。',
+              specs: clean([
+                spec('Thresholds', 'SallyDetectionRadius'),
+                spec('Thresholds', 'SallyCooldownHours'),
+                spec('Thresholds', 'SallyMinSustainedTicks'),
+                spec('Thresholds', 'SallyExtractionRatio'),
+                spec('Thresholds', 'SallyTargetPartySizeMultiplier'),
+                spec('Thresholds', 'SallyCreateMinPartyCount'),
+              ]),
+            },
+            {
+              key: 'lifecycle',
+              label: '生命周期升级',
+              hint: '队伍返航、俘虏上限、卡死保护、空闲解散和驻军升级。',
+              specs: clean([
+                spec('Thresholds', 'PartyReturnSizeRatio'),
+                spec('Thresholds', 'PartyReturnWoundedRatio'),
+                spec('Thresholds', 'PartyPrisonerCap'),
+                spec('Thresholds', 'StuckTeleportHours'),
+                spec('Thresholds', 'IdleHoursBeforeForceReturn'),
+                spec('Thresholds', 'IdleHoursBeforeDisband'),
+                spec('Thresholds', 'AutoUpgradeMinTierRatio'),
+                spec('Thresholds', 'AutoUpgradeMinBudget'),
+                spec('Thresholds', 'AutoUpgradeMaxPerCall'),
+              ]),
+            },
+          ];
+        },
+        get activeSettingsGroupData() {
+          return this.settingsGroups.find(g => g.key === this.activeSettingsGroup) || this.settingsGroups[0];
+        },
         get troopSum() {
           if (!this.config) return 0;
           const g = this.config.GlobalDefaults;
@@ -1219,6 +1281,8 @@
             r.body.PerSettlementOverrides = r.body.PerSettlementOverrides || {};
             r.body.EnabledFeatures = r.body.EnabledFeatures || {};
             r.body.Thresholds = r.body.Thresholds || {};
+            r.body.ClanPatrol = r.body.ClanPatrol || {};
+            r.body.ClanRecruiter = r.body.ClanRecruiter || {};
             this.config = r.body;
             this.log('配置已读取', 'ok');
           } else {
@@ -1252,7 +1316,7 @@
           const r = await this.http('PUT', '/api/config', this.config);
           this.saving = false;
           if (r.ok) {
-            this.log('保存成功，运行时同步将在下一次游戏 tick 生效', 'ok');
+            this.log('保存成功：征兵队会重规划；其他队伍按下一次 tick、下次调度或新建队伍读取', 'ok');
             await this.fetchStatus();
           } else {
             this.warning = `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`;
@@ -1309,16 +1373,24 @@
           }
         },
 
-        // ============ resource (mixed root) ============
-        getResourceValue(s) {
+        // ============ config value helpers (mixed root) ============
+        getConfigValue(s) {
           const root = s.root ? this.config[s.root] : this.config;
           return root?.[s.key];
         },
-        setResourceValue(s, raw) {
-          const v = s.discrete ? parseInt(raw) : parseFloat(raw);
+        setConfigValue(s, raw) {
           const root = s.root ? this.config[s.root] : this.config;
+          if (!root) return;
+          if (s.type === 'bool') {
+            root[s.key] = !!raw;
+            return;
+          }
+          let v = s.discrete ? parseInt(raw) : parseFloat(raw);
+          if (!Number.isFinite(v)) v = s.min ?? 0;
           root[s.key] = v;
         },
+        getResourceValue(s) { return this.getConfigValue(s); },
+        setResourceValue(s, raw) { this.setConfigValue(s, raw); },
 
         // ============ ExactTroopTemplate (B7.20: 占比模式 0..1，自动归一化) ============
         // 总和约 = 1.0；新增/删除/调整时按比例 rescale 其他条目让 Σ 保持 1.0。

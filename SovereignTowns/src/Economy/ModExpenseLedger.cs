@@ -19,10 +19,11 @@ public static class ModExpenseLedger
     private static readonly Dictionary<ExpenseCategory, long> _historicalRolledOver = new();
     private const int MaxInMemoryDays = 30;
 
-    /// <summary>追加一条 entry。同时触发轮转。</summary>
+    /// <summary>追加一条 entry。amount 为正 = 支出；为负 = 退款（ModTreasury.Refund 调用）。
+    /// amount == 0 跳过。同时触发轮转。</summary>
     public static void Record(ExpenseCategory category, int amount, string note)
     {
-        if (amount <= 0) return;
+        if (amount == 0) return;
         try
         {
             lock (_gate)

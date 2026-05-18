@@ -26,7 +26,7 @@ namespace SovereignTowns.Parties;
 ///
 /// 隐式状态机（无 enum）：行为由 scheduler 调度 + 防御响应 + 支援战斗 + 卡死保护四条规则驱动。
 ///
-/// SaveableField 槽位：基类占 [10, 20)；本类用 [22] 持久化 _teamFunds（资金随存档保留）。
+/// SaveableField 槽位：基类占 [10, 20)（含 12=_teamFunds）；本类暂未占用 [20, +∞)。
 /// </summary>
 public sealed class StPatrolPartyComponent : StPartyComponent
 {
@@ -34,12 +34,6 @@ public sealed class StPatrolPartyComponent : StPartyComponent
     private const float InitiativeResetHours = 4f;
 
     [CachedData] private TextObject? _cachedName;
-    // 2026-05-18：巡逻队自负盈亏队伍资金（出发时从首府所有者扣 2000d；战利品卖出加入；销毁前还首府所有者）。
-    [SaveableField(22)] private int _teamFunds;
-    private const int InitialTeamFundsDefault = 2000;
-    private const float BuyFoodDays = 3f;
-    private const float BuyFoodWhenBelowDays = 1f;
-    public int TeamFunds => _teamFunds;
     // B17.4 B6：防御日志去抖 — 只在 target 切换时 Info，否则 Debug。
     [CachedData] private Settlement? _lastLoggedDefenseTarget;
     // B17.4 A5 / R4：卡死期"首次检测时间"。每次 reissue 都会让 scheduler 内部 _lastStopChangedAt 复位，
@@ -64,41 +58,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
 
     public override bool AvoidHostileActions => false;
 
-    // ── 队伍资金 API ────────────────────────────────────────────────
-    /// <summary>从首府所有者扣 amount 第纳尔作为初始资金（玩家 hero 不够时按可负担扣）。</summary>
-    public void InitTeamFundsFromHomeOwner(MobileParty self, int amount)
-    {
-        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
-        int charged = PartyEconomyHelper.ChargeHero(owner, amount);
-        _teamFunds = charged;
-        Logger.Info($"StPatrolParty '{PartyNameFormatter.SafeName(self)}': team funds initialized = {charged}d (charged from '{owner?.StringId ?? "null"}')");
-    }
-    /// <summary>在 settlement 内用队伍资金购买 days 天食物（vanilla SellItemsAction 真实交易）。返回花费的第纳尔。</summary>
-    public int BuyFoodAtSettlement(MobileParty self, Settlement settlement, float days)
-        => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days, ref _teamFunds);
-    /// <summary>把战利品（非食物 item）卖给 settlement，金额加入队伍资金（vanilla SellItemsAction 真实交易）。返回收益。</summary>
-    public int SellLootAtSettlement(MobileParty self, Settlement settlement)
-        => PartyEconomyHelper.SellLootToSettlement(self, settlement, ref _teamFunds);
-    /// <summary>把剩余资金还给首府所有者；清零 _teamFunds。返回还回去的数额。</summary>
-    public int RefundTeamFundsToOwner()
-    {
-        if (_teamFunds <= 0) return 0;
-        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
-        int refunded = PartyEconomyHelper.RefundHero(owner, _teamFunds);
-        if (refunded > 0)
-            Logger.Info($"StPatrolParty: refunded {refunded}d team funds to '{owner?.StringId ?? "null"}'");
-        _teamFunds = 0;
-        return refunded;
-    }
-
-    /// <summary>
-    /// 由 PatrolDispatcher 在玩家氏族 ModTreasury.Charge 成功后调用，直接把队伍资金设为 amount
-    /// （不再从 owner.Gold 扣第二次）。
-    /// </summary>
-    public void SetTeamFunds(int amount)
-    {
-        _teamFunds = amount < 0 ? 0 : amount;
-    }
+    protected override Economy.ExpenseCategory GetExpenseCategoryForKind() => Economy.ExpenseCategory.PatrolSeed;
 
     private StPatrolPartyComponent(
         Settlement home, TextObject name, Hero owner,
@@ -179,48 +139,15 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         DefaultMergeAndDisband(self);
     }
 
-    // 战后战利品保留在 party.ItemRoster；下次到达 settlement 时 OnHourlyTickCore 会用 vanilla SellItemsAction
+    // 战后战利品保留在 party.ItemRoster；下次到达 settlement 时 base.TryEconomicMaintenance 会用 vanilla SellItemsAction
     // 真实卖出（与 vanilla 商队同模式）。不再 OnMapEventEndedCore 凭空卖。
-
-    /// <summary>
-    /// 销毁前把队伍剩余资金还给首府所有者（覆盖所有销毁路径：解散、战败、idle、stuck teleport 等）。
-    /// 退款路径与扣款路径对称：
-    ///   - 玩家氏族（ShouldChargeClan=true）：走 ModTreasury.Refund，写 ledger + audit。
-    ///   - AI 氏族（ShouldChargeClan=false）：走原 RefundTeamFundsToOwner → PartyEconomyHelper.RefundHero（vanilla 路径）。
-    /// _teamFunds=0 时两路均 no-op（ModTreasury.Refund(_, 0, _) 内部直接 return true）。
-    /// </summary>
-    public override void OnDestroyed(MobileParty self, PartyBase? destroyer)
-    {
-        try
-        {
-            var homeClan = HomeSettlementOrNull?.OwnerClan;
-            if (CapitalRegistry.ShouldChargeClan(homeClan))
-            {
-                // 玩家氏族：退款走 ModTreasury 保持账目对称
-                int toRefund = _teamFunds;
-                _teamFunds = 0;
-                ModTreasury.Refund(ExpenseCategory.PatrolSeed, toRefund,
-                    $"patrol_destroyed home={HomeSettlementOrNull?.StringId ?? "null"}");
-                if (toRefund > 0)
-                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {toRefund}d via ModTreasury (player clan)");
-            }
-            else
-            {
-                // AI 氏族：退款走 vanilla hero.Gold 路径
-                int refunded = RefundTeamFundsToOwner();
-                if (refunded > 0)
-                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {refunded}d to AI owner");
-            }
-        }
-        catch (Exception ex) { Logger.Warn($"OnDestroyed refund threw: {ex.Message}"); }
-        base.OnDestroyed(self, destroyer);
-    }
+    // 销毁退款逻辑统一在基类 TryRefundOnDestroy（doc §20 #1, T1）— 覆盖所有销毁路径（解散、战败、idle、stuck teleport 等）。
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
         if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
         {
-            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' AutoPatrol=false → no-op");
+            Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' AutoPatrol=false → no-op");
             return;
         }
 
@@ -228,51 +155,16 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         var partyClan = self.ActualClan;
         if (partyClan == null || registry == null)
         {
-            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' partyClan={partyClan?.StringId ?? "null"} registry={(registry == null ? "null" : "ok")} → early return");
+            Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' partyClan={partyClan?.StringId ?? "null"} registry={(registry == null ? "null" : "ok")} → early return");
             return;
         }
         var capitalMgr = registry.GetForClan(partyClan);
         if (capitalMgr == null)
         {
-            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' capitalMgr=null for clan='{partyClan.StringId}' → early return");
+            Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' capitalMgr=null for clan='{partyClan.StringId}' → early return");
             return;
         }
         var scheduler = capitalMgr.PatrolScheduler;
-
-        // 2026-05-18 经济：在 settlement 内时（CurrentSettlement != null）— 卖战利品 + 食物不足补食物，
-        // 全部走 vanilla SellItemsAction 真实交易（物品在 settlement 库存和 party 库存间真实流转）。
-        // 在荒郊路上 不交易，走完到下个 settlement 才行。
-        var atSettlement = self.CurrentSettlement;
-        if (atSettlement != null && atSettlement.Town != null)
-        {
-            // 1) 先卖战利品（无论食物状态，能卖就卖换钱）
-            try
-            {
-                int gained = SellLootAtSettlement(self, atSettlement);
-                if (gained > 0)
-                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' sold loot at '{atSettlement.Name}' +{gained}d (funds={_teamFunds})");
-            }
-            catch (Exception ex) { Logger.Warn($"sell-loot tick threw: {ex.Message}"); }
-
-            // 2) 食物 < 1 天 → 买 3 天食物（受资金限制）
-            try
-            {
-                float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
-                if (daysLeft < BuyFoodWhenBelowDays && _teamFunds > 0)
-                {
-                    int spent = BuyFoodAtSettlement(self, atSettlement, BuyFoodDays);
-                    if (spent > 0)
-                        Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) → bought at '{atSettlement.Name}' for {spent}d (funds={_teamFunds})");
-                }
-            }
-            catch (Exception ex) { Logger.Warn($"food top-up tick threw: {ex.Message}"); }
-        }
-        else
-        {
-            float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
-            if (daysLeft < BuyFoodWhenBelowDays)
-                Logger.Info($"[DIAG] StPatrolParty: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) but not at settlement — waiting until next stop");
-        }
 
         // 1) 防御响应（B7.26）
         var defenseTarget = scheduler.GetDefenseTarget(self);
@@ -348,7 +240,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         // 为"到达 home"，把 home 当首站 RecordVisit + PickNext。
         var visited = self.CurrentSettlement ?? self.LastVisitedSettlement;
         bool actuallyAtVisited = visited != null && self.CurrentSettlement == visited;
-        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: visited='{visited?.Name?.ToString() ?? "null"}' actuallyAt={actuallyAtVisited} visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
+        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: visited='{visited?.Name?.ToString() ?? "null"}' actuallyAt={actuallyAtVisited} visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
         if (actuallyAtVisited && visited!.OwnerClan == capitalMgr.OwnerClan
             && scheduler.TryMarkArrival(self, visited))
         {
@@ -366,11 +258,11 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             {
                 // 2026-05-18 修复：原先 next==null 时 fallback 到 capital，导致氏族小（候选 < 2）
                 // 时巡逻队"到 village 立刻回 home"。改为停留 — 下个 tick MinVisitGap 过期后 PickNext 会重试。
-                Logger.Info($"[DIAG] StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', no next candidate (MinVisitGap 内) — staying, next tick retry");
+                Logger.Debug($"[DIAG] StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', no next candidate (MinVisitGap 内) — staying, next tick retry");
             }
             return;
         }
-        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check failed (not at any settlement or already-marked) — falling through to stuck check");
+        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check failed (not at any settlement or already-marked) — falling through to stuck check");
 
         // 4) 卡死保护 — R4/R5：用 CampaignTime 计算真实 elapsed hours；R5 用位置进展检测真正恢复。
         var stuckTimeout = ConfigurationManager.Current.ClanPatrol.StuckTimeoutHours;

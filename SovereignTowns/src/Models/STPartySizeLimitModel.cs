@@ -52,6 +52,16 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                     new TextObject("{=ST_PartySizeLimit_Sally}主权城镇 出击队容量上限"));
             }
 
+            // R7：巡逻队 size 上限 — 之前漏纳入，巡逻队走 vanilla DefaultPartySizeLimitModel
+            // 可能因 leader=null 拿到极低上限。
+            if (comp is StPatrolPartyComponent patrol)
+            {
+                return new ExplainedNumber(
+                    ComputePatrolLimit(mp, patrol),
+                    includeDescriptions,
+                    new TextObject("{=ST_PartySizeLimit_Patrol}主权城镇 巡逻队容量上限"));
+            }
+
             return base.GetPartyMemberSizeLimit(party!, includeDescriptions);
         }
         catch (Exception ex)
@@ -86,6 +96,19 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
             baseGarrison,
             ConfigurationManager.Current?.Thresholds?.TransferMaxTroopsPerTaskRatio ?? 0.67f,
             minimumWhenPositive: 1);
+        return Math.Max(1, Math.Max(currentMembers, byRatio));
+    }
+
+    private static int ComputePatrolLimit(MobileParty? party, StPatrolPartyComponent patrol)
+    {
+        int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
+        int baseGarrison = GarrisonThresholdMath.ActualGarrisonCount(patrol.HomeSettlementOrNull) + currentMembers;
+        // 巡逻创建按 garrison × PatrolTroopBatchRatio 抽兵；上限取 batch 的 2 倍 + 当前兵员 + 兜底 30，
+        // 给战斗后的俘虏 / 战利品兵员留缓冲。
+        int byRatio = GarrisonThresholdMath.CountFromRatio(
+            baseGarrison,
+            (ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchRatio ?? 0.10f) * 2f,
+            minimumWhenPositive: 30);
         return Math.Max(1, Math.Max(currentMembers, byRatio));
     }
 

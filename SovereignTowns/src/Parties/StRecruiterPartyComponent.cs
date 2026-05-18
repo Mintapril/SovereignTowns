@@ -101,6 +101,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     public override bool AvoidHostileActions => true;
 
+    protected override Economy.ExpenseCategory GetExpenseCategoryForKind() => Economy.ExpenseCategory.RecruiterSeed;
+
     public void RecordRecruited(int count) { if (count > 0) _recruitedThisTrip += count; }
     public void SetAssignedTarget(Settlement? target) => _assignedTarget = target;
     public void TransitionTo(RecruiterPhase phase) => _phase = phase;
@@ -167,9 +169,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             try { mobileParty.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
 
             component.SnapshotInitialMembers(mobileParty);
-            // 2026-05-18：recruiter 一趟最多到 RecruiterReturnRecruitedCount（默认 50）人才返航，凭空塞 3 天食物。
-            // 用户方案中没明确提到 recruiter，与 sally/transfer 同样按"短命凭空"处理（无队伍资金）。
-            SovereignTowns.Common.PartyEconomyHelper.GrantFoodForDays(mobileParty, 3f);
+            // T1.7：食物由 RecruitmentDispatcher 在创建后通过 BuyFoodAtSettlement(_teamFunds) 真实购买，
+            // 不再凭空塞 3 天食物。
             Logger.Info($"StRecruiterPartyComponent: created '{stringId}' for '{settlement.StringId}'");
             return mobileParty;
         }
@@ -184,7 +185,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
-        Logger.Info($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip} visited={VisitedThisTrip.Count}");
+        Logger.Debug($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip} visited={VisitedThisTrip.Count}");
         switch (_phase)
         {
             case RecruiterPhase.Dispatching: HandleDispatching(self); break;
@@ -204,7 +205,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         var home = HomeSettlementOrNull;
         if (home == null) return;
         var next = ResolveDepartureTarget(self, home);
-        Logger.Info($"[DIAG] Recruiter.HandleDispatching '{PartyNameFormatter.SafeName(self)}' home='{home.Name}' assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' resolved='{next?.Name?.ToString() ?? "null"}'");
+        Logger.Debug($"[DIAG] Recruiter.HandleDispatching '{PartyNameFormatter.SafeName(self)}' home='{home.Name}' assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' resolved='{next?.Name?.ToString() ?? "null"}'");
         if (next == null || next == home)
         {
             // 无候选；下个 tick 再试
@@ -419,7 +420,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         }
         catch (Exception ex)
         {
-            Logger.Warn($"ResolveDepartureTarget failed for '{PartyNameFormatter.SafeName(party)}': {ex.Message}");
+            Logger.Warn($"ResolveDepartureTarget failed for '{PartyNameFormatter.SafeName(party)}'", ex);
             return PlanNextHop(party, home);
         }
     }
@@ -533,7 +534,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn($"  RecruitFromTargetVillage: MaximumIndexHeroCanRecruitFromHero threw for notable '{notable.Name}': {ex.Message}");
+                    Logger.Warn($"  RecruitFromTargetVillage: MaximumIndexHeroCanRecruitFromHero threw for notable '{notable.Name}'", ex);
                     continue;
                 }
                 if (maxIdx < 0) continue;
@@ -591,7 +592,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}': {ex.Message}");
+                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}'", ex);
                     continue;
                 }
 
@@ -629,7 +630,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 }
                 catch (Exception ex)
                 {
-                    Logger.Warn($"  RecruitFromTargetVillage: role counter update failed for '{candidate.Troop.StringId}': {ex.Message}");
+                    Logger.Warn($"  RecruitFromTargetVillage: role counter update failed for '{candidate.Troop.StringId}'", ex);
                 }
 
                 budgetRemaining -= cost;
@@ -652,7 +653,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                     var visitCapitalMgr = CapitalRegistry.Instance?.GetForSettlement(home);
                     visitCapitalMgr?.RecruiterScheduler.RecordVisit(village);
                 }
-                catch (Exception ex) { Logger.Warn("RecruiterScheduler.RecordVisit (per-village) failed: " + ex.Message); }
+                catch (Exception ex) { Logger.Warn("RecruiterScheduler.RecordVisit (per-village) failed", ex); }
             }
             Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar）");
         }

@@ -3,6 +3,7 @@ using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Parties;
@@ -106,6 +107,22 @@ public sealed class TransferDispatcher
                 Logger.Warn($"  TransferDispatcher: CreateForRoute 返回 null ({source.Name} -> {destination.Name})");
                 TroopTransferHelper.TransferBackToGarrison(transferRoster, sourceRoster);
                 return false;
+            }
+
+            // T1 重整 (doc §20 #1)：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
+            // 与 Patrol/Sally/Recruiter 一致 — 玩家扣款失败 → 把兵还 source garrison 并销毁 party。
+            if (party.PartyComponent is StTransferPartyComponent stc)
+            {
+                if (!StPartyComponent.TrySeedAndBuyInitialFood(
+                    stc, party, source,
+                    ExpenseCategory.TransferSeed,
+                    source.OwnerClan,
+                    $"transfer_seed src={source.StringId} dst={destination.StringId}"))
+                {
+                    TroopTransferHelper.TransferBackToGarrison(party.MemberRoster, sourceRoster);
+                    PartyMergeService.Instance.DestroyAndUntrack(party, "TransferDispatcher seed failed rollback", deferIfInMapEvent: false);
+                    return false;
+                }
             }
 
             _lifecycle.RegisterTrackedParty(party, source, PartyKind);

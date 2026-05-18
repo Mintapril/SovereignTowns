@@ -1,5 +1,6 @@
 using System;
 using SovereignTowns.Common;
+using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -59,6 +60,10 @@ public sealed class StSallyPartyComponent : StPartyComponent
 
     // B17.4 A1：sally 是冲锋型任务，被玩家拦下让冲锋失败 — 跳过 player-target hold。
     protected override bool AvoidsPlayerTargetHold => true;
+
+    protected override Economy.ExpenseCategory GetExpenseCategoryForKind() => Economy.ExpenseCategory.SallySeed;
+
+    protected override bool ShouldReplenishFoodEnRoute => false;  // 单目的地短命任务，无沿途补给
 
     private StSallyPartyComponent(
         Settlement home, MobileParty? initialTarget,
@@ -161,21 +166,28 @@ public sealed class StSallyPartyComponent : StPartyComponent
                     TransitionToReturning(self);
                     return;
                 }
-                // 3) target null/dead → 释放 vanilla AI 接管
+                // 3) target null/dead → 任务结束，直接返航；不要释放 vanilla AI 让出击队游走。
                 if (target == null || !target.IsActive)
                 {
                     if (!_targetLostLogged)
                     {
-                        Logger.Info($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' target lost, releasing AI for re-decision");
+                        Logger.Info($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' target lost, returning home");
                         _targetLostLogged = true;
                     }
-                    try { self.Ai?.SetDoNotMakeNewDecisions(false); }
-                    catch (Exception aiEx) { Logger.Error("SetDoNotMakeNewDecisions(false) failed", aiEx); }
+                    TransitionToReturning(self);
                 }
                 else
                 {
                     // 目标恢复 → 清状态，下次丢失时重新 log
                     _targetLostLogged = false;
+                    // Issue #3：每小时重申追击 + 再次锁定。SetMoveEngageParty 通常是 sticky，
+                    // 但 vanilla AI 在地图事件 / 路径阻断时可能切换 behavior，这里再保险一次。
+                    try
+                    {
+                        self.Ai?.SetDoNotMakeNewDecisions(true);
+                        self.SetMoveEngageParty(target, MobileParty.NavigationType.Default);
+                    }
+                    catch (Exception reEx) { Logger.Warn($"StSallyParty re-engage failed: {reEx.Message}"); }
                 }
                 return;
             case SallyPhase.Returning:

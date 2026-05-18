@@ -28,9 +28,15 @@ namespace SovereignTowns.Recruitment;
 public sealed class RecruitmentDispatcher
 {
     private const string PartyKind = PartyLifecycleManager.KindRecruiter;
-    private const int DefaultInitialGold = 1000;
-    private const int CandidateBatchSize = 8;
-    private const float PlanMaxDistance = 100f;
+    // H9/H10 (DeepSeek audit 2026-05-18)：常量改读 PartyThresholds。
+    // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold 配置项。
+    private const int CandidateBatchSizeDefault = 8;
+    private const float PlanMaxDistanceDefault = 100f;
+
+    private static int CandidateBatchSize
+        => ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? CandidateBatchSizeDefault;
+    private static float PlanMaxDistance
+        => ConfigurationManager.Current?.Thresholds?.RecruitmentPlanMaxDistance ?? PlanMaxDistanceDefault;
 
     private static float EscortRatio
         => ConfigurationManager.Current?.Thresholds?.RecruiterEscortRatio ?? 0.10f;
@@ -128,31 +134,18 @@ public sealed class RecruitmentDispatcher
             }
             var target = candidates[0];
 
-            // B17.4 A3：空 garrison floor — 0 兵裸车遭遇即没。RecruiterMinHomeGarrison=1 时仍允许 1 兵护卫（兼容历史"0 兵裸车"语义需玩家手动调到 0）。
+            // B17.4 A3：空 garrison floor — 0 兵裸车遭遇即没。
+            // 模型默认 RecruiterMinHomeGarrison=0（用户明确"不要 floor"），fallback 与模型对齐。
             int garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
-            int minHomeGarrison = ConfigurationManager.Current?.Thresholds?.RecruiterMinHomeGarrison ?? 1;
+            int minHomeGarrison = ConfigurationManager.Current?.Thresholds?.RecruiterMinHomeGarrison ?? 0;
             if (garrisonForEscort < minHomeGarrison)
             {
                 Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' garrison={garrisonForEscort} < RecruiterMinHomeGarrison={minHomeGarrison}, skip");
                 return false;
             }
 
-            // B17.4 S2：garrison 重建（vanilla 在 garrison 清 0 后会移除整个 GarrisonParty 对象，
-            // 再访问 GarrisonParty 永远 null；line ~127 的 `homeTown.GarrisonParty!.MemberRoster` 会 NRE）。
-            if (garrisonForEscort > 0 && homeTown.GarrisonParty == null)
-            {
-                try
-                {
-                    homeTown.Settlement.AddGarrisonParty();
-                    garrisonForEscort = homeTown.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
-                    Logger.Info($"  RecruitmentDispatcher: rebuilt missing GarrisonParty for '{homeTown.Name}' before escort extraction");
-                }
-                catch (Exception addEx)
-                {
-                    Logger.Error($"  RecruitmentDispatcher: AddGarrisonParty failed for '{homeTown.Name}'", addEx);
-                    return false;
-                }
-            }
+            // 注：原先有一段 "GarrisonParty == null 时重建" 分支，因 garrisonForEscort 已由 GarrisonParty 派生，
+            // `garrisonForEscort > 0 && GarrisonParty == null` 不可达，已删除。下面 escort 抽兵分支自身包含 null 兜底。
 
             int escortRequested = (int)Math.Round(garrisonForEscort * EscortRatio);
             TroopRoster? escortRoster = null;
@@ -177,32 +170,8 @@ public sealed class RecruitmentDispatcher
                 Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' garrison={garrisonForEscort}，escort 计算为 0，裸车派遣");
             }
 
-            // B7.27：派出前先预检玩家金币 + 扣初始本钱。AI clan 跳过扣费。
-            bool shouldChargeDispatch = CapitalRegistry.ShouldChargeClan(homeTown.OwnerClan);
-            if (shouldChargeDispatch)
-            {
-                if (!ModTreasury.CanAfford(DefaultInitialGold))
-                {
-                    Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 玩家金币不足 ({Hero.MainHero?.Gold ?? 0} < {DefaultInitialGold})，跳过派遣");
-                    if (escortRoster != null && escortActual > 0)
-                    {
-                        if (homeTown.GarrisonParty?.MemberRoster != null)
-                            TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
-                    }
-                    return false;
-                }
-                if (!ModTreasury.Charge(ExpenseCategory.RecruiterSeed, DefaultInitialGold, $"recruiter_seed home={homeTown.Settlement.StringId}"))
-                {
-                    Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' ModTreasury.Charge 拒绝，跳过派遣");
-                    if (escortRoster != null && escortActual > 0)
-                    {
-                        if (homeTown.GarrisonParty?.MemberRoster != null)
-                            TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
-                    }
-                    return false;
-                }
-            }
-
+            // T1 重整 (doc §20 #1)：新流程"先创建 party → helper 扣款 + 注资 + 买粮"。
+            // ModTreasury.Charge / Refund 全部由 helper 内部完成，外部不再单独扣款 + 退款。
             var party = StRecruiterPartyComponent.CreateForTown(homeTown, escortRoster);
             if (party == null)
             {
@@ -212,11 +181,24 @@ public sealed class RecruitmentDispatcher
                     if (homeTown.GarrisonParty?.MemberRoster != null)
                         TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
                 }
-                if (shouldChargeDispatch)
-                {
-                    Logger.Warn($"  RecruitmentDispatcher: 1000 denar 已扣但 party 创建失败 — 玩家损失");
-                }
                 return false;
+            }
+
+            // T1 重整：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
+            // 玩家路径扣款失败 → 把护卫还 garrison 并销毁 recruiter party；AI 路径不会失败。
+            if (party.PartyComponent is StRecruiterPartyComponent stc)
+            {
+                if (!StPartyComponent.TrySeedAndBuyInitialFood(
+                    stc, party, homeTown.Settlement,
+                    ExpenseCategory.RecruiterSeed,
+                    homeTown.OwnerClan,
+                    $"recruiter_seed home={homeTown.Settlement.StringId}"))
+                {
+                    if (escortRoster != null && escortActual > 0 && homeTown.GarrisonParty?.MemberRoster != null)
+                        TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);
+                    PartyMergeService.Instance.DestroyAndUntrack(party, "RecruitmentDispatcher seed failed rollback", deferIfInMapEvent: false);
+                    return false;
+                }
             }
 
             _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);

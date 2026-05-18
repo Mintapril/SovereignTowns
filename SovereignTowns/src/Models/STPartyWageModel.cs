@@ -30,9 +30,9 @@ public sealed class STPartyWageModel : DefaultPartyWageModel
         try
         {
             var comp = mobileParty?.PartyComponent;
-            if (comp is StRecruiterPartyComponent
-                || comp is StTransferPartyComponent
-                || comp is StSallyPartyComponent)
+            // R7：所有 ST party 由 town 出资，clan-wage = 0 — 包括 Patrol（之前漏纳入，
+            // 巡逻队会按 vanilla wage 扣家族金币，与设计意图不符）。
+            if (comp is StPartyComponent)
             {
                 return new ExplainedNumber(
                     0f,

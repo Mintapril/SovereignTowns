@@ -1,0 +1,248 @@
+using System;
+using System.Collections.Generic;
+using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.ComponentInterfaces;
+using TaleWorlds.CampaignSystem.Party;
+using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Core;
+using TaleWorlds.ObjectSystem;
+using Logger = SovereignTowns.Logging.Logger;
+
+namespace SovereignTowns.Common;
+
+/// <summary>
+/// ST party 食物 / 队伍资金共用工具。
+///
+/// 设计原则（与 CLAUDE.md「非作弊基调」对齐）：
+///   - Sally / Transfer：短命任务，凭空塞 2-3 天食物，简化复杂度，无队伍资金。
+///   - Patrol：终身户外巡逻，从首府所有者扣 2000 第纳尔作启动资金；用资金买食物 + 战利品卖掉补充资金；
+///     销毁时余款还首府所有者（自负盈亏）。
+///
+/// "购买"的实现：vanilla 没有公开的 settlement 级市场粮食购入 API（Town.MarketData 是只读统计），
+/// 因此 buy = "估值 + 扣资金 + 凭空塞食物"。这与 IG 的"凭空塞食物"区别是：有资金来源（首府）和经济
+/// 闭环（资金随战利品流入 / 食物购买流出），不是无源凭空。
+/// </summary>
+public static class PartyEconomyHelper
+{
+    private static ItemObject? _cheapestFoodCache;
+
+    /// <summary>遍历 MBObjectManager 内所有 ItemObject，挑最便宜的 IsFood item；缓存结果。</summary>
+    public static ItemObject? GetCheapestFood()
+    {
+        if (_cheapestFoodCache != null) return _cheapestFoodCache;
+        try
+        {
+            ItemObject? best = null;
+            int bestPrice = int.MaxValue;
+            var all = MBObjectManager.Instance.GetObjectTypeList<ItemObject>();
+            if (all == null) return null;
+            foreach (var item in all)
+            {
+                if (item == null || !item.IsFood) continue;
+                int v = item.Value;
+                if (v <= 0 || v >= bestPrice) continue;
+                best = item;
+                bestPrice = v;
+            }
+            _cheapestFoodCache = best;
+            if (best != null) Logger.Info($"PartyEconomyHelper: cheapest food = '{best.StringId}' (value={best.Value})");
+            return best;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.GetCheapestFood failed", ex);
+            return null;
+        }
+    }
+
+    /// <summary>估算 party 在 days 天内的食物需求量（单位）。
+    /// 优先用 vanilla MobileParty.FoodChange（已含人数、buff、buildings 等），fallback 用 troops × 0.5。</summary>
+    public static int EstimateFoodForDays(MobileParty? party, float days)
+    {
+        try
+        {
+            if (party == null || days <= 0f) return 0;
+            float abs = 0f;
+            try { abs = Math.Abs(party.FoodChange); } catch { abs = 0f; }
+            // I3: 防御 NaN / ±Infinity（极端 vanilla buff 链可能产生异常 float）→ 退回 troops 估算
+            if (float.IsNaN(abs) || float.IsInfinity(abs)) abs = 0f;
+            if (abs < 0.1f)
+            {
+                int troops = party.MemberRoster?.TotalManCount ?? 0;
+                abs = Math.Max(1f, troops * 0.5f);
+            }
+            return (int)Math.Ceiling(abs * days);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>用 teamFunds 在 settlement 内购买 days 天食物：选 settlement 库存中最便宜的食物，
+    /// 用 vanilla SellItemsAction 真实把物品从 settlement.ItemRoster 转到 party.ItemRoster；teamFunds 扣实际花费。
+    /// 没在 settlement 内 / settlement 食物缺货 / 资金不够时按可买数量买；返回实际花费。
+    /// 注：vanilla SellItemsAction 不自动调 settlement.Gold，巡逻队队伍资金是 mod 内部账，与 hero 钱包 / settlement.Gold 独立。</summary>
+    public static int BuyFoodFromSettlement(MobileParty? party, Settlement? settlement, float days, ref int teamFunds)
+    {
+        if (party?.ItemRoster == null || settlement?.Town == null || teamFunds <= 0) return 0;
+        var town = settlement.Town;
+        var settlementOwner = ((SettlementComponent)town).Owner;
+        var settlementInv = settlementOwner?.ItemRoster;
+        if (settlementInv == null) return 0;
+
+        int wantUnits = EstimateFoodForDays(party, days);
+        if (wantUnits <= 0) return 0;
+
+        int totalSpent = 0;
+        try
+        {
+            while (wantUnits > 0 && teamFunds > 0)
+            {
+                int bestIdx = -1;
+                int bestPricePerUnit = int.MaxValue;
+                for (int i = 0; i < settlementInv.Count; i++)
+                {
+                    var item = settlementInv.GetItemAtIndex(i);
+                    if (item == null || !item.IsFood) continue;
+                    var elem = settlementInv.GetElementCopyAtIndex(i);
+                    if (elem.Amount <= 0) continue;
+                    int price = town.GetItemPrice(elem.EquipmentElement, party, isSelling: false);
+                    if (price <= 0 || price >= bestPricePerUnit) continue;
+                    bestIdx = i;
+                    bestPricePerUnit = price;
+                }
+                if (bestIdx < 0) break;
+                var bestElem = settlementInv.GetElementCopyAtIndex(bestIdx);
+                int affordable = teamFunds / bestPricePerUnit;
+                int actual = Math.Min(Math.Min(wantUnits, bestElem.Amount), affordable);
+                if (actual <= 0) break;
+                int chunkCost = actual * bestPricePerUnit;
+                try
+                {
+                    SellItemsAction.Apply(settlementOwner, party.Party, bestElem, actual, settlement);
+                    teamFunds -= chunkCost;
+                    totalSpent += chunkCost;
+                    wantUnits -= actual;
+                    var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
+                    Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
+                }
+                catch (Exception apEx)
+                {
+                    Logger.Warn($"PartyEconomyHelper.BuyFoodFromSettlement SellItemsAction failed", apEx);
+                    break;
+                }
+            }
+            try { party.ItemRoster.UpdateVersion(); } catch { }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.BuyFoodFromSettlement threw", ex);
+        }
+        return totalSpent;
+    }
+
+    /// <summary>把 party.ItemRoster 中所有非食物物品卖给 settlement：用 vanilla SellItemsAction 真实转 + 用 settlement.GetItemPrice 算价。
+    /// 收益加到 teamFunds。settlement.Gold 不动（与 vanilla caravan 同模式 — SellItemsAction 不自动转金币）。返回总收益。</summary>
+    public static int SellLootToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    {
+        if (party?.ItemRoster == null || settlement?.Town == null) return 0;
+        var town = settlement.Town;
+        int gained = 0;
+        try
+        {
+            var snapshot = new List<ItemRosterElement>();
+            foreach (var slot in party.ItemRoster) snapshot.Add(slot);
+            foreach (var slot in snapshot)
+            {
+                var item = slot.EquipmentElement.Item;
+                if (item == null || item.IsFood) continue;  // 食物保留（巡逻队自用）
+                int count = slot.Amount;
+                if (count <= 0) continue;
+                int price = town.GetItemPrice(slot.EquipmentElement, party, isSelling: true);
+                if (price <= 0) continue;
+                int totalPrice = price * count;
+                try
+                {
+                    SellItemsAction.Apply(party.Party, settlement.Party, slot, count, settlement);
+                    teamFunds += totalPrice;
+                    gained += totalPrice;
+                    Logger.Info($"PartyEconomyHelper.SellLootToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}' @ {price}d (+{totalPrice}d, funds={teamFunds})");
+                }
+                catch (Exception apEx)
+                {
+                    Logger.Warn($"PartyEconomyHelper.SellLootToSettlement SellItemsAction failed for '{item.StringId}'", apEx);
+                }
+            }
+            if (gained > 0)
+            {
+                try { party.ItemRoster.UpdateVersion(); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.SellLootToSettlement threw", ex);
+        }
+        return gained;
+    }
+
+    /// <summary>食物剩余天数 = Food / |FoodChange|。负 / 零变化时返 float.MaxValue（无饿死风险）。</summary>
+    public static float FoodDaysRemaining(MobileParty? party)
+    {
+        try
+        {
+            if (party == null) return 0f;
+            float food = 0f;
+            try { food = party.Food; } catch { food = 0f; }
+            float change = 0f;
+            try { change = party.FoodChange; } catch { change = 0f; }
+            // I3: vanilla FoodChange 在 buff 链异常时可能返回 NaN / ±Infinity → 视为安全（0 风险）
+            if (float.IsNaN(food) || float.IsInfinity(food)) return 0f;
+            if (float.IsNaN(change) || float.IsInfinity(change)) return 0f;
+            if (change >= 0f) return float.MaxValue;
+            return food / -change;
+        }
+        catch
+        {
+            return 0f;
+        }
+    }
+
+    /// <summary>从 hero 扣金，最多扣可用余额。返回实际扣到的数。</summary>
+    public static int ChargeHero(Hero? hero, int amount)
+    {
+        if (hero == null || amount <= 0) return 0;
+        try
+        {
+            int available = hero.Gold;
+            int deduct = Math.Min(amount, available);
+            if (deduct <= 0) return 0;
+            // ApplyBetweenCharacters(giver, recipient, amount, disableNotification)
+            GiveGoldAction.ApplyBetweenCharacters(hero, null, deduct, disableNotification: true);
+            return deduct;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.ChargeHero '{hero?.StringId}' x{amount} failed", ex);
+            return 0;
+        }
+    }
+
+    /// <summary>还金给 hero。</summary>
+    public static int RefundHero(Hero? hero, int amount)
+    {
+        if (hero == null || amount <= 0) return 0;
+        try
+        {
+            GiveGoldAction.ApplyBetweenCharacters(null, hero, amount, disableNotification: true);
+            return amount;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.RefundHero '{hero?.StringId}' x{amount} failed", ex);
+            return 0;
+        }
+    }
+}

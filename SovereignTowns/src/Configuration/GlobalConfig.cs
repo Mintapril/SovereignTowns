@@ -70,15 +70,11 @@ public sealed class GlobalConfig
 }
 
 /// <summary>
-/// 顶层特性开关。MVP 1 仅 AutoGarrison 默认开启；其余跟随路线图阶段逐步打开。
+/// 顶层特性开关。各功能由独立开关控制，不再保留额外的自动驻军总闸。
 /// </summary>
 public sealed class EnabledFeatures
 {
-    /// <summary>MVP 1：自动维持驻军规模。</summary>
-    public bool AutoGarrison { get; set; } = true;
-
-    /// <summary>MVP 2：自动招募新兵。B7.18：默认 true，与 SuppressVanillaGarrisonRecruitment 配套
-    /// （否则关掉 vanilla 又不开 ST → 驻军永远 0）。</summary>
+    /// <summary>自动补充驻军兵源。开启后 ST 执行首府原地招募、外派征兵、俘虏转化和驻军训练。</summary>
     public bool AutoRecruitment { get; set; } = true;
 
     /// <summary>MVP 4：自动派出巡逻队。</summary>
@@ -87,17 +83,12 @@ public sealed class EnabledFeatures
     /// <summary>跨城镇/城堡调拨兵力。关闭后非首府 settlement 只能依赖已有驻军。</summary>
     public bool TroopTransfers { get; set; } = true;
 
-    /// <summary>无巡逻队时附近有敌对势力则出城攻击。默认关闭以保稳。</summary>
+    /// <summary>附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击。默认关闭以保稳。</summary>
     public bool SallyForth { get; set; } = false;
 
-    /// <summary>战利品：俘虏兵种匹配首府 rule 非零桶 → 直接进首府驻军。</summary>
-    public bool AutoRecruitMatchingPrisoners { get; set; } = true;
-
-    /// <summary>战利品：剩余非匹配俘虏 → 自动卖到最近自家 town。</summary>
-    public bool AutoSellNonMatchingPrisoners { get; set; } = true;
-
-    /// <summary>战利品：战斗后缴获的装备/物品 → 自动卖到最近自家 town。</summary>
-    public bool AutoSellLoot { get; set; } = true;
+    // T2 (doc §20 #2)：3 个战利品集中处理 toggle（AutoRecruitMatchingPrisoners / AutoSellNonMatchingPrisoners / AutoSellLoot）
+    // 已删除。所有 ST 队伍现在走基类自资金路径（§14 队伍资金）：到 settlement.Town 时由 TryEconomicMaintenance.SellLootAtSettlement
+    // 自动卖物品入 _teamFunds；销毁时余款由 TryRefundOnDestroy 退还 home 所有者。
 
     /// <summary>
     /// B7.14：在受管氏族拥有的城镇/城堡上把 vanilla 的 <c>Town.GarrisonAutoRecruitmentIsEnabled</c>
@@ -229,8 +220,11 @@ public sealed class PartyThresholds
     /// 闸门代码仍在，default=0 时是 no-op。</summary>
     public int RecruiterMinHomeGarrison { get; set; } = 0;
 
-    /// <summary>A6：巡逻队 prisoner roster 上限，超过后每 hour 随机踢出非英雄。原 IG MobileGarrison.CheckIfPrisonersIsAboveThreshold。默认 30。</summary>
-    public int PatrolPrisonerCap { get; set; } = 30;
+    /// <summary>A6：所有 ST party 的 prisoner roster 上限，超过后每 hour 随机踢出非英雄。
+    /// 实际由 <see cref="SovereignTowns.Parties.StPartyComponent.TryEnforcePrisonerCap"/> 应用于
+    /// recruiter / transfer / patrol / sally 全部子类。原 IG MobileGarrison.CheckIfPrisonersIsAboveThreshold。默认 30。
+    /// 0 = 关闭俘虏 cap。</summary>
+    public int PartyPrisonerCap { get; set; } = 30;
 
     /// <summary>A5：scheduler.IsStuck 重发指令后仍卡死多少 hour 触发二段瞬移到 home.GatePosition。0 关闭。默认 24。</summary>
     public float StuckTeleportHours { get; set; } = 24f;
@@ -243,4 +237,51 @@ public sealed class PartyThresholds
 
     /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
     public float FoodReplenishTopUpDays { get; set; } = 5f;
+
+    // ── DeepSeek audit 2026-05-18 新增（R1/R2/R3/R4/H7-H10） ─────────────
+
+    /// <summary>R1：空闲多少小时后强制遣返回 home。原 PartyLifecycleManager 硬编码 24。范围 [1, 720]。</summary>
+    public float IdleHoursBeforeForceReturn { get; set; } = 24f;
+
+    /// <summary>R1：空闲多少小时后直接解散。原硬编码 36。必须 ≥ IdleHoursBeforeForceReturn。范围 [1, 720]。</summary>
+    public float IdleHoursBeforeDisband { get; set; } = 36f;
+
+    /// <summary>R2：Sally 触发的搜索半径（Vec2 单位）。原硬编码 50f。范围 [10, 500]。</summary>
+    public float SallyDetectionRadius { get; set; } = 50f;
+
+    /// <summary>R2：Sally 出击结束后的冷却小时数。原硬编码 24f。范围 [0, 168]。</summary>
+    public float SallyCooldownHours { get; set; } = 24f;
+
+    /// <summary>R2：敌方需连续可见 N 个 hourly tick 才触发 Sally。原硬编码 3。范围 [1, 48]。</summary>
+    public int SallyMinSustainedTicks { get; set; } = 3;
+
+    /// <summary>R3：调拨源-目的最大距离（Vec2 单位）。距离 > 此值的对不会被选。原 CapitalLogisticsManager 硬编码 100。范围 [0, 1000]。</summary>
+    public float TransferMaxPairDistance { get; set; } = 100f;
+
+    /// <summary>R3：调拨评分中容量项的权重（score -= capacity × 此值）。原硬编码 0.05f。范围 [0, 1]。</summary>
+    public float TransferCapacityWeight { get; set; } = 0.05f;
+
+    /// <summary>R3：branch-to-branch 调拨惩罚（destination 非首府且 source 非首府时 score -= 此值）。原硬编码 25f。范围 [0, 100]。</summary>
+    public float TransferBranchToBranchPenalty { get; set; } = 25f;
+
+    /// <summary>R3：首府出兵惩罚（destination 非首府且 source 即首府时 score += 此值）。原硬编码 10f。范围 [0, 100]。</summary>
+    public float TransferCapitalSourcePenalty { get; set; } = 10f;
+
+    /// <summary>R4：自动升级触发：低 Tier (T1+T2) 占总兵比例 ≥ 此值时尝试升级。原硬编码 0.30。范围 [0, 1]。</summary>
+    public float AutoUpgradeMinTierRatio { get; set; } = 0.30f;
+
+    /// <summary>R4：自动升级预算最小值（实际 = max(BudgetLimit/4, 此值)）。原硬编码 500。范围 [0, 50000]。</summary>
+    public int AutoUpgradeMinBudget { get; set; } = 500;
+
+    /// <summary>R4：自动升级单次最大升级数。原 TryUpgradeGarrison(maxUpgradesPerCall:20) 硬编码。范围 [1, 500]。</summary>
+    public int AutoUpgradeMaxPerCall { get; set; } = 20;
+
+    // T1 重整 2026-05-18：4 类 ST 队伍 seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，
+    // 不再可配置；删除 RecruiterSeedGold / SallySeedGold / TransferSeedGold 三字段（H7/H8 历史项）。
+
+    /// <summary>H9：RecruitmentPlanner 每轮候选村庄数。原硬编码 8。范围 [1, 50]。</summary>
+    public int RecruitmentCandidateBatchSize { get; set; } = 8;
+
+    /// <summary>H10：RecruitmentPlanner 第一轮搜索距离（Vec2 单位）。原硬编码 100。范围 [0, 1000]。</summary>
+    public float RecruitmentPlanMaxDistance { get; set; } = 100f;
 }

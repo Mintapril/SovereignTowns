@@ -69,13 +69,13 @@ public sealed class TownGarrisonRule
     /// </summary>
     public float MinimumDefenderRatio { get; set; } = 0.20f;
 
-    /// <summary>当所属王国处于战争状态时，TargetTotalCount 的乘数。</summary>
+    /// <summary>当 settlement 当前威胁评估达到 High/Critical 时，TargetTotalCount 的乘数。</summary>
     public float WartimeMultiplier { get; set; } = 1.5f;
 
-    /// <summary>和平时期 TargetTotalCount 的乘数。</summary>
+    /// <summary>当 settlement 当前威胁评估低于 High 时，TargetTotalCount 的乘数。</summary>
     public float PeacetimeMultiplier { get; set; } = 1.0f;
 
-    /// <summary>单日招募预算上限（denar）。超过则当日停止招募。</summary>
+    /// <summary>外派征兵队单次到村招募预算；自动升级预算也以此派生。</summary>
     public int BudgetLimit { get; set; } = 5000;
 
     /// <summary>当 Town.FoodChange 低于此阈值时暂停招募，避免饿城。</summary>

@@ -2,6 +2,7 @@ using System;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
@@ -45,6 +46,10 @@ public sealed class StTransferPartyComponent : StPartyComponent
 
     public override bool AvoidHostileActions => true;
     protected override bool AppliesReturnDisbandCondition => false;  // 调拨队不应用回城解散判定
+
+    protected override Economy.ExpenseCategory GetExpenseCategoryForKind() => Economy.ExpenseCategory.TransferSeed;
+
+    protected override bool ShouldReplenishFoodEnRoute => false;  // 单目的地短命任务，无沿途补给
 
     private StTransferPartyComponent(
         Settlement source, Settlement destination,
@@ -94,6 +99,8 @@ public sealed class StTransferPartyComponent : StPartyComponent
                 return null;
             }
             try { mobileParty.Aggressiveness = 0f; } catch { }
+            // 2026-05-18 fix: 阻止 vanilla AI 在第一个 hourly tick 之前接管 ST transfer（默认行为=回家会让兵员永不到达 dest）。
+            try { mobileParty.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
 
             component.SnapshotInitialMembers(mobileParty);
 
@@ -115,8 +122,9 @@ public sealed class StTransferPartyComponent : StPartyComponent
         var dest = _destination;
         if (dest == null) return;
 
-        // 1) 已到达 destination → 注入 garrison + 解散（不走基类的 OnArrivedHome，因为 home == source）
-        if (self.LastVisitedSettlement == dest)
+        // 1) 已到达 destination → 注入 garrison + 解散（不走基类的 OnArrivedHome，因为 home == source）。
+        // Bannerlord 的 LastVisitedSettlement 会在离开 settlement 后继续保留旧值，不能作为到达依据。
+        if (self.CurrentSettlement == dest)
         {
             DeliverAndDisband(self, dest);
             return;
@@ -130,7 +138,7 @@ public sealed class StTransferPartyComponent : StPartyComponent
             var fallback = ResolveSafeFallback(partyClan);
             if (fallback != null)
             {
-                if (self.LastVisitedSettlement == fallback)
+                if (self.CurrentSettlement == fallback)
                 {
                     Logger.Warn($"StTransferParty '{self.Name}': destination '{dest.Name}' owner changed; merging into fallback '{fallback.Name}'");
                     DeliverAndDisband(self, fallback);

@@ -2,6 +2,7 @@ using System;
 using SovereignTowns.Common;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -27,6 +28,8 @@ public abstract class StPartyComponent : CustomPartyComponent
     // ── 持久化字段 ──
     [SaveableField(10)] private Settlement? _homeSettlement;
     [SaveableField(11)] private int _initialMemberCount;
+    // doc §20 #1 (T1)：所有 ST 队伍共享的自资金闭环。
+    [SaveableField(12)] private int _teamFunds;
 
     // ── vanilla CustomPartyComponent 抽象成员 ──
     // 注：Name cache 留给子类（每个子类的 Name 文案不同），基类不持有 _cachedName。
@@ -60,6 +63,102 @@ public abstract class StPartyComponent : CustomPartyComponent
     public void SnapshotInitialMembers(MobileParty self)
         => _initialMemberCount = self?.MemberRoster?.TotalManCount ?? 0;
 
+    // ── 队伍资金 API（doc §20 #1, T1）──
+    /// <summary>doc §20 #1 (T1) 重整：所有 4 类 ST 队伍统一初始资金。</summary>
+    public const int DefaultSeedGold = 2000;
+
+    /// <summary>当前队伍资金（第纳尔）。</summary>
+    public int TeamFunds => _teamFunds;
+
+    /// <summary>从首府所有者扣 amount 第纳尔作为初始资金（hero 不够时按可负担扣）。</summary>
+    public void InitTeamFundsFromHomeOwner(MobileParty self, int amount)
+    {
+        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
+        int charged = PartyEconomyHelper.ChargeHero(owner, amount);
+        _teamFunds = charged;
+        Logger.Info($"{GetType().Name} '{PartyNameFormatter.SafeName(self)}': team funds initialized = {charged}d (charged from '{owner?.StringId ?? "null"}')");
+    }
+
+    /// <summary>在 settlement 内用队伍资金购买 days 天食物。返回花费的第纳尔。</summary>
+    public int BuyFoodAtSettlement(MobileParty self, Settlement settlement, float days)
+        => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days, ref _teamFunds);
+
+    /// <summary>把战利品（非食物 item）卖给 settlement，金额加入队伍资金。返回收益。</summary>
+    public int SellLootAtSettlement(MobileParty self, Settlement settlement)
+        => PartyEconomyHelper.SellLootToSettlement(self, settlement, ref _teamFunds);
+
+    /// <summary>把剩余资金还给首府所有者；清零 _teamFunds。返回还回的数额。</summary>
+    public int RefundTeamFundsToOwner()
+    {
+        if (_teamFunds <= 0) return 0;
+        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
+        int refunded = PartyEconomyHelper.RefundHero(owner, _teamFunds);
+        if (refunded > 0)
+            Logger.Info($"{GetType().Name}: refunded {refunded}d team funds to '{owner?.StringId ?? "null"}'");
+        _teamFunds = 0;
+        return refunded;
+    }
+
+    /// <summary>由 Dispatcher 在玩家氏族 ModTreasury.Charge 成功后调用，直接把队伍资金设为 amount。</summary>
+    public void SetTeamFunds(int amount)
+    {
+        _teamFunds = amount < 0 ? 0 : amount;
+    }
+
+    /// <summary>子类返回本类型对应的 ExpenseCategory（用于 ModTreasury 玩家路径退款记账）。</summary>
+    protected abstract ExpenseCategory GetExpenseCategoryForKind();
+
+    /// <summary>
+    /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 _teamFunds + 出发地买 3 天粮"。
+    /// 玩家氏族：走 ModTreasury（受 PauseSpendingWhenBroke 门控，写 ledger + audit），扣款成功 SetTeamFunds(DefaultSeedGold)；
+    ///           扣款失败返 false，调用方应回滚兵 + 销毁 party。
+    /// AI 氏族：从 home owner hero.Gold 扣（vanilla 路径，按可用余额取），InitTeamFundsFromHomeOwner 内部不会失败（最低 0 资金继续）；
+    ///         返 true。
+    /// 创建后立即在 origin 用资金 BuyFoodAtSettlement(3 天)。
+    /// </summary>
+    public static bool TrySeedAndBuyInitialFood(
+        StPartyComponent component,
+        MobileParty party,
+        Settlement origin,
+        ExpenseCategory expenseCategory,
+        Clan? chargeFromClan,
+        string noteContext)
+    {
+        if (component == null || party == null || origin == null)
+        {
+            Logger.Warn($"TrySeedAndBuyInitialFood: null arg (component={(component == null ? "null" : "ok")} party={(party == null ? "null" : "ok")} origin={(origin == null ? "null" : "ok")})");
+            return false;
+        }
+        bool shouldCharge = CapitalRegistry.ShouldChargeClan(chargeFromClan);
+        if (shouldCharge)
+        {
+            if (!ModTreasury.CanAfford(DefaultSeedGold))
+            {
+                Logger.Info($"TrySeedAndBuyInitialFood: 玩家金币不足 (need {DefaultSeedGold}) — {noteContext}");
+                return false;
+            }
+            if (!ModTreasury.Charge(expenseCategory, DefaultSeedGold, noteContext))
+            {
+                Logger.Info($"TrySeedAndBuyInitialFood: ModTreasury.Charge 拒绝 — {noteContext}");
+                return false;
+            }
+            component.SetTeamFunds(DefaultSeedGold);
+        }
+        else
+        {
+            component.InitTeamFundsFromHomeOwner(party, DefaultSeedGold);
+        }
+        int spent = component.BuyFoodAtSettlement(party, origin, 3f);
+        if (spent == 0)
+        {
+            // 非作弊基调：origin 食物缺货 → 取消派遣。
+            // 调用方应 TransferBackToGarrison + DestroyAndUntrack，OnDestroyed → TryRefundOnDestroy 退还种子金。
+            Logger.Info($"{component.GetType().Name}: '{PartyNameFormatter.SafeName(party)}' 出发地 '{origin.Name?.ToString() ?? origin.StringId}' 食物缺货 (BuyFood=0) — 取消派遣 ({noteContext})");
+            return false;
+        }
+        return true;
+    }
+
     // ── 通用调度（Template Method 模式）──
 
     /// vanilla HourlyTickPartyEvent 路由入口，由 PartyLifecycleManager 单点调用。
@@ -70,10 +169,26 @@ public abstract class StPartyComponent : CustomPartyComponent
         {
             if (!ValidateAliveAndManaged(self, out var capital)) return;
 
-            // B17.4 A1 reset：玩家上次锁定我导致 DoNotMakeNewDecisions=true，本 hour 入口先无条件复位。
-            // 只有当下面 TryHoldForPlayerTarget 命中时才会再次设为 true。
-            // sally Returning 不需要 DoNotMakeNewDecisions=true（sally 的 TransitionToReturning 已 SetDoNotMakeNewDecisions(false)）。
-            try { self.Ai?.SetDoNotMakeNewDecisions(false); } catch { /* swallow */ }
+            // 2026-05-18 诊断日志：印 hourly tick 入口状态，便于定位"出门即返回"等行为。
+            try
+            {
+                var homeDbg = HomeSettlementOrNull;
+                Logger.Debug($"[DIAG] {GetType().Name}.OnHourlyTick '{PartyNameFormatter.SafeName(self)}' home='{homeDbg?.Name?.ToString() ?? "null"}' cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' target='{self.TargetSettlement?.Name?.ToString() ?? "null"}' members={self.MemberRoster?.TotalManCount ?? -1}");
+            }
+            catch { /* swallow diagnostic */ }
+
+            // 2026-05-18 fix: ST party (patrol/recruiter/transfer) 必须全程 SetDoNotMakeNewDecisions(true)，
+            // 否则 vanilla AI 在两次 hourly tick 之间会接管 ST party 把 target 改回 home（CustomPartyComponent
+            // 的 vanilla 默认行为是"无任务就回家"）。我们自己的 SetMoveGoToSettlement 不受此 flag 影响仍能强制
+            // 设 target，所以全程 true 不影响 mod 的状态机；vanilla 不再自作主张回家。
+            //
+            // 旧 B17.4 A1 修复假设"入口 reset(false) 让 vanilla 自然接管，TryHoldForPlayerTarget 命中时再
+            // 设 true"。实测：(false) 让 vanilla 在 tick 间把巡逻队/征兵队拖回 home。改为 (true) 后 hold
+            // 释放仍工作 — 下次 tick mod 调 SetMoveGoToSettlement 自动覆盖 hold 状态。
+            if (!AvoidsPlayerTargetHold)
+            {
+                try { self.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
+            }
 
             // B17.4 B7：玩家被自家 ST 队伍俘获 → 立刻送回首府（IG MobileGarrison.CheckIfPlayerIsPrisonerInParty）
             if (TryReturnIfPlayerCaptured(self)) return;
@@ -82,7 +197,16 @@ public abstract class StPartyComponent : CustomPartyComponent
             // 注意：sally 队不应套用（冲锋中被玩家拦说明出问题），仍正常运行。
             if (!AvoidsPlayerTargetHold && TryHoldForPlayerTarget(self)) return;
 
-            if (IsAtHome(self)) { OnArrivedHome(self); return; }
+            if (IsAtHome(self))
+            {
+                Logger.Debug($"[DIAG] {GetType().Name}.OnHourlyTick '{PartyNameFormatter.SafeName(self)}' IsAtHome=true → OnArrivedHome");
+                OnArrivedHome(self);
+                return;
+            }
+
+            // doc §20 #1 (T1)：经济维护——卖战利品 + 食物 <1 天买 3 天（所有 ST 队伍共享）
+            TryEconomicMaintenance(self);
+
             OnHourlyTickCore(self, capital!);
 
             // B17.4 A6：tick 末尾通用维护 — 俘虏 cap。失败不影响 core 已完成的工作。
@@ -126,6 +250,9 @@ public abstract class StPartyComponent : CustomPartyComponent
     {
         try
         {
+            // doc §20 #1 (T1)：退款剩余 _teamFunds（所有 ST 队伍共享）
+            TryRefundOnDestroy(self);
+
             var home = HomeSettlementOrNull;
             var partyClan = self.ActualClan ?? home?.OwnerClan;
             Settlement? rescueTarget = null;
@@ -215,13 +342,19 @@ public abstract class StPartyComponent : CustomPartyComponent
         return true;
     }
 
-    /// party 当前位置是否在 home。基类判定：CurrentSettlement == home OR LastVisitedSettlement == home。
+    /// party 当前位置是否在 home。
+    /// 2026-05-18 修复：原实现 `CurrentSettlement==home || LastVisitedSettlement==home` 在 v1.3.15
+    /// 是错的 — vanilla 的 `LastVisitedSettlement` 在 party **离开** settlement 后仍指向那个 settlement，
+    /// 直到进入下一个 settlement。结果：刚从首府出发的征兵队/巡逻队 第一个 hourly tick 被误判 IsAtHome=true → OnArrivedHome：
+    ///   - 征兵队 → DefaultMergeAndDisband 立刻解散（"出门即返回"）
+    ///   - 巡逻队 → 重新 OnHourlyTickCore 把 home 当抵达点 RecordVisit 一次（首府 MinVisitGap 卡住下次回访）
+    /// 改为严格 `CurrentSettlement==home`：仅当 party 真停在 home 内才视为到家。
     protected bool IsAtHome(MobileParty self)
     {
         // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
         var home = HomeSettlementOrNull;
         if (home == null) return false;
-        return self.CurrentSettlement == home || self.LastVisitedSettlement == home;
+        return self.CurrentSettlement == home;
     }
 
     /// 把 party 设回 home 方向（vanilla AI 接管移动）。
@@ -240,6 +373,14 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// 转兵进 home garrison + 解散 + untrack。
     protected void DefaultMergeAndDisband(MobileParty self)
     {
+        // 2026-05-18 诊断日志：印出调用栈到 home，帮诊断"出门即解散"。
+        try
+        {
+            var stack = new System.Diagnostics.StackTrace(true);
+            Logger.Debug($"[DIAG] {GetType().Name}.DefaultMergeAndDisband ENTRY '{PartyNameFormatter.SafeName(self)}' members={self?.MemberRoster?.TotalManCount ?? -1} caller=\n{stack}");
+        }
+        catch { }
+
         // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
         var home = HomeSettlementOrNull;
         if (home == null)
@@ -261,6 +402,76 @@ public abstract class StPartyComponent : CustomPartyComponent
     }
 
     // ── B17.4 共享 helpers ──
+
+    /// <summary>
+    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都"在 settlement.Town 内卖战利品入 _teamFunds"；
+    /// 只有 Patrol/Recruiter（多 settlement 移动）需要"食物 &lt;1 天买 3 天"补粮逻辑。
+    /// Sally/Transfer 是单目的地短命任务，没有沿途补给机会，故 override ShouldReplenishFoodEnRoute=false 跳过补粮。
+    /// </summary>
+    private void TryEconomicMaintenance(MobileParty self)
+    {
+        var atSettlement = self.CurrentSettlement;
+        if (atSettlement == null || atSettlement.Town == null) return;
+
+        // 1) 卖战利品（所有 ST 队伍共享，到 settlement 即变现入资金）
+        try
+        {
+            int gained = SellLootAtSettlement(self, atSettlement);
+            if (gained > 0)
+                Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' sold loot at '{atSettlement.Name}' +{gained}d (funds={TeamFunds})");
+        }
+        catch (Exception ex) { Logger.Warn($"{GetType().Name}.TryEconomicMaintenance sell-loot threw: {ex.Message}"); }
+
+        // 2) 补粮（仅 Patrol/Recruiter — 多 settlement 移动需要沿途补给）
+        if (!ShouldReplenishFoodEnRoute) return;
+
+        try
+        {
+            float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
+            if (daysLeft < 1f && TeamFunds > 0)
+            {
+                int spent = BuyFoodAtSettlement(self, atSettlement, 3f);
+                if (spent > 0)
+                    Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) → bought at '{atSettlement.Name}' for {spent}d (funds={TeamFunds})");
+            }
+        }
+        catch (Exception ex) { Logger.Warn($"{GetType().Name}.TryEconomicMaintenance food top-up threw: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// 是否沿途自动补给（"食物 &lt;1 天买 3 天"）。
+    /// 默认 true（Patrol/Recruiter）。Sally/Transfer override 为 false（单目的地短命任务，无沿途补给场景）。
+    /// </summary>
+    protected virtual bool ShouldReplenishFoodEnRoute => true;
+
+    /// <summary>
+    /// doc §20 #1 (T1)：销毁时退款。玩家氏族走 ModTreasury.Refund 保账目对称；AI 氏族走 RefundTeamFundsToOwner（vanilla hero.Gold）。
+    /// _teamFunds=0 时双路径均 no-op。
+    /// </summary>
+    private void TryRefundOnDestroy(MobileParty self)
+    {
+        if (_teamFunds <= 0) return;
+        try
+        {
+            var refundClan = self.ActualClan ?? HomeSettlementOrNull?.OwnerClan;
+            if (CapitalRegistry.ShouldChargeClan(refundClan))
+            {
+                int toRefund = _teamFunds;
+                _teamFunds = 0;
+                Economy.ModTreasury.Refund(GetExpenseCategoryForKind(), toRefund,
+                    $"{GetType().Name}_destroyed home={HomeSettlementOrNull?.StringId ?? "null"}");
+                if (toRefund > 0)
+                    Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {toRefund}d via ModTreasury (player clan)");
+            }
+            else
+            {
+                int refunded = RefundTeamFundsToOwner();
+                if (refunded > 0)
+                    Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {refunded}d to AI owner");
+            }
+        }
+        catch (Exception ex) { Logger.Warn($"{GetType().Name}.TryRefundOnDestroy threw: {ex.Message}"); }
+    }
 
     /// <summary>
     /// B17.4 B7：MainHero 被本 party 俘获 → 立刻返回 home 走 vanilla Dungeon 路径。返回 true 表示本 hour 提前结束。
@@ -326,7 +537,7 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// </summary>
     private void TryEnforcePrisonerCap(MobileParty self)
     {
-        int cap = ConfigurationManager.Current?.Thresholds?.PatrolPrisonerCap ?? 0;
+        int cap = ConfigurationManager.Current?.Thresholds?.PartyPrisonerCap ?? 0;
         if (cap <= 0) return;
         var prisoners = self.PrisonRoster;
         if (prisoners == null) return;

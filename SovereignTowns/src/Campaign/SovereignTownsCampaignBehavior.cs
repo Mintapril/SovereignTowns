@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
 using SovereignTowns.Audit;
-using SovereignTowns.Battle;
 using SovereignTowns.Common;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
@@ -38,7 +37,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private RecruitmentDispatcher? _recruitmentDispatcher;
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
     private CapitalLogisticsManager? _capitalLogisticsManager;
-    private BattleLootManager? _battleLootManager;
     private TransferDispatcher? _transferDispatcher;
     private PatrolDispatcher? _patrolDispatcher;
     private SallyDispatcher? _sallyDispatcher;
@@ -193,7 +191,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _capitalRegistry.Initialize();
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
-            _battleLootManager = new BattleLootManager(_capitalRegistry);
+            // T2: BattleLootManager 已删除（doc §20 #2）；所有 ST 队伍走基类自资金路径（§14 队伍资金）
             // B7.27：sally 先构造（component 通过 SovereignTownsCampaignBehavior.SallyDispatcher 静态 accessor 拿到 dispatcher）
             _sallyDispatcher = new SallyDispatcher(_lifecycle, _capitalRegistry);
             _staticSallyDispatcher = _sallyDispatcher;
@@ -242,8 +240,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _vanillaSuppression.Initialize();
 
             Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (含 Capital + SallyDispatcher + VanillaSuppression) ConfigVersion={ConfigurationManager.Current.ConfigVersion}");
-            Logger.Info($"  features: AutoGarrison={ConfigurationManager.Current.EnabledFeatures.AutoGarrison} " +
-                        $"AutoRecruitment={ConfigurationManager.Current.EnabledFeatures.AutoRecruitment} " +
+            Logger.Info($"  features: AutoRecruitment={ConfigurationManager.Current.EnabledFeatures.AutoRecruitment} " +
                         $"AutoPatrol={ConfigurationManager.Current.EnabledFeatures.AutoPatrol} " +
                         $"TroopTransfers={ConfigurationManager.Current.EnabledFeatures.TroopTransfers}");
 
@@ -386,11 +383,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
             var mgr = _capitalRegistry?.GetForSettlement(settlement);
             var capitalSettlement = _capitalRegistry?.GetCapitalForClan(mgr?.OwnerClan);
-            // B7.20：诊断日志 — 让玩家在 ModLogs 直接看到 daily tick 是否走到首府路径
+            // B7.20：诊断日志 — 放在 Debug，避免长期存档每个日 tick 写入高频噪声。
             if (settlement != null && (settlement.IsTown || settlement.IsCastle) && settlement.OwnerClan == Clan.PlayerClan)
             {
-                Logger.Info($"OnDailyTickSettlement '{settlement.Name}' (ownerClan={settlement.OwnerClan?.StringId}): " +
-                            $"registry hasMgr={mgr != null} capital={capitalSettlement?.Name?.ToString() ?? "<none>"} matches={(capitalSettlement == settlement)}");
+                Logger.Debug($"OnDailyTickSettlement '{settlement.Name}' (ownerClan={settlement.OwnerClan?.StringId}): " +
+                             $"registry hasMgr={mgr != null} capital={capitalSettlement?.Name?.ToString() ?? "<none>"} matches={(capitalSettlement == settlement)}");
             }
             if (capitalSettlement != null && settlement == capitalSettlement)
             {
@@ -411,15 +408,15 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 
     /// <summary>
     /// 战斗结束回调（vanilla <c>CampaignEvents.MapEventEnded</c>，签名 <c>Action&lt;MapEvent&gt;</c>）。
-    /// B16.4 起所有 4 种 StPartyComponent 子类（patrol / transfer / sally / recruiter）由 lifecycle 单点路由
-    /// （StPartyComponent.OnMapEventEnded）。仅保留 _battleLootManager.OnMapEventEnded（战利品集中处理）。
+    /// T2 之后：所有 4 种 StPartyComponent 子类（patrol / transfer / sally / recruiter）由 lifecycle 单点路由
+    /// （StPartyComponent.OnMapEventEnded）。战利品集中处理（旧 BattleLootManager）已删除，物品由基类 TryEconomicMaintenance
+    /// 在下次到达 settlement.Town 时统一卖入 _teamFunds。
     /// try-catch 包裹避免影响 vanilla 事件链。
     /// </summary>
     private void OnMapEventEnded(MapEvent mapEvent)
     {
         try
         {
-            _battleLootManager?.OnMapEventEnded(mapEvent);
             _lifecycle?.OnMapEventEnded(mapEvent);   // B16.1-B16.4：单点路由到 StPartyComponent
         }
         catch (Exception ex)

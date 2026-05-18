@@ -38,7 +38,23 @@ public sealed class CapitalLogisticsManager
     private static float MinRecruitmentDemandRatio
         => ConfigurationManager.Current?.Thresholds?.RecruitmentMinDemandRatio ?? 0.07f;
 
-    private const float MaxPairDistance = 100f;
+    // R3 (DeepSeek audit 2026-05-18)：调拨评分常数改为 PartyThresholds 配置。
+    private static float MaxPairDistance
+        => ConfigurationManager.Current?.Thresholds?.TransferMaxPairDistance ?? 100f;
+    private static float TransferCapacityWeight
+        => ConfigurationManager.Current?.Thresholds?.TransferCapacityWeight ?? 0.05f;
+    private static float TransferBranchToBranchPenalty
+        => ConfigurationManager.Current?.Thresholds?.TransferBranchToBranchPenalty ?? 25f;
+    private static float TransferCapitalSourcePenalty
+        => ConfigurationManager.Current?.Thresholds?.TransferCapitalSourcePenalty ?? 10f;
+
+    // R4：自动升级触发参数改为 PartyThresholds 配置。
+    private static float AutoUpgradeMinTierRatio
+        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMinTierRatio ?? 0.30f;
+    private static int AutoUpgradeMinBudget
+        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMinBudget ?? 500;
+    private static int AutoUpgradeMaxPerCall
+        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMaxPerCall ?? 20;
 
     private readonly CapitalRegistry _capitalRegistry;
     private readonly RecruitmentDispatcher _recruitmentDispatcher;
@@ -58,12 +74,6 @@ public sealed class CapitalLogisticsManager
     {
         try
         {
-            if (!ConfigurationManager.Current.EnabledFeatures.AutoGarrison)
-            {
-                Logger.Debug("CapitalLogisticsManager.EvaluateAll skipped: AutoGarrison disabled");
-                return;
-            }
-
             int evaluated = 0;
             foreach (var manager in _capitalRegistry.AllManagers)
             {
@@ -224,7 +234,9 @@ public sealed class CapitalLogisticsManager
                 }
                 else if (party.PartyComponent is StRecruiterPartyComponent recruiter)
                 {
-                    var home = recruiter.HomeSettlement;
+                    // R6 (DeepSeek audit 2026-05-18)：用 OrNull 防止损坏存档下 getter 抛 InvalidOperationException
+                    // 击穿外层 catch、丢失整个 AccountInFlightParties 评估。
+                    var home = recruiter.HomeSettlementOrNull;
                     if (home != null && bySettlement.TryGetValue(home, out var homeNode))
                     {
                         homeNode.Inbound += men;
@@ -244,7 +256,7 @@ public sealed class CapitalLogisticsManager
         {
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
-            if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlement?.OwnerClan;
+            if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlementOrNull?.OwnerClan;
         }
         catch
         {
@@ -290,10 +302,11 @@ public sealed class CapitalLogisticsManager
 
             var snap = TroopCompositionEvaluator.Snapshot(capitalNode.Town.GarrisonParty?.MemberRoster);
             if (snap.Total <= 0) return;
-            if (snap.Tier1To2 <= snap.Total * 0.3f) return;
+            // R4 (DeepSeek audit 2026-05-18)：触发阈值与上限改读 PartyThresholds。
+            if (snap.Tier1To2 < snap.Total * AutoUpgradeMinTierRatio) return;
 
-            int budgetCap = Math.Max(rule.BudgetLimit / 4, 500);
-            var report = TroopUpgradeService.TryUpgradeGarrison(capitalNode.Town, budgetCap, maxUpgradesPerCall: 20);
+            int budgetCap = Math.Max(rule.BudgetLimit / 4, AutoUpgradeMinBudget);
+            var report = TroopUpgradeService.TryUpgradeGarrison(capitalNode.Town, budgetCap, maxUpgradesPerCall: AutoUpgradeMaxPerCall);
             if (report.DidWork)
             {
                 Logger.Info($"CapitalLogistics: upgraded capital '{capitalNode.Settlement.Name}' units={report.UpgradedUnits}");
@@ -460,17 +473,17 @@ public sealed class CapitalLogisticsManager
             if (distance > MaxPairDistance) continue;
 
             int maxTroopsPerTask = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MaxTroopsPerTaskRatio, minimumWhenPositive: 1);
-            float score = distance - Math.Min(capacity, maxTroopsPerTask) * 0.05f;
+            float score = distance - Math.Min(capacity, maxTroopsPerTask) * TransferCapacityWeight;
 
             if (!destination.IsCapital)
             {
                 if (!source.IsCapital)
                 {
-                    score -= 25f;
+                    score -= TransferBranchToBranchPenalty;
                 }
                 else if (source.Settlement == capitalNode.Settlement)
                 {
-                    score += 10f;
+                    score += TransferCapitalSourcePenalty;
                 }
             }
 

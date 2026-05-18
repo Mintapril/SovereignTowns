@@ -57,7 +57,8 @@ public static class DecisionAuditLogger
     private const string ModuleId = "SovereignTowns";
 
     private static readonly ConcurrentQueue<AuditEntry> _queue = new ConcurrentQueue<AuditEntry>();
-    private static readonly CancellationTokenSource _cts = new CancellationTokenSource();
+    // R8：CTS 必须可替换以支持 Shutdown → re-Initialize 流。
+    private static CancellationTokenSource _cts = new CancellationTokenSource();
     private static readonly object _fileLock = new object();
 
     private static Task? _writerTask;
@@ -217,6 +218,14 @@ public static class DecisionAuditLogger
             while (_queue.TryDequeue(out var entry)) WriteOne(entry);
         }
         catch { /* swallow on shutdown */ }
+        finally
+        {
+            // R8：复位状态，允许同进程内 re-Initialize。
+            try { _cts.Dispose(); } catch { }
+            _cts = new CancellationTokenSource();
+            _writerTask = null;
+            _initialized = false;
+        }
     }
 
     private static async Task WriteLoop()

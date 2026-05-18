@@ -101,18 +101,18 @@ public sealed class PatrolDispatcher
             var garrison = town?.GarrisonParty;
             var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
             int batchSize = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolTroopBatchRatio, minimumWhenPositive: 1);
-            Logger.Info($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' garrison={garrisonCount} ratio={PatrolTroopBatchRatio:F2} → batch={batchSize}");
+            Logger.Debug($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' garrison={garrisonCount} ratio={PatrolTroopBatchRatio:F2} → batch={batchSize}");
             if (batchSize <= 0)
             {
-                Logger.Info($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
+                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
                 return;
             }
 
             int reserveAfterCreation = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolReserveAfterCreationRatio, minimumWhenPositive: 0);
-            Logger.Info($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' reserveAfterCreation={reserveAfterCreation} (ratio={PatrolReserveAfterCreationRatio:P0}) garrison-batch={garrisonCount - batchSize}");
+            Logger.Debug($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' reserveAfterCreation={reserveAfterCreation} (ratio={PatrolReserveAfterCreationRatio:P0}) garrison-batch={garrisonCount - batchSize}");
             if (garrisonCount - batchSize < reserveAfterCreation)
             {
-                Logger.Info($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} — defer (garrison-batch < reserve)");
+                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} — defer (garrison-batch < reserve)");
                 return;
             }
 
@@ -150,7 +150,7 @@ public sealed class PatrolDispatcher
                 moved = TroopTransferHelper.TransferFromGarrison(
                     gRoster, pRoster, batchSize, TroopTransferHelper.SortStrategy.LowestTierFirst);
             }
-            Logger.Info($"[DIAG] PatrolDispatcher '{settlement.Name}' transfer: requested={batchSize}, gRoster?={gRoster != null}, pRoster?={pRoster != null}, moved={moved}, garrison-after-transfer={gRoster?.TotalManCount ?? -1}");
+            Logger.Debug($"[DIAG] PatrolDispatcher '{settlement.Name}' transfer: requested={batchSize}, gRoster?={gRoster != null}, pRoster?={pRoster != null}, moved={moved}, garrison-after-transfer={gRoster?.TotalManCount ?? -1}");
 
             if (moved <= 0)
             {
@@ -164,52 +164,21 @@ public sealed class PatrolDispatcher
             {
                 stc.SnapshotInitialMembers(created);
 
-                // 2026-05-18：巡逻队自负盈亏经济模型 — 出发时注入 2000d 队伍资金，立刻在首府市场买 3 天食物。
-                //
-                // 玩家氏族 vs AI 氏族走不同路径，与 RecruitmentDispatcher / SallyDispatcher 惯例对称：
-                //   - 玩家氏族（ShouldChargeClan=true）：扣款走 ModTreasury.Charge，受 PauseSpendingWhenBroke
-                //     门控、写 ledger + audit；扣款失败时把已抽兵员还回 garrison 并销毁实例（回滚）。
-                //   - AI 氏族（ShouldChargeClan=false）：仍走 InitTeamFundsFromHomeOwner 从 AI 领主 hero.Gold
-                //     扣（vanilla 路径，不经 ModTreasury）。
-                const int patrolSeedGold = 2000;
-                bool shouldChargePatrol = CapitalRegistry.ShouldChargeClan(settlement.OwnerClan);
-                if (shouldChargePatrol)
+                // T1 重整 (doc §20 #1)：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
+                // 玩家路径扣款失败 → 把兵还 garrison 并销毁 party；AI 路径不会失败。
+                if (!StPartyComponent.TrySeedAndBuyInitialFood(
+                    stc, created, settlement,
+                    ExpenseCategory.PatrolSeed,
+                    settlement.OwnerClan,
+                    $"patrol_seed home={settlement.StringId}"))
                 {
-                    // 玩家路径：先预检，再扣款，成功后直接把资金写入队伍（不从 hero.Gold 扣第二次）。
-                    if (!ModTreasury.CanAfford(patrolSeedGold))
-                    {
-                        Logger.Info($"PatrolDispatcher: '{settlement.Name}' 玩家金币不足 (need {patrolSeedGold})，回滚巡逻队");
-                        TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
-                        PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher insufficient funds rollback", deferIfInMapEvent: false);
-                        return;
-                    }
-                    if (!ModTreasury.Charge(ExpenseCategory.PatrolSeed, patrolSeedGold, $"patrol_seed home={settlement.StringId}"))
-                    {
-                        Logger.Info($"PatrolDispatcher: '{settlement.Name}' ModTreasury.Charge 拒绝，回滚巡逻队");
-                        TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
-                        PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher Charge rejected rollback", deferIfInMapEvent: false);
-                        return;
-                    }
-                    // 扣款成功 → 把 2000d 写入队伍资金（队伍在路上用它买粮买装）
-                    stc.SetTeamFunds(patrolSeedGold);
+                    TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
+                    PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher seed failed rollback", deferIfInMapEvent: false);
+                    return;
                 }
-                else
-                {
-                    // AI 路径：从 AI 领主 hero.Gold 扣（vanilla 路径，不受 PauseSpendingWhenBroke 影响）。
-                    stc.InitTeamFundsFromHomeOwner(created, patrolSeedGold);
-                }
-
-                stc.BuyFoodAtSettlement(created, settlement, 3f);
             }
 
             _lifecycle.RegisterTrackedParty(created, settlement, PartyLifecycleManager.KindPatrol);
-
-            DecisionAuditLogger.LogRule(
-                decisionType: "create_patrol_party",
-                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} template={templateId} moved={moved}",
-                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{created.StringId}\",\"template\":\"{templateId}\",\"moved\":{moved}}}",
-                accepted: true);
-            Logger.Info($"PatrolDispatcher: created ST patrol '{created.StringId}' for '{settlement.Name}' (template='{templateId}', moved={moved} troops)");
 
             // B7.26：新巡逻队的首站走 scheduler。
             // 2026-05-18 产品语义：巡逻队不允许把 home 当巡逻站（ClanPatrolScheduler 已 filter 排除）。
@@ -241,6 +210,13 @@ public sealed class PatrolDispatcher
             {
                 Logger.Error("PatrolDispatcher: scheduler first-hop assignment failed (party will idle until next tick)", schedEx);
             }
+
+            DecisionAuditLogger.LogRule(
+                decisionType: "create_patrol_party",
+                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} template={templateId} moved={moved}",
+                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{created.StringId}\",\"template\":\"{templateId}\",\"moved\":{moved}}}",
+                accepted: true);
+            Logger.Info($"PatrolDispatcher: created ST patrol '{created.StringId}' for '{settlement.Name}' (template='{templateId}', moved={moved} troops)");
         }
         catch (Exception ex)
         {

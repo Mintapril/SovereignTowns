@@ -23,7 +23,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 16;
+    public const int CurrentConfigVersion = 17;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -144,9 +144,9 @@ public static class ConfigurationManager
 
     /// <summary>
     /// 为某 Town 取最终生效规则。lookup 优先级：
-    ///   1) PerSettlementOverrides[town.Settlement.StringId] —— 玩家手工 override（最高，玩家 + AI 城都适用）
-    ///   2) AI 城 + ApplyToAiSettlementsToo=true → <see cref="AiCulturePresets"/> 按 OwnerClan.Culture.StringId 查
-    ///   3) GlobalDefaults —— 兜底（玩家城无 override 时走此；AI 城未识别 culture 时也走此）
+    ///   1) 先取有效基础规则：AI 城 + ApplyToAiSettlementsToo=true 走 <see cref="AiCulturePresets"/>，否则走 GlobalDefaults
+    ///   2) 若 PerSettlementOverrides[town.Settlement.StringId] 存在，只覆盖网页面板真正暴露的单城字段
+    ///      （避免单城覆盖冻结兵种模板、Tier、文化过滤等隐藏字段）
     /// </summary>
     public static TownGarrisonRule GetRuleFor(Town town)
     {
@@ -154,22 +154,16 @@ public static class ConfigurationManager
         {
             lock (_gate)
             {
+                var effective = BuildBaseRuleFor(town);
+
                 if (town?.Settlement?.StringId is { } id
-                    && _current.PerSettlementOverrides.TryGetValue(id, out var rule)
-                    && rule is not null)
+                    && _current.PerSettlementOverrides.TryGetValue(id, out var settlementOverride)
+                    && settlementOverride is not null)
                 {
-                    return rule;
+                    ApplySettlementOverrideFields(effective, settlementOverride);
                 }
 
-                if (town?.OwnerClan != null
-                    && town.OwnerClan != Clan.PlayerClan
-                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
-                {
-                    var preset = AiCulturePresets.TryGet(town.OwnerClan.Culture?.StringId);
-                    if (preset != null) return preset;
-                }
-
-                return _current.GlobalDefaults;
+                return effective;
             }
         }
         catch (Exception ex)
@@ -177,6 +171,29 @@ public static class ConfigurationManager
             Logger.Error("GetRuleFor failed; returning a fresh default rule", ex);
             return TownGarrisonRule.CreateDefault();
         }
+    }
+
+    private static TownGarrisonRule BuildBaseRuleFor(Town? town)
+    {
+        if (town?.OwnerClan != null
+            && town.OwnerClan != Clan.PlayerClan
+            && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
+        {
+            var preset = AiCulturePresets.TryGet(town.OwnerClan.Culture?.StringId);
+            if (preset != null) return preset.Clone();
+        }
+
+        return (_current.GlobalDefaults ?? TownGarrisonRule.CreateDefault()).Clone();
+    }
+
+    private static void ApplySettlementOverrideFields(TownGarrisonRule target, TownGarrisonRule settlementOverride)
+    {
+        target.TargetTotalCount = settlementOverride.TargetTotalCount;
+        target.MinimumDefenderRatio = settlementOverride.MinimumDefenderRatio;
+        target.BudgetLimit = settlementOverride.BudgetLimit;
+        target.WartimeMultiplier = settlementOverride.WartimeMultiplier;
+        target.PeacetimeMultiplier = settlementOverride.PeacetimeMultiplier;
+        target.FoodSafetyThreshold = settlementOverride.FoodSafetyThreshold;
     }
 
     /// <summary>
@@ -639,9 +656,9 @@ public static class ConfigurationManager
             }
         }
 
-        if (config.VillageCooldownHours < 0)
+        if (config.VillageCooldownHours < 12 || config.VillageCooldownHours > 240)
         {
-            reason = "VillageCooldownHours < 0";
+            reason = $"VillageCooldownHours invalid ({config.VillageCooldownHours}); [12, 240]";
             return false;
         }
         if (config.Thresholds != null && !ValidateThresholds(config.Thresholds, out reason))
@@ -781,10 +798,7 @@ public static class ConfigurationManager
         { reason = $"Thresholds.AutoUpgradeMinBudget invalid ({t.AutoUpgradeMinBudget}); [0, 50000]"; return false; }
         if (t.AutoUpgradeMaxPerCall < 1 || t.AutoUpgradeMaxPerCall > 500)
         { reason = $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"; return false; }
-        if (t.RecruiterSeedGold < 0 || t.RecruiterSeedGold > 100000)
-        { reason = $"Thresholds.RecruiterSeedGold invalid ({t.RecruiterSeedGold}); [0, 100000]"; return false; }
-        if (t.SallySeedGold < 0 || t.SallySeedGold > 100000)
-        { reason = $"Thresholds.SallySeedGold invalid ({t.SallySeedGold}); [0, 100000]"; return false; }
+        // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruitmentCandidateBatchSize < 1 || t.RecruitmentCandidateBatchSize > 50)
         { reason = $"Thresholds.RecruitmentCandidateBatchSize invalid ({t.RecruitmentCandidateBatchSize}); [1, 50]"; return false; }
         if (!IsNonNegativeFloat(t.RecruitmentPlanMaxDistance) || t.RecruitmentPlanMaxDistance > 1000f)
@@ -830,6 +844,19 @@ public static class ConfigurationManager
             if (float.IsNaN(kv.Value) || float.IsInfinity(kv.Value) || kv.Value < 0f || kv.Value > 1f)
             {
                 reason = $"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} 不在 [0,1] 占比范围";
+                return false;
+            }
+        }
+        if (!rule.UseGenericMatching && rule.ExactTroopTemplate.Count > 0)
+        {
+            float exactTemplateSum = 0f;
+            foreach (var ratio in rule.ExactTroopTemplate.Values)
+            {
+                exactTemplateSum += ratio;
+            }
+            if (exactTemplateSum < RatioSumMin || exactTemplateSum > RatioSumMax)
+            {
+                reason = $"{ctx}.ExactTroopTemplate ratio sum={exactTemplateSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
                 return false;
             }
         }

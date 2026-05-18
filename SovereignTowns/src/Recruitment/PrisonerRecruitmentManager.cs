@@ -187,9 +187,13 @@ public sealed class PrisonerRecruitmentManager
                     var garrisonMembers = garrison.MemberRoster;
                     if (garrisonMembers == null) continue;
 
+                    // R1：原子转化 — garrison +N 先做（失败→无副作用），再 prison RemoveTroop。
+                    // RemoveTroop 失败 → 回滚 garrison -N，防止"驻军和俘虏双份存在"。
+                    bool garrisonAdded = false;
                     try
                     {
                         garrisonMembers.AddToCounts(character, recruitable, false, 0, 0);
+                        garrisonAdded = true;
                     }
                     catch (Exception ex)
                     {
@@ -205,7 +209,12 @@ public sealed class PrisonerRecruitmentManager
                     }
                     catch (Exception ex)
                     {
-                        Logger.Warn($"  PrisonerRecruitment '{settlement.Name}': prison roster XP/Remove threw: {ex.Message}");
+                        Logger.Warn($"  PrisonerRecruitment '{settlement.Name}': prison roster XP/Remove threw — rolling back garrison: {ex.Message}");
+                        if (garrisonAdded)
+                        {
+                            try { garrisonMembers.AddToCounts(character, -recruitable, false, 0, 0); }
+                            catch (Exception undoEx) { Logger.Error("  PrisonerRecruitment: garrison rollback failed — DUPLICATE TROOPS may exist", undoEx); }
+                        }
                     }
 
                     totalRecruited += recruitable;

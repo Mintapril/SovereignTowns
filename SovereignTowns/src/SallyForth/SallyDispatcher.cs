@@ -26,13 +26,19 @@ namespace SovereignTowns.SallyForth;
 /// </summary>
 public sealed class SallyDispatcher
 {
-    // === 触发参数（合理默认；未来挂控制面板可改） ===
-    private const float DetectionRadius = 50f;
-    private const int InitialSallyGold = 100;
+    // === 触发参数 ===
+    // R2 (DeepSeek audit 2026-05-18)：常量改为 PartyThresholds 配置；缺省时回退到原硬编码。
+    // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 SallySeedGold 配置项。
+    private const float DetectionRadiusDefault = 50f;
+    private const float SallyCooldownHoursDefault = 24f;
+    private const int MinSustainedTicksDefault = 3;
 
-    // B7.22：出击节奏控制（避免一进检测圈就冲、刚回又冲）
-    private const float SallyCooldownHours = 24f;   // 上次出击结束后冷却小时数
-    private const int MinSustainedTicks = 3;        // 敌人需在视野内连续 N 个 hourly tick 才触发出击
+    private static float DetectionRadius
+        => ConfigurationManager.Current?.Thresholds?.SallyDetectionRadius ?? DetectionRadiusDefault;
+    private static float SallyCooldownHours
+        => ConfigurationManager.Current?.Thresholds?.SallyCooldownHours ?? SallyCooldownHoursDefault;
+    private static int MinSustainedTicks
+        => ConfigurationManager.Current?.Thresholds?.SallyMinSustainedTicks ?? MinSustainedTicksDefault;
 
     private static float SallyExtractionRatio
         => ConfigurationManager.Current?.Thresholds?.SallyExtractionRatio ?? 0.60f;
@@ -79,6 +85,24 @@ public sealed class SallyDispatcher
 
             var garrison = settlement.Town?.GarrisonParty;
             var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
+
+            // doc §10.5：优先支援被劫掠的下辖村庄（doc:849 忽略持续可见性，但 doc:855 冷却仍生效；doc:859 不设搜索半径）
+            var raidTarget = FindRaiderTargetingBoundVillage(settlement);
+            if (raidTarget != null)
+            {
+                if (_lastSallyEndedAt.TryGetValue(settlement, out var raidLastEnd))
+                {
+                    var hoursSinceLast = (CampaignTime.Now - raidLastEnd).ToHours;
+                    if (hoursSinceLast < SallyCooldownHours)
+                    {
+                        Logger.Debug($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': raid 响应被冷却拦截 ({hoursSinceLast:F1}h < {SallyCooldownHours}h)");
+                        return;
+                    }
+                }
+                Logger.Info($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': prioritizing raid response, target='{PartyNameFormatter.SafeName(raidTarget)}'");
+                TryCreateSallyParty(settlement, garrison!, garrisonCount, raidTarget);
+                return;
+            }
 
             var target = FindBestEnemyTarget(settlement);
             if (target == null)
@@ -132,7 +156,8 @@ public sealed class SallyDispatcher
             {
                 if (party == null || !party.IsActive) continue;
                 if (party.PartyComponent is not StSallyPartyComponent sc) continue;
-                if (sc.HomeSettlement?.OwnerClan != clan) continue;
+                // R6 (DeepSeek audit 2026-05-18)：用 OrNull 避免 HomeSettlement getter 抛 → 整个 GetActiveCombatSallyParties 列表丢失。
+                if (sc.HomeSettlementOrNull?.OwnerClan != clan) continue;
                 if (party.MapEvent == null) continue;  // 不在战斗中
                 result.Add(party);
             }
@@ -161,6 +186,49 @@ public sealed class SallyDispatcher
 
     // ────────── 内部辅助：找目标 ──────────
 
+    /// <summary>
+    /// doc §10.5: 扫本 settlement 下辖（Town.Villages）的被劫掠村庄；若找到，返回村庄附近的敌方 party 作为出击目标。
+    /// doc:859 「被劫场景不设搜索半径」语义：村庄层面不限距离（必是下辖村），但实际 sally engage 的是村庄附近的劫掠者 party，
+    /// 因此用一个较小的本地半径找具体劫掠者（30 地图单位，远超劫掠者贴近村庄的实际范围）。
+    /// 找不到具体劫掠者时返回 null（劫掠状态可能瞬态消失或劫掠者已离开），调用方会 fallthrough 到普通敌方目标扫描。
+    /// </summary>
+    private static MobileParty? FindRaiderTargetingBoundVillage(Settlement settlement)
+    {
+        try
+        {
+            var town = settlement?.Town;
+            if (town?.Villages == null) return null;
+            var ownFaction = settlement!.MapFaction;
+            if (ownFaction == null) return null;
+
+            const float raidSearchRadius = 30f;
+            foreach (var bound in town.Villages)
+            {
+                if (bound?.Settlement == null) continue;
+                if (bound.VillageState != Village.VillageStates.BeingRaided) continue;
+
+                var search = MobileParty.StartFindingLocatablesAroundPosition(bound.Settlement.GetPosition2D, raidSearchRadius);
+                for (var candidate = MobileParty.FindNextLocatable(ref search);
+                     candidate != null;
+                     candidate = MobileParty.FindNextLocatable(ref search))
+                {
+                    if (!candidate.IsActive) continue;
+                    if (candidate == MobileParty.MainParty) continue;
+                    var faction = candidate.MapFaction;
+                    if (faction == null) continue;
+                    if (!faction.IsAtWarWith(ownFaction)) continue;
+                    return candidate;
+                }
+            }
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"FindRaiderTargetingBoundVillage failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
+            return null;
+        }
+    }
+
     private static MobileParty? FindBestEnemyTarget(Settlement settlement)
     {
         try
@@ -184,8 +252,20 @@ public sealed class SallyDispatcher
                 if (!faction.IsAtWarWith(ownFaction)) continue;
 
                 // 评分：优先选力量小的（避免冒险打硬目标）
+                // E15 (DeepSeek audit 2026-05-18)：TotalManCount 含伤兵 + 俘虏 → 高估敌方力量。
+                // 用 TotalHealthyCount，再退化到 TotalManCount-TotalWounded，最后兜底 TotalManCount。
                 var strength = 0f;
-                try { strength = (float)(candidate.MemberRoster?.TotalManCount ?? 0); }
+                try
+                {
+                    var roster = candidate.MemberRoster;
+                    if (roster != null)
+                    {
+                        // 健康兵员 = 全员 - 伤兵；vanilla TotalHealthyCount 在某些版本不存在，用算术。
+                        int total = roster.TotalManCount;
+                        int wounded = roster.TotalWounded;
+                        strength = (float)Math.Max(0, total - wounded);
+                    }
+                }
                 catch { strength = 0f; }
                 if (strength < bestStrength)
                 {
@@ -227,22 +307,8 @@ public sealed class SallyDispatcher
 
             if (settlement.Town == null) return;
 
-            // B7.27：派出 sally 前先扣本钱（仅玩家氏族）
-            bool shouldChargeSally = CapitalRegistry.ShouldChargeClan(settlement.OwnerClan);
-            if (shouldChargeSally)
-            {
-                if (!ModTreasury.CanAfford(InitialSallyGold))
-                {
-                    Logger.Info($"SallyDispatcher: '{settlement.Name}' 玩家金币不足 (need {InitialSallyGold})，跳过出击");
-                    return;
-                }
-                if (!ModTreasury.Charge(ExpenseCategory.SallySeed, InitialSallyGold, $"sally_seed home={settlement.StringId}"))
-                {
-                    Logger.Info($"SallyDispatcher: '{settlement.Name}' ModTreasury.Charge 拒绝，跳过出击");
-                    return;
-                }
-            }
-
+            // T1 重整 (doc §20 #1)：新流程"先创建 party → 抽兵 → helper 扣款 + 注资 + 买粮"。
+            // ModTreasury.Charge / Refund 全部由 helper 内部完成，外部不再单独扣款 + 退款。
             var sallyParty = StSallyPartyComponent.CreateForTown(settlement.Town, target);
             if (sallyParty == null)
             {
@@ -264,8 +330,24 @@ public sealed class SallyDispatcher
                 return;
             }
 
-            // ★ 兵员注入完成后立即 snapshot 出发兵员
-            if (sallyParty.PartyComponent is StSallyPartyComponent sc) sc.SnapshotInitialMembers(sallyParty);
+            // ★ 兵员注入完成后立即 snapshot 出发兵员 + 走 helper 完成 seed/资金/买粮
+            if (sallyParty.PartyComponent is StSallyPartyComponent sc)
+            {
+                sc.SnapshotInitialMembers(sallyParty);
+
+                // T1 重整 (doc §20 #1)：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
+                // 玩家路径扣款失败 → 把兵还 garrison 并销毁 party；AI 路径不会失败。
+                if (!StPartyComponent.TrySeedAndBuyInitialFood(
+                    sc, sallyParty, settlement,
+                    ExpenseCategory.SallySeed,
+                    settlement.OwnerClan,
+                    $"sally_seed home={settlement.StringId}"))
+                {
+                    TroopTransferHelper.TransferBackToGarrison(sallyParty.MemberRoster, garrison.MemberRoster);
+                    PartyMergeService.Instance.DestroyAndUntrack(sallyParty, "SallyDispatcher seed failed rollback", deferIfInMapEvent: false);
+                    return;
+                }
+            }
 
             // AI 编排：交给 vanilla 战斗系统
             try

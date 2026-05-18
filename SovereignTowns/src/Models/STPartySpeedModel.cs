@@ -40,9 +40,9 @@ public sealed class STPartySpeedModel : DefaultPartySpeedCalculatingModel
         try
         {
             var comp = mobileParty?.PartyComponent;
-            if (comp is StRecruiterPartyComponent
-                || comp is StTransferPartyComponent
-                || comp is StSallyPartyComponent)
+            // R7：4 种 ST party 行为统一 — Patrol 与其他三种一样享受 +20% 速度，避免巡逻队
+            // 应援/回防慢于 sally / transfer 造成的"巡逻队总是赶不上"问题。
+            if (comp is StPartyComponent)
             {
                 result.AddFactor(
                     SpeedBonusFactor,

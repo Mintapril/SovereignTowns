@@ -81,7 +81,8 @@ internal static class STPartyDialogRegistration
                     _                         => "队伍"
                 };
                 string homeName;
-                try { homeName = mp.HomeSettlement?.Name?.ToString() ?? "未知"; }
+                // R6 (DeepSeek audit 2026-05-18)：用组件的 OrNull 而非 mp.HomeSettlement，避免 getter 抛诊断异常。
+                try { homeName = (comp as StPartyComponent)?.HomeSettlementOrNull?.Name?.ToString() ?? "未知"; }
                 catch { homeName = "未知"; }
                 string greeting = $"我们是 {homeName} 派出的{kindZh}，向您致意。";
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
@@ -89,10 +90,11 @@ internal static class STPartyDialogRegistration
                 return true;
             }
             // B16.4：ST 自家巡逻队（玩家自家城的）— vanilla auto-spawn 的 PatrolPartyComponent 不再纳入对话拦截
-            if (comp is StPatrolPartyComponent pp && pp.HomeSettlement?.OwnerClan == Clan.PlayerClan)
+            // R6 (DeepSeek audit 2026-05-18)：用 OrNull 避免诊断 getter 抛
+            if (comp is StPatrolPartyComponent pp && pp.HomeSettlementOrNull?.OwnerClan == Clan.PlayerClan)
             {
                 string homeName;
-                try { homeName = pp.HomeSettlement?.Name?.ToString() ?? "未知"; }
+                try { homeName = pp.HomeSettlementOrNull?.Name?.ToString() ?? "未知"; }
                 catch { homeName = "未知"; }
                 string greeting = $"我们是 {homeName} 的巡逻队，向您致意。";
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
