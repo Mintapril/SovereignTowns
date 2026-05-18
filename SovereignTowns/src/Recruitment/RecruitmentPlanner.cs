@@ -71,11 +71,9 @@ public static class RecruitmentPlanner
     /// 不扫描全图全部 settlement —— 仅遍历本氏族自有 town 的 villages 集合。
     /// </summary>
     /// <param name="homeTown">发起招募的受管城镇。null 时返回空数组。</param>
-    /// <param name="maxDistance">保留参数（doc §7.2 "无距离要求"），距离不再用作硬过滤；调用方传入的值仅用于评分中的 distance penalty。</param>
     /// <param name="maxResults">最多返回的候选数（默认 10）。</param>
     public static IReadOnlyList<VillageRecruitOption> RankCandidates(
         Town homeTown,
-        float maxDistance = 100f,
         int maxResults = 10,
         IReadOnlyCollection<Settlement>? excludeSettlements = null,
         TownGarrisonRule? matchingRule = null)
@@ -113,8 +111,7 @@ public static class RecruitmentPlanner
                     var s = v?.Settlement;
                     if (s == null) continue;
                     if (!seen.Add(s)) continue;
-                    TryAdd(options, s, homeSettlement, homeFaction, homePos, maxDistance,
-                        includeDistanceFilter: false, excludeSet: excludeSet, matchingRule: matchingRule);
+                    TryAdd(options, s, homeSettlement, homeFaction, homePos, excludeSet, matchingRule);
                 }
             }
 
@@ -139,8 +136,7 @@ public static class RecruitmentPlanner
                         var s = v?.Settlement;
                         if (s == null) continue;
                         if (!seen.Add(s)) continue;
-                        TryAdd(options, s, homeSettlement, homeFaction, homePos, maxDistance,
-                            includeDistanceFilter: false, excludeSet: excludeSet, matchingRule: matchingRule);
+                        TryAdd(options, s, homeSettlement, homeFaction, homePos, excludeSet, matchingRule);
                     }
                 }
             }
@@ -159,8 +155,7 @@ public static class RecruitmentPlanner
                         if (!s.IsVillage) continue;
                         if (!seen.Add(s)) continue;
                         if (s.OwnerClan == homeClan) continue;  // 已在前两类
-                        TryAdd(options, s, homeSettlement, homeFaction, homePos, maxDistance,
-                            includeDistanceFilter: false, excludeSet: excludeSet, matchingRule: matchingRule);
+                        TryAdd(options, s, homeSettlement, homeFaction, homePos, excludeSet, matchingRule);
                     }
                 }
             }
@@ -178,8 +173,8 @@ public static class RecruitmentPlanner
 
             Logger.Debug(
                 $"RecruitmentPlanner.RankCandidates home='{homeSettlement.Name}' " +
-                $"scanned={seen.Count} kept={options.Count} maxDistance={maxDistance:F1} " +
-                $"exclude={excludeSet?.Count ?? 0} ruleMatch={(matchingRule != null)}");
+                $"scanned={seen.Count} kept={options.Count} exclude={excludeSet?.Count ?? 0} " +
+                $"ruleMatch={(matchingRule != null)}");
 
             return options;
         }
@@ -196,8 +191,6 @@ public static class RecruitmentPlanner
         Settlement homeSettlement,
         IFaction homeFaction,
         Vec2 homePos,
-        float maxDistance,
-        bool includeDistanceFilter,
         HashSet<Settlement>? excludeSet,
         TownGarrisonRule? matchingRule)
     {
@@ -235,7 +228,6 @@ public static class RecruitmentPlanner
         // 距离
         var pos = villageSettlement.GetPosition2D;
         var distance = (pos - homePos).Length;
-        if (includeDistanceFilter && distance > maxDistance) return;
 
         // 兵员粗估：遍历 Notables 的 VolunteerTypes 非 null 槽位
         var available = CountAvailableVolunteers(villageSettlement);
