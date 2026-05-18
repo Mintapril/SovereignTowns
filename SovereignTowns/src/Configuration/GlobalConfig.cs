@@ -114,6 +114,14 @@ public sealed class EnabledFeatures
 
     /// <summary>A2：每日活动汇总 InformationManager 弹窗（"今日招/调/巡逻 N 人"）。默认 true。</summary>
     public bool ShowDailySummary { get; set; } = true;
+
+    /// <summary>
+    /// 2026-05-18：详细诊断日志开关。开启后 Logger.MinLevel = Debug，落盘所有 [DIAG] 行
+    /// （hourly tick 入口状态、状态机 phase 迁移、scheduler 决策、PartyLifecycleManager 进展检测、
+    /// 食物维护跳过原因等）。默认 false（线上以 Info 起步避免巨型日志文件）。
+    /// 配置变更后由 <see cref="ConfigurationManager"/> 在主线程立即调用 Logger.SetMinLevel 热生效。
+    /// </summary>
+    public bool VerboseLogging { get; set; } = false;
 }
 
 /// <summary>
@@ -181,6 +189,13 @@ public sealed class PartyThresholds
     /// <summary>新建巡逻队时从首府驻军抽走 garrison × 此比例的兵员。原硬编码 15/150 = 0.10。</summary>
     public float PatrolTroopBatchRatio { get; set; } = 0.10f;
 
+    /// <summary>
+    /// 2026-05-18：巡逻队出发的最少兵员数（hard floor）。比例算出的 batch 低于此值时延迟创建，
+    /// 等驻军积攒到能一次抽够人为止。避免 3-人驻军派 1-人巡逻队遇到劫匪秒灭的 case。
+    /// 默认 50；范围 [0, 500]。0 = 不闸（兼容老行为）。
+    /// </summary>
+    public int PatrolMinDispatchSize { get; set; } = 50;
+
     // ── 征兵队（RecruitmentDispatcher） ────────────────────────────────────
     /// <summary>派出征兵队时从首府驻军抽取的护卫比例（0–1）。原硬编码 = 0.10（10%）。</summary>
     public float RecruiterEscortRatio { get; set; } = 0.10f;
@@ -228,6 +243,13 @@ public sealed class PartyThresholds
 
     /// <summary>A5：scheduler.IsStuck 重发指令后仍卡死多少 hour 触发二段瞬移到 home.GatePosition。0 关闭。默认 24。</summary>
     public float StuckTeleportHours { get; set; } = 24f;
+
+    /// <summary>
+    /// 2026-05-18 v4：巡逻队最长存活小时数（兜底）。到点强制回家解散，防御沿路 Village.Bound 异常、
+    /// 战时 village.Party.ItemRoster 异常等极端场景。0 关闭兜底（接受"终身巡逻"风险）。
+    /// 默认 720h = 30 天。范围 [0, 720]，但 &lt;24 不实用（短于一次完整巡回）。
+    /// </summary>
+    public float PatrolMaxLifetimeHours { get; set; } = 720f;
 
     /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
     public float FoodReplenishMinDays { get; set; } = 2f;

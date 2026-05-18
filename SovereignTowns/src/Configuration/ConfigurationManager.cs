@@ -52,8 +52,26 @@ public static class ConfigurationManager
     /// </summary>
     internal static void RaiseConfigChanged(string? settlementId)
     {
+        // 2026-05-18：配置变更后先同步 Logger 等级（玩家在 WebUI 切 VerboseLogging 立即生效），
+        // 再 fire 业务订阅。在主线程调用，Logger.SetMinLevel 是普通字段赋值，零阻塞。
+        try { ApplyVerboseLoggingFromConfig(); }
+        catch (Exception ex) { Logger.Warn($"ApplyVerboseLoggingFromConfig failed: {ex.Message}"); }
+
         try { OnConfigChanged?.Invoke(settlementId); }
         catch (Exception ex) { Logger.Warn($"OnConfigChanged invocation failed: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// 把 GlobalConfig.EnabledFeatures.VerboseLogging 同步到 Logger.MinLevel。Initialize 末尾 + 每次
+    /// OnConfigChanged 都调一次，因此 WebUI 上点开/关 verbose 立即生效，无需重启游戏。
+    /// </summary>
+    private static void ApplyVerboseLoggingFromConfig()
+    {
+        bool verbose;
+        lock (_gate) { verbose = _current?.EnabledFeatures?.VerboseLogging ?? false; }
+        var newLevel = verbose ? Logging.LogLevel.Debug : Logging.LogLevel.Info;
+        Logger.SetMinLevel(newLevel);
+        Logger.Info($"Logger minLevel set to {newLevel} (VerboseLogging={verbose})");
     }
 
     /// <summary>当前已加载的全局配置。Initialize 之前调用返回默认配置。</summary>
@@ -130,6 +148,11 @@ public static class ConfigurationManager
 
                 _initialized = true;
             }
+
+            // 2026-05-18：启动时按磁盘配置同步 Logger 等级。在 lock 外调用，避免 SetMinLevel
+            // 内部触发的 Info log 在持锁下递归 enqueue（虽然 Logger 用独立 lock，但纪律性更好）。
+            try { ApplyVerboseLoggingFromConfig(); }
+            catch (Exception ex) { Logger.Warn($"ApplyVerboseLoggingFromConfig at Initialize failed: {ex.Message}"); }
         }
         catch (Exception ex)
         {
@@ -758,6 +781,12 @@ public static class ConfigurationManager
         { reason = $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"; return false; }
         if (t.StuckTeleportHours > 720f)
         { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 720"; return false; }
+        if (!IsNonNegativeFloat(t.PatrolMaxLifetimeHours) || t.PatrolMaxLifetimeHours > 720f)
+        { reason = $"Thresholds.PatrolMaxLifetimeHours invalid ({t.PatrolMaxLifetimeHours}); [0, 720]"; return false; }
+        if (t.PatrolMinDispatchSize < 0)
+        { reason = $"Thresholds.PatrolMinDispatchSize invalid ({t.PatrolMinDispatchSize}); must be >= 0"; return false; }
+        if (t.PatrolMinDispatchSize > 500)
+        { reason = $"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} 超过上限 500"; return false; }
         if (!IsNonNegativeFloat(t.FoodReplenishMinDays))
         { reason = $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"; return false; }
         if (t.FoodReplenishMinDays > 365f)

@@ -264,6 +264,13 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         }
         MarkVisited(currentSettlement);
 
+        // 2026-05-18 v3：在 just-arrived village 上下文中触发经济维护（卖战利品入资金 + 食物补给）。
+        // 注意：currentSettlement 此处大概率是 village（HandleAtVillage 入口已校验 IsVillage），
+        // 基类 TryEconomicMaintenance 内部仍要求 Town != null → 当前实现下 village 会被跳过，但日志
+        // 行会清晰显示 isVillage=True hasTownComponent=False，下一步是否打开 village 经济由此 log 决定。
+        try { TryEconomicMaintenance(self, currentSettlement); }
+        catch (Exception econEx) { Logger.Warn($"Recruiter HandleAtVillage maintenance failed: {econEx.Message}"); }
+
         int returnThreshold = ReturnRecruitedCount;
         if (_recruitedThisTrip >= returnThreshold)
         {
@@ -301,14 +308,16 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
         // 抵达 _assignedTarget（即 vanilla CurrentSettlement 或 LastVisitedSettlement 与 _assignedTarget 一致）
         // → 切到 AtVillage 并同 tick 处理（"到村即招"行为，避免 1h 延迟）。
-        // 防御：必须 self.TargetSettlement 也与 _assignedTarget 一致——否则可能是基类 ReturnToHome
-        // 已经把目标改成 home，本组件不应当把它"拉回去"招兵。
+        // 2026-05-18 修复 v2：原 `self.TargetSettlement == _assignedTarget` 太严格——日志铁证显示
+        // vanilla 在 party 抵达 settlement 时会清空 TargetSettlement（"我到了"），导致征兵队永远卡在
+        // Travelling，"没有当前目标，改去 'Jahasim'" 反复输出 24h 后被 idle force-return。
+        // 防御 ReturnToHome 改成"只在 TargetSettlement 明确指向 home 时绕开"——见下方 Returning 短路。
         var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
         if (_assignedTarget != null
             && _assignedTarget != home
             && currentSettlement == _assignedTarget
             && currentSettlement.IsVillage
-            && self.TargetSettlement == _assignedTarget)
+            && (self.TargetSettlement == null || self.TargetSettlement == _assignedTarget))
         {
             _phase = RecruiterPhase.AtVillage;
             HandleAtVillage(self);
@@ -371,12 +380,14 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             {
                 rp.SetAssignedTarget(destination);
             }
-            party?.SetMoveGoToSettlement(destination, MobileParty.NavigationType.Default, false);
+            // 2026-05-18 修复 v2：用 GoToWithLeave 以处理"已在 settlement 内 → 目标是别处"的情况。
+            // SetDoNotMakeNewDecisions(true) 下 vanilla 不会自主 LeaveSettlement，必须显式触发。
+            if (party != null) SovereignTowns.Common.SafeMoveHelper.GoToWithLeave(party, destination, $"recruiter MoveTo: {reason}");
             return true;
         }
         catch (Exception ex)
         {
-            Logger.Error($"  StRecruiterPartyComponent: SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(party)}' -> '{destination?.Name}' ({reason})", ex);
+            Logger.Error($"  StRecruiterPartyComponent: MoveTo failed for '{PartyNameFormatter.SafeName(party)}' -> '{destination?.Name}' ({reason})", ex);
             return false;
         }
     }
@@ -387,7 +398,15 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         {
             if (village == null || home == null) return false;
             if (!village.IsVillage || !village.IsActive) return false;
-            if (village.MapFaction != home.MapFaction) return false;
+            // 2026-05-18 fix：与 RecruitmentPlanner.RankCandidates 第3类对齐 —— 允许"同阵营友军 /
+            // 中立第三方"村庄（非交战即可），不再要求 MapFaction 严格相等。
+            // 旧实现 `village.MapFaction != home.MapFaction → 失效` 导致 PlanNextHop 选出来的友邦村
+            // 立刻被本函数判失效 → MarkVisited → 又选另一个友邦村 → 一直循环到所有村被 visit 完，
+            // 日志中表现为 100+ 行 "目标 X 已失效，重新规划" 噪声。
+            var villageFaction = village.MapFaction;
+            var homeFaction = home.MapFaction;
+            if (villageFaction == null || homeFaction == null) return false;
+            if (villageFaction != homeFaction && homeFaction.IsAtWarWith(villageFaction)) return false;
             var v = village.Village;
             if (v == null) return false;
             return v.VillageState != Village.VillageStates.BeingRaided

@@ -34,6 +34,8 @@ public sealed class PatrolDispatcher
         => ConfigurationManager.Current?.Thresholds?.PatrolReserveAfterCreationRatio ?? 0.8f;
     private static float PatrolTroopBatchRatio
         => ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchRatio ?? 0.10f;
+    private static int PatrolMinDispatchSize
+        => ConfigurationManager.Current?.Thresholds?.PatrolMinDispatchSize ?? 50;
 
     private readonly PartyLifecycleManager _lifecycle;
     private readonly CapitalRegistry? _capitalRegistry;
@@ -105,6 +107,15 @@ public sealed class PatrolDispatcher
             if (batchSize <= 0)
             {
                 Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
+                return;
+            }
+
+            // 2026-05-18：hard floor — 算出的 batch 低于 PatrolMinDispatchSize 时延迟创建。
+            // 避免 3-人驻军派 1-人巡逻队遇劫匪秒灭的 case。MinDispatchSize=0 时 no-op。
+            int minDispatch = PatrolMinDispatchSize;
+            if (minDispatch > 0 && batchSize < minDispatch)
+            {
+                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize} < PatrolMinDispatchSize={minDispatch} — defer patrol creation");
                 return;
             }
 

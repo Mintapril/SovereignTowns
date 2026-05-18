@@ -26,12 +26,15 @@ namespace SovereignTowns.Parties;
 ///
 /// 隐式状态机（无 enum）：行为由 scheduler 调度 + 防御响应 + 支援战斗 + 卡死保护四条规则驱动。
 ///
-/// SaveableField 槽位：基类占 [10, 20)（含 12=_teamFunds）；本类暂未占用 [20, +∞)。
+/// SaveableField 槽位：基类占 [10, 20)（含 12=_teamFunds）；本类占 [20, +∞)（当前 20=_createdAt）。
 /// </summary>
 public sealed class StPatrolPartyComponent : StPartyComponent
 {
     public const string StringIdPrefix = "st_patrol_";
     private const float InitiativeResetHours = 4f;
+
+    // 2026-05-18 v4：巡逻队创建时间，用于 PatrolMaxLifetimeHours 兜底（沿路 village 完全无食物时不至于无限饥饿减员）。
+    [SaveableField(20)] private CampaignTime _createdAt;
 
     [CachedData] private TextObject? _cachedName;
     // B17.4 B6：防御日志去抖 — 只在 target 切换时 Info，否则 Debug。
@@ -66,7 +69,12 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         float customPartyBaseSpeed, bool avoidHostileActions,
         InitializationArgs args, Hero? leader = null)
         : base(home, name, owner, partyMountStringId, partyHarnessStringId,
-               customPartyBaseSpeed, avoidHostileActions, args, leader) { }
+               customPartyBaseSpeed, avoidHostileActions, args, leader)
+    {
+        // 2026-05-18 v4：记录创建时间用于 PatrolMaxLifetimeHours 兜底。反序列化路径走 [SaveableField(20)]，
+        // 旧存档没此字段反序列化后是 default (NumTicks=0)，OnHourlyTickCore 兜底检查里会自动 lazy-init。
+        _createdAt = CampaignTime.Now;
+    }
 
     /// <summary>
     /// 工厂：创建 ST 巡逻队（替代 vanilla PatrolPartyComponent.CreatePatrolParty）。
@@ -151,6 +159,30 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             return;
         }
 
+        // 2026-05-18 v4：兜底检查 — PatrolMaxLifetimeHours 到点强制回家解散。
+        // 防御沿路 village 完全无食物（wool/clay/iron 等非粮村连片）、Village.Bound 异常等 A 路径
+        // fallback 不到的极端饥饿场景。0 表示关闭兜底（接受"终身巡逻"风险）。
+        // 旧存档反序列化后 _createdAt = default (epoch) → elapsed 会异常大；用 >2 倍 max validation 上限作哨兵 lazy-init 为 Now。
+        float maxLifetime = ConfigurationManager.Current?.Thresholds?.PatrolMaxLifetimeHours ?? 168f;
+        if (maxLifetime > 0f)
+        {
+            float elapsed = 0f;
+            try { elapsed = (float)(CampaignTime.Now - _createdAt).ToHours; } catch { /* swallow */ }
+            if (elapsed > 1500f)
+            {
+                // 1500h > 验证上限 720h 的两倍 — 唯一合理来源是旧存档 _createdAt=epoch（vanilla 年代差 ~1000+ 年）。
+                Logger.Info($"StPatrolParty '{PartyNameFormatter.SafeName(self)}' _createdAt 反序列化后异常大 elapsed={elapsed:F0}h（旧存档?）— lazy-init 为 now");
+                _createdAt = CampaignTime.Now;
+                elapsed = 0f;
+            }
+            if (elapsed >= maxLifetime)
+            {
+                Logger.Info($"StPatrolParty '{PartyNameFormatter.SafeName(self)}' lifetime {elapsed:F1}h ≥ {maxLifetime}h 兜底 — 回首府解散");
+                ReturnToHome(self);
+                return;
+            }
+        }
+
         var registry = CapitalRegistry.Instance;
         var partyClan = self.ActualClan;
         if (partyClan == null || registry == null)
@@ -205,8 +237,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
                         var nextEarly = scheduler.PickNextStop(self);
                         if (nextEarly != null && nextEarly != defenseTarget)
                         {
-                            try { self.SetMoveGoToSettlement(nextEarly, MobileParty.NavigationType.Default, false); }
-                            catch (Exception ex) { Logger.Error($"early-return SetMoveGoToSettlement failed", ex); }
+                            SafeMoveHelper.GoToWithLeave(self, nextEarly, "patrol defense early-return");
                             Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' defense target safe — early-return to '{nextEarly.Name}'");
                             _lastLoggedDefenseTarget = null;  // 重置去抖状态
                         }
@@ -235,23 +266,33 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         }
 
         // 3) 抵达侦测 → RecordVisit + PickNextStop
-        // 2026-05-18 修复：要求 CurrentSettlement==visited，即 party 真停在 settlement 里才算"到达"。
-        // 此前 visited=LastVisitedSettlement 在出发后仍指向 home，导致刚出发的巡逻队第一个 tick 误判
-        // 为"到达 home"，把 home 当首站 RecordVisit + PickNext。
+        // 2026-05-18 修复 v2：原 `actuallyAtVisited = CurrentSettlement == visited` 严格检查太苛刻。
+        // 日志铁证：巡逻队抵达 Jahasim 后 _lastVisitedAt['Jahasim'] 永远没设（sinceH=1e6），
+        // 同时 PickNext 显示 dist=0（party 物理上就在 Jahasim 位置）。最可能原因：vanilla 在 party 抵达
+        // 后短暂进出 settlement，hourly tick 时 CurrentSettlement=null 而 LastVisitedSettlement=Jahasim，
+        // arrival 永不触发。改为：visited != home 即视为到访候选，TryMarkArrival 防重，home guard 避免
+        // 出发首 tick（LastVisitedSettlement=home, CurrentSettlement=null）误判。
         var visited = self.CurrentSettlement ?? self.LastVisitedSettlement;
-        bool actuallyAtVisited = visited != null && self.CurrentSettlement == visited;
-        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: visited='{visited?.Name?.ToString() ?? "null"}' actuallyAt={actuallyAtVisited} visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
-        if (actuallyAtVisited && visited!.OwnerClan == capitalMgr.OwnerClan
+        var arrivalHome = HomeSettlementOrNull;
+        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' visited='{visited?.Name?.ToString() ?? "null"}' visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
+        if (visited != null
+            && visited != arrivalHome
+            && visited.OwnerClan == capitalMgr.OwnerClan
             && scheduler.TryMarkArrival(self, visited))
         {
             scheduler.RecordVisit(visited);
             // R4：到访新 settlement = 真进展 → 卡死累计清零
             _stuckActive = false;
+            // 2026-05-18 v3：在已知抵达 settlement 的上下文中触发经济维护（卖战利品 + 食物 <1 天补 3 天）。
+            // 这是 base.TryEconomicMaintenance 真正能跑起来的唯一时机——hourly tick 入口时 CurrentSettlement
+            // 几乎永远是 null（GoToWithLeave 已把 party 弹出），靠 LastVisitedSettlement fallback 有 silent
+            // 副作用风险（在路上的 party 在已离开的 settlement 里 SellItemsAction）。
+            try { TryEconomicMaintenance(self, visited); }
+            catch (Exception econEx) { Logger.Warn($"StPatrolParty arrival-maintenance failed: {econEx.Message}"); }
             var next = scheduler.PickNextStop(self);
             if (next != null)
             {
-                try { self.SetMoveGoToSettlement(next, MobileParty.NavigationType.Default, false); }
-                catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(next)}'", ex); }
+                SafeMoveHelper.GoToWithLeave(self, next, "patrol arrival -> next stop");
                 Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', next='{PartyNameFormatter.SafeName(next)}'");
             }
             else
@@ -262,7 +303,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             }
             return;
         }
-        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check failed (not at any settlement or already-marked) — falling through to stuck check");
+        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check did not fire (visited='{visited?.Name?.ToString() ?? "null"}' home-skip={visited == arrivalHome} already-marked-or-other) — falling through to stuck check");
 
         // 4) 卡死保护 — R4/R5：用 CampaignTime 计算真实 elapsed hours；R5 用位置进展检测真正恢复。
         var stuckTimeout = ConfigurationManager.Current.ClanPatrol.StuckTimeoutHours;
@@ -313,8 +354,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             {
                 var next = scheduler.PickNextStop(self);
                 var dest = next ?? capital;
-                try { self.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false); }
-                catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(dest)}'", ex); }
+                SafeMoveHelper.GoToWithLeave(self, dest, "patrol stuck re-pick");
                 Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {stuckTimeout}h — re-pick next='{PartyNameFormatter.SafeName(dest)}' (elapsed since first stuck={elapsedHours:F1}h)");
             }
         }

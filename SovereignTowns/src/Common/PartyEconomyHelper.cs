@@ -87,16 +87,59 @@ public static class PartyEconomyHelper
     /// 注：vanilla SellItemsAction 不自动调 settlement.Gold，巡逻队队伍资金是 mod 内部账，与 hero 钱包 / settlement.Gold 独立。</summary>
     public static int BuyFoodFromSettlement(MobileParty? party, Settlement? settlement, float days, ref int teamFunds)
     {
-        if (party?.ItemRoster == null || settlement?.Town == null || teamFunds <= 0) return 0;
-        var town = settlement.Town;
-        var settlementOwner = ((SettlementComponent)town).Owner;
-        var settlementInv = settlementOwner?.ItemRoster;
-        if (settlementInv == null) return 0;
+        // 2026-05-18 v4：放开"必须是 Town"的限制 — village 用 Village.Bound.Town 定价 + village PartyBase 库存。
+        // 保守：town 路径完全不变（之前在 Sanala 买 11 grain @ 7d 已验证）；只为 village 加新分支。
+        // 早 return 时印 ECON-DIAG（Info 级）以诊断"wool 村连片无食物 / Village.Bound 失效"等真实 fallback 场景。
+        if (party?.ItemRoster == null || settlement == null || teamFunds <= 0)
+        {
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (basic): party='{PartyNameFormatter.SafeName(party)}' settlement='{settlement?.Name?.ToString() ?? "<null>"}' teamFunds={teamFunds} days={days:F1}");
+            return 0;
+        }
+
+        // 抽取 (pricingTown, counterparty, inventory) 三元组：town 路径与 village 路径不同，但后续买卖逻辑相同。
+        Town? pricingTown;
+        PartyBase? counterparty;
+        ItemRoster? settlementInv;
+        if (settlement.Town != null)
+        {
+            // ── Town 路径（保持与旧版本一致；已在线上验证 ──
+            pricingTown = settlement.Town;
+            var settlementOwner = ((SettlementComponent)pricingTown).Owner;
+            counterparty = settlementOwner;
+            settlementInv = settlementOwner?.ItemRoster;
+        }
+        else if (settlement.IsVillage)
+        {
+            // ── Village 路径（新增）── 用绑定 town 定价 + village.Party 当库存与 counterparty。
+            pricingTown = settlement.Village?.Bound?.Town;
+            counterparty = settlement.Party;
+            settlementInv = counterparty?.ItemRoster;
+            if (pricingTown == null)
+            {
+                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (village Bound.Town null): settlement='{settlement.Name}' villageBound='{settlement.Village?.Bound?.StringId ?? "<null>"}'");
+                return 0;
+            }
+        }
+        else
+        {
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (not town/village): settlement='{settlement.Name}'");
+            return 0;
+        }
+        if (counterparty == null || settlementInv == null)
+        {
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no inv): settlement='{settlement.Name}' isVillage={settlement.IsVillage} counterparty='{counterparty?.GetType().Name ?? "<null>"}'");
+            return 0;
+        }
 
         int wantUnits = EstimateFoodForDays(party, days);
-        if (wantUnits <= 0) return 0;
+        if (wantUnits <= 0)
+        {
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement wantUnits=0: party='{PartyNameFormatter.SafeName(party)}' members={party.MemberRoster?.TotalManCount ?? -1} foodChange={party.FoodChange:F2} days={days:F1}");
+            return 0;
+        }
 
         int totalSpent = 0;
+        int foodItemsScanned = 0;
         try
         {
             while (wantUnits > 0 && teamFunds > 0)
@@ -109,7 +152,8 @@ public static class PartyEconomyHelper
                     if (item == null || !item.IsFood) continue;
                     var elem = settlementInv.GetElementCopyAtIndex(i);
                     if (elem.Amount <= 0) continue;
-                    int price = town.GetItemPrice(elem.EquipmentElement, party, isSelling: false);
+                    foodItemsScanned++;
+                    int price = pricingTown.GetItemPrice(elem.EquipmentElement, party, isSelling: false);
                     if (price <= 0 || price >= bestPricePerUnit) continue;
                     bestIdx = i;
                     bestPricePerUnit = price;
@@ -122,18 +166,23 @@ public static class PartyEconomyHelper
                 int chunkCost = actual * bestPricePerUnit;
                 try
                 {
-                    SellItemsAction.Apply(settlementOwner, party.Party, bestElem, actual, settlement);
+                    SellItemsAction.Apply(counterparty, party.Party, bestElem, actual, settlement);
                     teamFunds -= chunkCost;
                     totalSpent += chunkCost;
                     wantUnits -= actual;
                     var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
-                    Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
+                    string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
+                    Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
                 }
                 catch (Exception apEx)
                 {
                     Logger.Warn($"PartyEconomyHelper.BuyFoodFromSettlement SellItemsAction failed", apEx);
                     break;
                 }
+            }
+            if (totalSpent == 0)
+            {
+                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement no-food: settlement='{settlement.Name}' isVillage={settlement.IsVillage} invCount={settlementInv.Count} foodItemsScanned={foodItemsScanned} villageType='{settlement.Village?.VillageType?.StringId ?? "<n/a>"}' — 无可买食物（库存无 IsFood 或 amount=0 或定价异常）");
             }
             try { party.ItemRoster.UpdateVersion(); } catch { }
         }
@@ -148,8 +197,14 @@ public static class PartyEconomyHelper
     /// 收益加到 teamFunds。settlement.Gold 不动（与 vanilla caravan 同模式 — SellItemsAction 不自动转金币）。返回总收益。</summary>
     public static int SellLootToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
     {
-        if (party?.ItemRoster == null || settlement?.Town == null) return 0;
-        var town = settlement.Town;
+        // 2026-05-18 v4：放开"必须是 Town"的限制 — village 用 Village.Bound.Town 定价。settlement-side counterparty 一直是 Settlement.Party。
+        if (party?.ItemRoster == null || settlement == null) return 0;
+        var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
+        if (pricingTown == null)
+        {
+            Logger.Info($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage} villageBound='{settlement.Village?.Bound?.StringId ?? "<null>"}'");
+            return 0;
+        }
         int gained = 0;
         try
         {
@@ -161,7 +216,7 @@ public static class PartyEconomyHelper
                 if (item == null || item.IsFood) continue;  // 食物保留（巡逻队自用）
                 int count = slot.Amount;
                 if (count <= 0) continue;
-                int price = town.GetItemPrice(slot.EquipmentElement, party, isSelling: true);
+                int price = pricingTown.GetItemPrice(slot.EquipmentElement, party, isSelling: true);
                 if (price <= 0) continue;
                 int totalPrice = price * count;
                 try
@@ -169,7 +224,8 @@ public static class PartyEconomyHelper
                     SellItemsAction.Apply(party.Party, settlement.Party, slot, count, settlement);
                     teamFunds += totalPrice;
                     gained += totalPrice;
-                    Logger.Info($"PartyEconomyHelper.SellLootToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}' @ {price}d (+{totalPrice}d, funds={teamFunds})");
+                    string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
+                    Logger.Info($"PartyEconomyHelper.SellLootToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: sold {count} '{item.StringId}' @ {price}d (+{totalPrice}d, funds={teamFunds})");
                 }
                 catch (Exception apEx)
                 {
@@ -184,6 +240,58 @@ public static class PartyEconomyHelper
         catch (Exception ex)
         {
             Logger.Warn($"PartyEconomyHelper.SellLootToSettlement threw", ex);
+        }
+        return gained;
+    }
+
+    /// <summary>
+    /// 2026-05-18 v4：解散前最终清算专用 — 把 party.ItemRoster 中所有非空物品（含 IsFood）卖给 settlement。
+    /// 与 <see cref="SellLootToSettlement"/> 的区别：本方法不跳过食物，因为部队解散后食物没有意义。
+    /// 返回总收益，加到 teamFunds。
+    /// </summary>
+    public static int SellAllItemsToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    {
+        if (party?.ItemRoster == null || settlement == null) return 0;
+        var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
+        if (pricingTown == null)
+        {
+            Logger.Info($"[ECON-DIAG] SellAllItemsToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
+            return 0;
+        }
+        int gained = 0;
+        try
+        {
+            var snapshot = new List<ItemRosterElement>();
+            foreach (var slot in party.ItemRoster) snapshot.Add(slot);
+            foreach (var slot in snapshot)
+            {
+                var item = slot.EquipmentElement.Item;
+                if (item == null) continue;
+                int count = slot.Amount;
+                if (count <= 0) continue;
+                int price = pricingTown.GetItemPrice(slot.EquipmentElement, party, isSelling: true);
+                if (price <= 0) continue;
+                int totalPrice = price * count;
+                try
+                {
+                    SellItemsAction.Apply(party.Party, settlement.Party, slot, count, settlement);
+                    teamFunds += totalPrice;
+                    gained += totalPrice;
+                    Logger.Info($"PartyEconomyHelper.SellAllItemsToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}'{(item.IsFood ? " (food)" : "")} @ {price}d (+{totalPrice}d, funds={teamFunds})");
+                }
+                catch (Exception apEx)
+                {
+                    Logger.Warn($"PartyEconomyHelper.SellAllItemsToSettlement SellItemsAction failed for '{item.StringId}'", apEx);
+                }
+            }
+            if (gained > 0)
+            {
+                try { party.ItemRoster.UpdateVersion(); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.SellAllItemsToSettlement threw", ex);
         }
         return gained;
     }

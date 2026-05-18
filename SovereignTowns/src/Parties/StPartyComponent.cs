@@ -9,9 +9,12 @@ using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
 using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Library;
 using TaleWorlds.Localization;
 using TaleWorlds.SaveSystem;
 using Logger = SovereignTowns.Logging.Logger;
+// TaleWorlds.Library.ConfigurationManager 与本 mod 的 ConfigurationManager 重名 — 用 alias 消歧。
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 
 namespace SovereignTowns.Parties;
 
@@ -30,6 +33,9 @@ public abstract class StPartyComponent : CustomPartyComponent
     [SaveableField(11)] private int _initialMemberCount;
     // doc §20 #1 (T1)：所有 ST 队伍共享的自资金闭环。
     [SaveableField(12)] private int _teamFunds;
+    // 2026-05-18 v4：标记 DefaultMergeAndDisband 已显示左下角消息，避免 OnDestroyed 重复显示。
+    // CachedData 不持久化 — 部队即将销毁，重复显示概率为零。
+    [CachedData] private bool _disbandReportShown;
 
     // ── vanilla CustomPartyComponent 抽象成员 ──
     // 注：Name cache 留给子类（每个子类的 Name 文案不同），基类不持有 _cachedName。
@@ -204,9 +210,11 @@ public abstract class StPartyComponent : CustomPartyComponent
                 return;
             }
 
-            // doc §20 #1 (T1)：经济维护——卖战利品 + 食物 <1 天买 3 天（所有 ST 队伍共享）
-            TryEconomicMaintenance(self);
-
+            // 2026-05-18 修复 v3：经济维护从 base 这里移除。原因：hourly tick 入口时 CurrentSettlement
+            // 几乎永远是 null（party 进入 settlement 后被 GoToWithLeave 立即弹出），导致 maintenance
+            // 永远 early-return。改由 patrol arrival 分支与 recruiter HandleAtVillage 在已知抵达的
+            // settlement 上下文中显式调用 TryEconomicMaintenance(self, justArrived) — 语义干净且首次
+            // 真正在抵达瞬间触发卖战利品/补粮。Sally/Transfer 是单目的地短命任务，无需此机制。
             OnHourlyTickCore(self, capital!);
 
             // B17.4 A6：tick 末尾通用维护 — 俘虏 cap。失败不影响 core 已完成的工作。
@@ -228,6 +236,10 @@ public abstract class StPartyComponent : CustomPartyComponent
         try
         {
             if (!ValidateAliveAndManaged(self, out _)) return;
+
+            // 2026-05-18 v4：战斗结果左下角消息（仅玩家氏族部队，避免 AI 部队刷屏）。
+            TryDisplayBattleResultMessage(ev, self);
+
             if (AppliesReturnDisbandCondition
                 && PartyReturnConditionChecker.ShouldReturnAndDisband(self, _initialMemberCount, out var reason, out var detail))
             {
@@ -243,6 +255,35 @@ public abstract class StPartyComponent : CustomPartyComponent
         }
     }
 
+    /// <summary>
+    /// 2026-05-18 v4：战斗结束后在左下角显示一行简洁的战况报告（仅玩家氏族部队）。
+    /// 颜色按损失程度：&lt;20% 黄、20-50% 橙、&gt;50% 红。
+    /// </summary>
+    private void TryDisplayBattleResultMessage(MapEvent ev, MobileParty self)
+    {
+        try
+        {
+            if (!CapitalRegistry.ShouldChargeClan(self.ActualClan)) return;
+            int current = self.MemberRoster?.TotalManCount ?? 0;
+            int wounded = self.MemberRoster?.TotalWounded ?? 0;
+            int initial = _initialMemberCount;
+            int casualties = Math.Max(0, initial - current);
+            float lossRatio = initial > 0 ? (float)casualties / initial : 0f;
+            Color color;
+            string verdict;
+            if (lossRatio >= 0.5f) { color = Colors.Red; verdict = "重创"; }
+            else if (lossRatio >= 0.2f) { color = new Color(1.0f, 0.6f, 0.2f); verdict = "受损"; }
+            else { color = Colors.Yellow; verdict = "完成战斗"; }
+            string msg = $"[主权城镇] {Name?.ToString() ?? GetType().Name} 战斗{verdict}：兵员 {current}/{initial}，受伤 {wounded}";
+            InformationManager.DisplayMessage(new InformationMessage(msg, color));
+            Logger.Info($"OnMapEventEnded battle-report '{PartyNameFormatter.SafeName(self)}' current={current}/{initial} casualties={casualties} wounded={wounded} verdict={verdict}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryDisplayBattleResultMessage failed: {ex.Message}");
+        }
+    }
+
     /// MobilePartyDestroyed 路由入口，由 PartyLifecycleManager 单点调用。
     /// 默认行为：尝试将残余兵员合并入 home garrison（或 clan capital 作为 fallback）。
     /// 子类 override 时必须调用 base.OnDestroyed 并将副作用放在 finally 块中（如 SallyDispatcher 通知）。
@@ -250,6 +291,10 @@ public abstract class StPartyComponent : CustomPartyComponent
     {
         try
         {
+            // 2026-05-18 v4：战败 / 异常销毁路径（未走 DefaultMergeAndDisband）的兜底左下角消息。
+            // _disbandReportShown=true 表示已由 DefaultMergeAndDisband 显示过完整汇总，本路径跳过避免重复。
+            TryDisplayDestroyedFallbackMessage(self, destroyer);
+
             // doc §20 #1 (T1)：退款剩余 _teamFunds（所有 ST 队伍共享）
             TryRefundOnDestroy(self);
 
@@ -358,19 +403,19 @@ public abstract class StPartyComponent : CustomPartyComponent
     }
 
     /// 把 party 设回 home 方向（vanilla AI 接管移动）。
+    /// 2026-05-18 修复 v2：用 GoToWithLeave 显式 LeaveSettlement，避免 ReturnToHome 在 party 当前
+    /// 在非-home settlement 内时因 SetDoNotMakeNewDecisions(true) 而无法离开。
     protected void ReturnToHome(MobileParty self)
     {
         // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
         var home = HomeSettlementOrNull;
         if (home == null) return;
-        try { self.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false); }
-        catch (Exception ex)
-        {
-            Logger.Error($"{GetType().Name}.ReturnToHome SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}'", ex);
-        }
+        SovereignTowns.Common.SafeMoveHelper.GoToWithLeave(self, home, $"{GetType().Name}.ReturnToHome");
     }
 
     /// 转兵进 home garrison + 解散 + untrack。
+    /// 2026-05-18 v4：解散前最终清算 — 把剩余物资（含食物）卖给 home town，资金随后由 OnDestroyed → TryRefundOnDestroy 退给 owner。
+    /// 完成后左下角显示一行汇总：合并兵员、卖物资收益、退款金额。
     protected void DefaultMergeAndDisband(MobileParty self)
     {
         // 2026-05-18 诊断日志：印出调用栈到 home，帮诊断"出门即解散"。
@@ -381,6 +426,8 @@ public abstract class StPartyComponent : CustomPartyComponent
         }
         catch { }
 
+        if (self == null) return;
+
         // B16.4a P1-7：用 OrNull 保持原 null 防御语义。
         var home = HomeSettlementOrNull;
         if (home == null)
@@ -388,9 +435,44 @@ public abstract class StPartyComponent : CustomPartyComponent
             PartyMergeService.Instance.DisbandAndUntrack(self, $"{GetType().Name} null home in DefaultMergeAndDisband");
             return;
         }
+
+        // 2026-05-18 v4：解散前最终清算 — 卖光所有物资（含食物）入 _teamFunds。
+        int soldGained = 0;
+        try { soldGained = SellAllItemsAtSettlement(self, home); }
+        catch (Exception sellEx) { Logger.Warn($"{GetType().Name}.DefaultMergeAndDisband final-liquidation failed: {sellEx.Message}"); }
+
         int transferred = PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(self, home, $"{GetType().Name}.DefaultMergeAndDisband");
-        Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' merged {transferred} troops into '{home.Name}', disbanding");
+
+        // 2026-05-18 v4：左下角汇总消息（仅玩家氏族部队），含将退给首府所有者的资金额。
+        TryDisplayDisbandReport(self, home, transferred, soldGained);
+        _disbandReportShown = true;
+
+        Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' merged {transferred} troops into '{home.Name}', sold {soldGained}d in goods, disbanding (funds before refund = {TeamFunds}d)");
         PartyMergeService.Instance.DisbandAndUntrack(self, $"{GetType().Name}.DefaultMergeAndDisband");
+    }
+
+    /// <summary>2026-05-18 v4：解散前最终清算 wrapper — 把 ItemRoster 所有物品（含食物）卖给 settlement，加到 _teamFunds。</summary>
+    private int SellAllItemsAtSettlement(MobileParty self, Settlement settlement)
+        => PartyEconomyHelper.SellAllItemsToSettlement(self, settlement, ref _teamFunds);
+
+    /// <summary>
+    /// 2026-05-18 v4：DefaultMergeAndDisband 汇总左下角消息（仅玩家氏族）。退款额预读自 _teamFunds —
+    /// 实际退款由后续 DisbandAndUntrack → OnDestroyed → TryRefundOnDestroy 完成；同 frame 内显示与退款一致。
+    /// </summary>
+    private void TryDisplayDisbandReport(MobileParty self, Settlement home, int troopsTransferred, int soldGained)
+    {
+        try
+        {
+            if (!CapitalRegistry.ShouldChargeClan(self.ActualClan)) return;
+            int refundAmount = TeamFunds;  // 退款数 = 当前队伍资金（即将被 TryRefundOnDestroy 退还）
+            var ownerName = home?.OwnerClan?.Leader?.Name?.ToString() ?? "首府所有者";
+            string msg = $"[主权城镇] {Name?.ToString() ?? GetType().Name} 回 {home?.Name} 解散：合并 {troopsTransferred} 兵入驻军，变卖物资 +{soldGained}d，退还 {refundAmount}d 给 {ownerName}";
+            InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green));
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryDisplayDisbandReport failed: {ex.Message}");
+        }
     }
 
     /// 转兵进 fallback settlement + 解散 + untrack（home 失守时调用）。
@@ -408,10 +490,37 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// 只有 Patrol/Recruiter（多 settlement 移动）需要"食物 &lt;1 天买 3 天"补粮逻辑。
     /// Sally/Transfer 是单目的地短命任务，没有沿途补给机会，故 override ShouldReplenishFoodEnRoute=false 跳过补粮。
     /// </summary>
-    private void TryEconomicMaintenance(MobileParty self)
+    /// <summary>
+    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都在 settlement.Town 内卖战利品入 _teamFunds；
+    /// Patrol/Recruiter 还会在食物 &lt;1 天时补 3 天粮。
+    ///
+    /// 2026-05-18 v3：调用时机改由子类在 arrival 上下文中显式触发（patrol arrival 分支 + recruiter
+    /// HandleAtVillage 末尾）。<paramref name="overrideSettlement"/> 传 just-arrived 的 settlement，
+    /// 绕开 hourly tick 入口时 CurrentSettlement 几乎永远是 null 的时机问题。
+    /// 不传则按旧路径用 CurrentSettlement（保留给 sally/transfer 等仍走 base 流程的子类）。
+    /// </summary>
+    protected void TryEconomicMaintenance(MobileParty self, Settlement? overrideSettlement = null)
     {
-        var atSettlement = self.CurrentSettlement;
-        if (atSettlement == null || atSettlement.Town == null) return;
+        var atSettlement = overrideSettlement ?? self.CurrentSettlement;
+        // 2026-05-18：诊断 — 入口印一行 Info 帮助定位"部队不买食物 / 不卖战利品"问题。
+        // 是 Info 级（不依赖 VerboseLogging）因为食物 bug 现在是头号 blocker，需要在缺省日志里就看到。
+        // 主要诊断维度：本 tick 有没有"在某 settlement 内"、是 town 还是 village、食物剩余、队伍资金。
+        try
+        {
+            float foodDays = PartyEconomyHelper.FoodDaysRemaining(self);
+            bool isTown = atSettlement?.IsTown == true;
+            bool isVillage = atSettlement?.IsVillage == true;
+            bool hasTownComponent = atSettlement?.Town != null;
+            string srcTag = overrideSettlement != null ? "arrival-override" : "currentSettlement";
+            Logger.Info($"[ECON-DIAG] {GetType().Name}.TryEconomicMaintenance '{PartyNameFormatter.SafeName(self)}' src={srcTag} atSettlement='{atSettlement?.Name?.ToString() ?? "<null>"}' isTown={isTown} isVillage={isVillage} hasTownComponent={hasTownComponent} foodDays={foodDays:F1} teamFunds={TeamFunds} replenishEnRoute={ShouldReplenishFoodEnRoute}");
+        }
+        catch { /* swallow diagnostic */ }
+        // 2026-05-18 v4：放开 Town 检查 — village 也允许走维护（BuyFood / SellLoot 内部用 Village.Bound.Town 定价）。
+        // 仅当 atSettlement 完全空（en route 状态）或 既非 Town 又非 Village（hideout 等）才跳过。
+        if (atSettlement == null || (!atSettlement.IsTown && !atSettlement.IsVillage))
+        {
+            return;
+        }
 
         // 1) 卖战利品（所有 ST 队伍共享，到 settlement 即变现入资金）
         try
@@ -443,6 +552,29 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// 默认 true（Patrol/Recruiter）。Sally/Transfer override 为 false（单目的地短命任务，无沿途补给场景）。
     /// </summary>
     protected virtual bool ShouldReplenishFoodEnRoute => true;
+
+    /// <summary>
+    /// 2026-05-18 v4：战败 / 异常路径（未走 DefaultMergeAndDisband）的 fallback 左下角消息。
+    /// _disbandReportShown=true 表示已被 DefaultMergeAndDisband 覆盖，跳过。
+    /// </summary>
+    private void TryDisplayDestroyedFallbackMessage(MobileParty self, PartyBase? destroyer)
+    {
+        try
+        {
+            if (_disbandReportShown) return;
+            if (!CapitalRegistry.ShouldChargeClan(self.ActualClan)) return;
+            string destroyerName = destroyer?.Name?.ToString() ?? "<未知>";
+            int refundAmount = TeamFunds;
+            string msg = refundAmount > 0
+                ? $"[主权城镇] {Name?.ToString() ?? GetType().Name} 销毁（被 {destroyerName}）：退还 {refundAmount}d 给首府所有者"
+                : $"[主权城镇] {Name?.ToString() ?? GetType().Name} 销毁（被 {destroyerName}）";
+            InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Red));
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"TryDisplayDestroyedFallbackMessage failed: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// doc §20 #1 (T1)：销毁时退款。玩家氏族走 ModTreasury.Refund 保账目对称；AI 氏族走 RefundTeamFundsToOwner（vanilla hero.Gold）。

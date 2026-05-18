@@ -458,8 +458,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                     Logger.Info($"OnWarDeclared: recruiter '{PartyNameFormatter.SafeName(party)}' target '{target.Name}' is now hostile, retreating to '{home.Name}'");
                     recruiter.SetAssignedTarget(home);
                     recruiter.TransitionTo(SovereignTowns.Parties.StRecruiterPartyComponent.RecruiterPhase.Returning);
-                    try { party.SetMoveGoToSettlement(home, MobileParty.NavigationType.Default, false); }
-                    catch (Exception navEx) { Logger.Error($"OnWarDeclared SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(party)}'", navEx); }
+                    // 2026-05-18 修复 v2：用 GoToWithLeave，因 DoNotMakeNewDecisions(true) 下需显式 LeaveSettlement。
+                    SovereignTowns.Common.SafeMoveHelper.GoToWithLeave(party, home, "OnWarDeclared retreat recruiter");
                 }
                 catch (Exception partyEx)
                 {

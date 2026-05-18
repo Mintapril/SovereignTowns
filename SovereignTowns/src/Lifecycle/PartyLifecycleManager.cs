@@ -475,7 +475,9 @@ public sealed class PartyLifecycleManager
                             rp.SetAssignedTarget(meta.Home);
                         }
 
-                        party.SetMoveGoToSettlement(meta.Home, MobileParty.NavigationType.Default, false);
+                        // 2026-05-18 修复 v2：用 GoToWithLeave 显式 LeaveSettlement 处理
+                        // "party 在远端 settlement 里因 DoNotMakeNewDecisions(true) 离不开" 的情况。
+                        SovereignTowns.Common.SafeMoveHelper.GoToWithLeave(party, meta.Home, "PartyLifecycle force-return idle");
                         // 强制重定向也视为一次"刷新"，避免每小时都重发
                         meta.LastActiveAt = CampaignTime.Now;
                         meta.LastTargetSettlement = meta.Home;

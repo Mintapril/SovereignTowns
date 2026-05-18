@@ -1,5 +1,6 @@
 using System;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
@@ -31,6 +32,42 @@ public static class SafeMoveHelper
             try { party.SetMoveGoToSettlement(target, MobileParty.NavigationType.Default, false); }
             catch (Exception fallbackEx) { Logger.Error($"SafeMoveHelper.GoTo fallback also failed for '{party.Name}'", fallbackEx); }
         }
+    }
+
+    /// <summary>
+    /// 2026-05-18 修复 v2：若 party 当前在某 settlement 内 (CurrentSettlement != null)，先 LeaveSettlementAction
+    /// 再 SetMoveGoToSettlement。
+    ///
+    /// 背景：今天加的 `SetDoNotMakeNewDecisions(true)` 使 vanilla AI 在 party 进入 settlement 后不会自主
+    /// 执行 LeaveSettlement。结果：巡逻队抵达第一站后被困在 settlement 内，每 tick 重发 SetMoveGoToSettlement
+    /// 都是 0 位移（日志铁证：stuck 25h 期间 SetMoveGoToSettlement 反复调用，直到二段瞬移到 home 才解锁）。
+    ///
+    /// IG 在 PartyManager.cs:540 与 PartyMergeService.TryLeaveSettlementBeforeRemoval 都用此固定顺序。
+    /// 本 helper 把它扩展到 nav 路径。LeaveSettlementAction 失败不阻断后续 SetMoveGoToSettlement。
+    /// </summary>
+    public static void GoToWithLeave(MobileParty party, Settlement target, string context)
+    {
+        if (party == null || target == null) return;
+        try
+        {
+            if (party.CurrentSettlement != null && party.CurrentSettlement != target)
+            {
+                try
+                {
+                    LeaveSettlementAction.ApplyForParty(party);
+                    Logger.Info($"SafeMoveHelper.GoToWithLeave: '{party.Name}' left '{party.CurrentSettlement?.Name?.ToString() ?? "<null after leave>"}' before heading to '{target.Name}' [{context}]");
+                }
+                catch (Exception leaveEx)
+                {
+                    Logger.Warn($"SafeMoveHelper.GoToWithLeave: LeaveSettlementAction failed for '{party.Name}' [{context}] (continuing): {leaveEx.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"SafeMoveHelper.GoToWithLeave: pre-leave check threw for '{party.Name}' [{context}] (continuing): {ex.Message}");
+        }
+        GoTo(party, target, context);
     }
 
     private static MobileParty.NavigationType DecideNav(MobileParty party, Settlement target)
