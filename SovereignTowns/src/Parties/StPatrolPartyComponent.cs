@@ -1,7 +1,9 @@
 using System;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
+using SovereignTowns.Economy;
 using SovereignTowns.Configuration;
+using SovereignTowns.Lifecycle;
 using SovereignTowns.SallyForth;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -24,7 +26,7 @@ namespace SovereignTowns.Parties;
 ///
 /// 隐式状态机（无 enum）：行为由 scheduler 调度 + 防御响应 + 支援战斗 + 卡死保护四条规则驱动。
 ///
-/// SaveableField 槽位：基类占 [10, 20)；本类不持有额外持久化字段。
+/// SaveableField 槽位：基类占 [10, 20)；本类用 [22] 持久化 _teamFunds（资金随存档保留）。
 /// </summary>
 public sealed class StPatrolPartyComponent : StPartyComponent
 {
@@ -32,10 +34,22 @@ public sealed class StPatrolPartyComponent : StPartyComponent
     private const float InitiativeResetHours = 4f;
 
     [CachedData] private TextObject? _cachedName;
+    // 2026-05-18：巡逻队自负盈亏队伍资金（出发时从首府所有者扣 2000d；战利品卖出加入；销毁前还首府所有者）。
+    [SaveableField(22)] private int _teamFunds;
+    private const int InitialTeamFundsDefault = 2000;
+    private const float BuyFoodDays = 3f;
+    private const float BuyFoodWhenBelowDays = 1f;
+    public int TeamFunds => _teamFunds;
     // B17.4 B6：防御日志去抖 — 只在 target 切换时 Info，否则 Debug。
     [CachedData] private Settlement? _lastLoggedDefenseTarget;
-    // B17.4 A5：连续 stuck 计数 — scheduler 重发指令后仍卡死多少 hour 后触发瞬移。
-    [CachedData] private int _stuckHoursAfterReissue;
+    // B17.4 A5 / R4：卡死期"首次检测时间"。每次 reissue 都会让 scheduler 内部 _lastStopChangedAt 复位，
+    // 单纯计数 cycle 会把 24h UI 阈值变成"~24 个 stuckTimeout 周期 = ~288 真实小时"。
+    // 真实小时按 (Now - _firstStuckAt) 衡量；到访新 settlement 或位置发生明显进展时重置 _stuckActive。
+    [CachedData] private CampaignTime _firstStuckAt;
+    [CachedData] private bool _stuckActive;
+    // R5：首次卡死时的位置快照。若 reissue 后队伍有真实移动（距离阈值 > 此值）→ 视为恢复，重置卡死计时。
+    [CachedData] private TaleWorlds.Library.Vec2 _stuckStartPosition;
+    private const float StuckProgressDistanceThreshold = 1.0f; // 地图单位
 
     public override TextObject Name
     {
@@ -49,6 +63,42 @@ public sealed class StPatrolPartyComponent : StPartyComponent
     }
 
     public override bool AvoidHostileActions => false;
+
+    // ── 队伍资金 API ────────────────────────────────────────────────
+    /// <summary>从首府所有者扣 amount 第纳尔作为初始资金（玩家 hero 不够时按可负担扣）。</summary>
+    public void InitTeamFundsFromHomeOwner(MobileParty self, int amount)
+    {
+        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
+        int charged = PartyEconomyHelper.ChargeHero(owner, amount);
+        _teamFunds = charged;
+        Logger.Info($"StPatrolParty '{PartyNameFormatter.SafeName(self)}': team funds initialized = {charged}d (charged from '{owner?.StringId ?? "null"}')");
+    }
+    /// <summary>在 settlement 内用队伍资金购买 days 天食物（vanilla SellItemsAction 真实交易）。返回花费的第纳尔。</summary>
+    public int BuyFoodAtSettlement(MobileParty self, Settlement settlement, float days)
+        => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days, ref _teamFunds);
+    /// <summary>把战利品（非食物 item）卖给 settlement，金额加入队伍资金（vanilla SellItemsAction 真实交易）。返回收益。</summary>
+    public int SellLootAtSettlement(MobileParty self, Settlement settlement)
+        => PartyEconomyHelper.SellLootToSettlement(self, settlement, ref _teamFunds);
+    /// <summary>把剩余资金还给首府所有者；清零 _teamFunds。返回还回去的数额。</summary>
+    public int RefundTeamFundsToOwner()
+    {
+        if (_teamFunds <= 0) return 0;
+        var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
+        int refunded = PartyEconomyHelper.RefundHero(owner, _teamFunds);
+        if (refunded > 0)
+            Logger.Info($"StPatrolParty: refunded {refunded}d team funds to '{owner?.StringId ?? "null"}'");
+        _teamFunds = 0;
+        return refunded;
+    }
+
+    /// <summary>
+    /// 由 PatrolDispatcher 在玩家氏族 ModTreasury.Charge 成功后调用，直接把队伍资金设为 amount
+    /// （不再从 owner.Gold 扣第二次）。
+    /// </summary>
+    public void SetTeamFunds(int amount)
+    {
+        _teamFunds = amount < 0 ? 0 : amount;
+    }
 
     private StPatrolPartyComponent(
         Settlement home, TextObject name, Hero owner,
@@ -96,6 +146,8 @@ public sealed class StPatrolPartyComponent : StPartyComponent
                 Logger.Error($"StPatrolPartyComponent.CreateForTown: MobileParty.CreateParty returned null for '{stringId}'");
                 return null;
             }
+            // 2026-05-18 fix: 阻止 vanilla AI 在第一个 hourly tick 之前接管 ST patrol。
+            try { mobileParty.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
             return mobileParty;
         }
         catch (Exception ex)
@@ -108,30 +160,119 @@ public sealed class StPatrolPartyComponent : StPartyComponent
     // ── 状态机核心 ────────────────────────────────────────
 
     /// <summary>
-    /// 巡逻队是循环型 — 到达 home 只是路线上的一站，不解散。
-    /// 把 OnHourlyTickCore 的 4 条规则（防御 / 支援 / 抵达 / 卡死）原样跑一遍，
-    /// 让 scheduler 在 capital 落定后立即派下一站（首府被围攻仍能经"防御→DefaultMergeAndDisband"分支正确处理）。
+    /// 产品语义：巡逻队应当终身在户外巡逻（home 之外的 settlement 之间循环），回家 = 销毁。
+    /// 因此 OnArrivedHome 等同 DefaultMergeAndDisband — 归还兵员到 garrison + 解散实例。
+    /// 触发回家的"意外"路径包括：
+    ///   - 兵员低于 PartyReturnSizeRatio（基类 OnMapEventEnded 检测 → ReturnToHome → 走到 home 触发本方法）
+    ///   - 受伤比例高于 PartyReturnWoundedRatio（同上）
+    ///   - PartyLifecycleManager 空闲超时 force-return（idleHours ≥ IdleHoursBeforeForceReturn）
+    ///   - stuck 路径的 fallback：PickNext null 时 setMove(capital) → 走到 home 触发本方法
+    /// 首府被围由 OnHourlyTickCore 的 "1) 防御响应" 处理（capital==defenseTarget → DefaultMergeAndDisband）。
+    ///
+    /// scheduler 的 PassesCandidateFilter 已把 patrol.HomeSettlementOrNull 从候选集排除，
+    /// 正常巡逻路径不会主动回家。
     /// </summary>
     protected override void OnArrivedHome(MobileParty self)
     {
-        var registry = CapitalRegistry.Instance;
-        var partyClan = self.ActualClan;
-        if (partyClan == null || registry == null) return;
-        var capital = registry.GetCapitalForClan(partyClan);
-        if (capital == null) return;
-        OnHourlyTickCore(self, capital);
+        Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived home — disbanding (回家=销毁 产品语义)");
+        // 退款在 OnDestroyed 里做（覆盖所有销毁路径，包括 idle force-disband / 战败 destroy）。
+        DefaultMergeAndDisband(self);
+    }
+
+    // 战后战利品保留在 party.ItemRoster；下次到达 settlement 时 OnHourlyTickCore 会用 vanilla SellItemsAction
+    // 真实卖出（与 vanilla 商队同模式）。不再 OnMapEventEndedCore 凭空卖。
+
+    /// <summary>
+    /// 销毁前把队伍剩余资金还给首府所有者（覆盖所有销毁路径：解散、战败、idle、stuck teleport 等）。
+    /// 退款路径与扣款路径对称：
+    ///   - 玩家氏族（ShouldChargeClan=true）：走 ModTreasury.Refund，写 ledger + audit。
+    ///   - AI 氏族（ShouldChargeClan=false）：走原 RefundTeamFundsToOwner → PartyEconomyHelper.RefundHero（vanilla 路径）。
+    /// _teamFunds=0 时两路均 no-op（ModTreasury.Refund(_, 0, _) 内部直接 return true）。
+    /// </summary>
+    public override void OnDestroyed(MobileParty self, PartyBase? destroyer)
+    {
+        try
+        {
+            var homeClan = HomeSettlementOrNull?.OwnerClan;
+            if (CapitalRegistry.ShouldChargeClan(homeClan))
+            {
+                // 玩家氏族：退款走 ModTreasury 保持账目对称
+                int toRefund = _teamFunds;
+                _teamFunds = 0;
+                ModTreasury.Refund(ExpenseCategory.PatrolSeed, toRefund,
+                    $"patrol_destroyed home={HomeSettlementOrNull?.StringId ?? "null"}");
+                if (toRefund > 0)
+                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {toRefund}d via ModTreasury (player clan)");
+            }
+            else
+            {
+                // AI 氏族：退款走 vanilla hero.Gold 路径
+                int refunded = RefundTeamFundsToOwner();
+                if (refunded > 0)
+                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {refunded}d to AI owner");
+            }
+        }
+        catch (Exception ex) { Logger.Warn($"OnDestroyed refund threw: {ex.Message}"); }
+        base.OnDestroyed(self, destroyer);
     }
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
-        if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol) return;
+        if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
+        {
+            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' AutoPatrol=false → no-op");
+            return;
+        }
 
         var registry = CapitalRegistry.Instance;
         var partyClan = self.ActualClan;
-        if (partyClan == null || registry == null) return;
+        if (partyClan == null || registry == null)
+        {
+            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' partyClan={partyClan?.StringId ?? "null"} registry={(registry == null ? "null" : "ok")} → early return");
+            return;
+        }
         var capitalMgr = registry.GetForClan(partyClan);
-        if (capitalMgr == null) return;
+        if (capitalMgr == null)
+        {
+            Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' capitalMgr=null for clan='{partyClan.StringId}' → early return");
+            return;
+        }
         var scheduler = capitalMgr.PatrolScheduler;
+
+        // 2026-05-18 经济：在 settlement 内时（CurrentSettlement != null）— 卖战利品 + 食物不足补食物，
+        // 全部走 vanilla SellItemsAction 真实交易（物品在 settlement 库存和 party 库存间真实流转）。
+        // 在荒郊路上 不交易，走完到下个 settlement 才行。
+        var atSettlement = self.CurrentSettlement;
+        if (atSettlement != null && atSettlement.Town != null)
+        {
+            // 1) 先卖战利品（无论食物状态，能卖就卖换钱）
+            try
+            {
+                int gained = SellLootAtSettlement(self, atSettlement);
+                if (gained > 0)
+                    Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' sold loot at '{atSettlement.Name}' +{gained}d (funds={_teamFunds})");
+            }
+            catch (Exception ex) { Logger.Warn($"sell-loot tick threw: {ex.Message}"); }
+
+            // 2) 食物 < 1 天 → 买 3 天食物（受资金限制）
+            try
+            {
+                float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
+                if (daysLeft < BuyFoodWhenBelowDays && _teamFunds > 0)
+                {
+                    int spent = BuyFoodAtSettlement(self, atSettlement, BuyFoodDays);
+                    if (spent > 0)
+                        Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) → bought at '{atSettlement.Name}' for {spent}d (funds={_teamFunds})");
+                }
+            }
+            catch (Exception ex) { Logger.Warn($"food top-up tick threw: {ex.Message}"); }
+        }
+        else
+        {
+            float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
+            if (daysLeft < BuyFoodWhenBelowDays)
+                Logger.Info($"[DIAG] StPatrolParty: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) but not at settlement — waiting until next stop");
+        }
 
         // 1) 防御响应（B7.26）
         var defenseTarget = scheduler.GetDefenseTarget(self);
@@ -202,26 +343,63 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         }
 
         // 3) 抵达侦测 → RecordVisit + PickNextStop
-        var visited = self.LastVisitedSettlement;
-        if (visited != null && visited.OwnerClan == capitalMgr.OwnerClan
+        // 2026-05-18 修复：要求 CurrentSettlement==visited，即 party 真停在 settlement 里才算"到达"。
+        // 此前 visited=LastVisitedSettlement 在出发后仍指向 home，导致刚出发的巡逻队第一个 tick 误判
+        // 为"到达 home"，把 home 当首站 RecordVisit + PickNext。
+        var visited = self.CurrentSettlement ?? self.LastVisitedSettlement;
+        bool actuallyAtVisited = visited != null && self.CurrentSettlement == visited;
+        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: visited='{visited?.Name?.ToString() ?? "null"}' actuallyAt={actuallyAtVisited} visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
+        if (actuallyAtVisited && visited!.OwnerClan == capitalMgr.OwnerClan
             && scheduler.TryMarkArrival(self, visited))
         {
             scheduler.RecordVisit(visited);
+            // R4：到访新 settlement = 真进展 → 卡死累计清零
+            _stuckActive = false;
             var next = scheduler.PickNextStop(self);
-            var dest = next ?? capital;
-            try { self.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false); }
-            catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(dest)}'", ex); }
-            Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', next='{PartyNameFormatter.SafeName(dest)}'");
+            if (next != null)
+            {
+                try { self.SetMoveGoToSettlement(next, MobileParty.NavigationType.Default, false); }
+                catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(next)}'", ex); }
+                Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', next='{PartyNameFormatter.SafeName(next)}'");
+            }
+            else
+            {
+                // 2026-05-18 修复：原先 next==null 时 fallback 到 capital，导致氏族小（候选 < 2）
+                // 时巡逻队"到 village 立刻回 home"。改为停留 — 下个 tick MinVisitGap 过期后 PickNext 会重试。
+                Logger.Info($"[DIAG] StPatrolParty: '{PartyNameFormatter.SafeName(self)}' arrived '{PartyNameFormatter.SafeName(visited)}', no next candidate (MinVisitGap 内) — staying, next tick retry");
+            }
             return;
         }
+        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check failed (not at any settlement or already-marked) — falling through to stuck check");
 
-        // 4) 卡死保护
+        // 4) 卡死保护 — R4/R5：用 CampaignTime 计算真实 elapsed hours；R5 用位置进展检测真正恢复。
         var stuckTimeout = ConfigurationManager.Current.ClanPatrol.StuckTimeoutHours;
-        if (scheduler.IsStuck(self, stuckTimeout))
+        bool stuckNow = scheduler.IsStuck(self, stuckTimeout);
+        if (stuckNow && !_stuckActive)
         {
-            // B17.4 A5：scheduler 重发指令后还卡死 → 累计 hours。一段瞬移阈值后强制传送回 home.GatePosition（IG BoundedParty.IfStuckPortToHome）。
+            _stuckActive = true;
+            _firstStuckAt = CampaignTime.Now;
+            _stuckStartPosition = self.GetPosition2D;
+        }
+        // R5：每 tick 检测位置进展 — 若队伍已移动 > 阈值距离则视为恢复，清空卡死状态。
+        // 解决 R4 修复后副作用："reissue 后实际在动但未到达 destination → 24h 后被误瞬移"。
+        if (_stuckActive)
+        {
+            float moved = 0f;
+            try { moved = (self.GetPosition2D - _stuckStartPosition).Length; } catch { /* swallow */ }
+            if (moved > StuckProgressDistanceThreshold)
+            {
+                Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' resumed motion ({moved:F2} > {StuckProgressDistanceThreshold:F2}) — clearing stuck state");
+                _stuckActive = false;
+            }
+        }
+        if (_stuckActive)
+        {
             float teleportHours = ConfigurationManager.Current?.Thresholds?.StuckTeleportHours ?? 0f;
-            if (teleportHours > 0 && _stuckHoursAfterReissue >= teleportHours)
+            float elapsedHours = 0f;
+            try { elapsedHours = (float)(CampaignTime.Now - _firstStuckAt).ToHours; } catch { /* swallow */ }
+
+            if (teleportHours > 0 && elapsedHours >= teleportHours)
             {
                 try
                 {
@@ -231,24 +409,22 @@ public sealed class StPatrolPartyComponent : StPartyComponent
                         // IG BoundedParty.cs:53 用的是 mobileParty.Position（不是 Position2D）。
                         // IG 是发布的 mod，证明 v1.3.15 该 setter 公开可写。
                         self.Position = home.GatePosition;
-                        Logger.Warn($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {teleportHours}h after re-issue — teleport to '{home.Name}' GatePosition (二段救济)");
-                        _stuckHoursAfterReissue = 0;
+                        Logger.Warn($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck {elapsedHours:F1}h ≥ {teleportHours}h — teleport to '{home.Name}' GatePosition (二段救济)");
+                        _stuckActive = false;
                         return;
                     }
                 }
                 catch (Exception tpEx) { Logger.Error($"二段瞬移失败 for '{PartyNameFormatter.SafeName(self)}'", tpEx); }
             }
 
-            var next = scheduler.PickNextStop(self);
-            var dest = next ?? capital;
-            try { self.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false); }
-            catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(dest)}'", ex); }
-            Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {stuckTimeout}h — re-pick next='{PartyNameFormatter.SafeName(dest)}' (stuck cycles since reissue={_stuckHoursAfterReissue})");
-            _stuckHoursAfterReissue++;
-        }
-        else
-        {
-            _stuckHoursAfterReissue = 0;  // 不再 stuck，重置计数
+            if (stuckNow)
+            {
+                var next = scheduler.PickNextStop(self);
+                var dest = next ?? capital;
+                try { self.SetMoveGoToSettlement(dest, MobileParty.NavigationType.Default, false); }
+                catch (Exception ex) { Logger.Error($"SetMoveGoToSettlement failed for '{PartyNameFormatter.SafeName(self)}' -> '{PartyNameFormatter.SafeName(dest)}'", ex); }
+                Logger.Info($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck > {stuckTimeout}h — re-pick next='{PartyNameFormatter.SafeName(dest)}' (elapsed since first stuck={elapsedHours:F1}h)");
+            }
         }
     }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using SovereignTowns.Audit;
 using SovereignTowns.Battle;
@@ -45,6 +46,14 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     // B16.2: 静态 accessor — StSallyPartyComponent.NotifyDispatcherEnded 通过它通知 cooldown 重置。
     private static SallyDispatcher? _staticSallyDispatcher;
     public static SallyDispatcher? SallyDispatcher => _staticSallyDispatcher;
+
+    /// <summary>
+    /// R3：跨存档去重 — `ConfigurationManager.OnConfigChanged` 是 static event，
+    /// 同进程内连续加载多个存档会创建多个 behavior 实例，每实例的 `-=` 因 delegate
+    /// target 是新 this，无法删除前一实例的订阅 → static event 永远持有旧实例。
+    /// 用静态字段保留"上一轮注册的 delegate"，新 RegisterEvents 时先 unsubscribe 它。
+    /// </summary>
+    private static Action<string?>? _registeredConfigChangedHandler;
     private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
 
     /// <summary>
@@ -74,10 +83,15 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // P0-4：英雄换氏族事件 — 玩家换氏族时迁移所有在途队伍
             CampaignEvents.OnHeroChangedClanEvent.AddNonSerializedListener(this, OnHeroChangedClan);
 
-            // B17.4 B1：config 变更 → 重规划 in-flight recruiter（让 TownGarrisonRule 更改即时生效）。
-            // idempotent unsubscribe-then-subscribe — 静态 event 跨会话可能累积 handler 引用，避免重载后双订阅。
-            ConfigurationManager.OnConfigChanged -= OnConfigChangedHandler;
-            ConfigurationManager.OnConfigChanged += OnConfigChangedHandler;
+            // B17.4 B1 / R3：config 变更 → 重规划 in-flight recruiter（让 TownGarrisonRule 更改即时生效）。
+            // 跨存档去重：用静态字段记住"上一轮注册的实例 delegate"，新一轮 RegisterEvents 时
+            // 先 -= 旧的，再 += 自己。这样 static event 上始终只有 1 个订阅者，旧 behavior 也能被 GC。
+            if (_registeredConfigChangedHandler != null)
+            {
+                ConfigurationManager.OnConfigChanged -= _registeredConfigChangedHandler;
+            }
+            _registeredConfigChangedHandler = OnConfigChangedHandler;
+            ConfigurationManager.OnConfigChanged += _registeredConfigChangedHandler;
             Logger.Info("SovereignTownsCampaignBehavior: events registered");
         }
         catch (Exception ex)
@@ -491,7 +505,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
-            foreach (var party in MobileParty.AllCustomParties)
+            // P1-B4 修复：迭代前先做快照，避免 foreach 过程中其它线程修改集合导致枚举器失效。
+            var parties = MobileParty.AllCustomParties.ToList();
+            foreach (var party in parties)
             {
                 try
                 {

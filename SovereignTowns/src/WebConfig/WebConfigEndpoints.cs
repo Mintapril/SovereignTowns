@@ -117,19 +117,29 @@ internal static class WebConfigEndpoints
             parsed.LastModified ??= "";
 
             // 原子 validate + replace + write。失败时 in-memory 不动。
-            if (!ConfigurationManager.ReplaceAndSave(parsed, out var reason))
+            if (!ConfigurationManager.ReplaceAndSave(parsed, out var reason, out bool configChanged))
             {
                 int status = reason.StartsWith("ReplaceAndSave threw", StringComparison.Ordinal) ? 500 : 422;
                 WebConfigServer.WriteError(ctx, status, "validation_failed", reason);
                 return;
             }
 
+            // P0-1 修复：仅在内容真正变化时广播 OnConfigChanged。
+            // UI-only 字段（ShowDailySummary 等）不会触发 in-flight recruiter 重置。
             // HttpListener handlers run off the campaign thread. Queue any campaign-object
-            // mutations and let the next campaign tick apply them.
-            WebConfigGameThreadSync.Request("PUT /api/config");
+            // mutations + config-changed event invocation; both replay on the next Drain
+            // from a campaign tick handler.
+            if (configChanged)
+            {
+                WebConfigGameThreadSync.RequestConfigChanged(null, "PUT /api/config");
+                Logger.Info("PUT /api/config accepted and persisted (content changed → broadcasting OnConfigChanged)");
+            }
+            else
+            {
+                Logger.Info("PUT /api/config accepted and persisted (content identical → no OnConfigChanged broadcast)");
+            }
 
             WebConfigServer.WriteJson(ctx, 200, new { ok = true });
-            Logger.Info("PUT /api/config accepted and persisted");
         }
         catch (Exception ex)
         {
@@ -138,13 +148,30 @@ internal static class WebConfigEndpoints
         }
     }
 
-    /// <summary>POST /api/reload → ConfigurationManager.Reload() 手动重读磁盘。</summary>
+    /// <summary>POST /api/reload → ConfigurationManager.TryReload() 手动重读磁盘。
+    /// 失败时回 422 + reason，避免 UI 误以为 reload 成功而 OnConfigChanged 也不再触发。
+    /// P0-1 修复：仅在磁盘内容与 in-memory 实际不同时才广播 OnConfigChanged，
+    /// 避免打开/刷新 WebUI 无修改 reload 就重置所有 in-flight recruiter。</summary>
     public static void PostReload(HttpListenerContext ctx)
     {
         try
         {
-            ConfigurationManager.Reload();
-            WebConfigGameThreadSync.Request("POST /api/reload");
+            if (!ConfigurationManager.TryReload(out var reloadReason, out bool configChanged))
+            {
+                WebConfigServer.WriteError(ctx, 422, "reload_failed", reloadReason);
+                return;
+            }
+
+            // P0-1 修复：只有磁盘内容真正与 in-memory 不同时才广播，让 in-flight party 按新规则重算。
+            if (configChanged)
+            {
+                WebConfigGameThreadSync.RequestConfigChanged(null, "POST /api/reload");
+                Logger.Info("POST /api/reload accepted (content changed → broadcasting OnConfigChanged)");
+            }
+            else
+            {
+                Logger.Info("POST /api/reload accepted (content identical → no OnConfigChanged broadcast)");
+            }
 
             WebConfigServer.WriteJson(ctx, 200, new { ok = true });
         }

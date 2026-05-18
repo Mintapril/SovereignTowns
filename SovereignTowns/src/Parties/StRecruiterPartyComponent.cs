@@ -41,8 +41,12 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     /// <summary>玩家氏族单兵金币折扣（B7.20，硬编码 0.5）。</summary>
     private const float CostDiscount = 0.5f;
     private const int DefaultGoldPerRecruit = 10;
-    private const int CandidateBatchSize = 8;
-    private const float PlanMaxDistance = 100f;
+    private const int CandidateBatchSizeDefault = 8;
+    private const float PlanMaxDistanceDefault = 100f;
+    private static int CandidateBatchSize
+        => ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? CandidateBatchSizeDefault;
+    private static float PlanMaxDistance
+        => ConfigurationManager.Current?.Thresholds?.RecruitmentPlanMaxDistance ?? PlanMaxDistanceDefault;
 
     public enum RecruiterPhase
     {
@@ -159,8 +163,13 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             }
             // B7.22：强制 0 攻击性 — 防自家征兵队主动招惹敌方
             try { mobileParty.Aggressiveness = 0f; } catch { /* swallow */ }
+            // 2026-05-18 fix: 阻止 vanilla AI 在第一个 hourly tick 之前接管 ST recruiter（默认行为=回家）。
+            try { mobileParty.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
 
             component.SnapshotInitialMembers(mobileParty);
+            // 2026-05-18：recruiter 一趟最多到 RecruiterReturnRecruitedCount（默认 50）人才返航，凭空塞 3 天食物。
+            // 用户方案中没明确提到 recruiter，与 sally/transfer 同样按"短命凭空"处理（无队伍资金）。
+            SovereignTowns.Common.PartyEconomyHelper.GrantFoodForDays(mobileParty, 3f);
             Logger.Info($"StRecruiterPartyComponent: created '{stringId}' for '{settlement.StringId}'");
             return mobileParty;
         }
@@ -175,6 +184,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
+        Logger.Info($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip} visited={VisitedThisTrip.Count}");
         switch (_phase)
         {
             case RecruiterPhase.Dispatching: HandleDispatching(self); break;
@@ -194,6 +204,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         var home = HomeSettlementOrNull;
         if (home == null) return;
         var next = ResolveDepartureTarget(self, home);
+        Logger.Info($"[DIAG] Recruiter.HandleDispatching '{PartyNameFormatter.SafeName(self)}' home='{home.Name}' assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' resolved='{next?.Name?.ToString() ?? "null"}'");
         if (next == null || next == home)
         {
             // 无候选；下个 tick 再试

@@ -44,8 +44,8 @@ public sealed class ClanRecruiterScheduler : BaseSettlementVisitScheduler
         // 用现有 RecruitmentPlanner 取候选（已处理：兵种匹配、距离、风险、村庄状态、72h 冷却）
         var candidates = RecruitmentPlanner.RankCandidates(
             capitalTown,
-            maxDistance: 100f,
-            maxResults: 8,
+            maxDistance: ConfigurationManager.Current?.Thresholds?.RecruitmentPlanMaxDistance ?? 100f,
+            maxResults: ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? 8,
             excludeSettlements: null,
             matchingRule: rule);
         if (candidates == null || candidates.Count == 0) return System.Array.Empty<Settlement>();

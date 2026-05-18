@@ -91,6 +91,50 @@ public static class ModTreasury
         }
     }
 
+    /// <summary>
+    /// 把先前 <see cref="Charge"/> 已扣的金币退回 Hero.MainHero。专为"扣款 → 后续步骤失败 → 回滚"
+    /// 路径准备（recruiter / sally 创建失败时撤销 seed cost）。
+    /// 记 ledger（负 amount 即"退款"）+ audit；amount &lt;= 0 时 no-op 并返回 true。
+    /// AI clan 路径不应调用 Refund —— 它们也没走 Charge。
+    /// </summary>
+    public static bool Refund(ExpenseCategory category, int amount, string note)
+    {
+        if (amount <= 0) return true;
+
+        try
+        {
+            var hero = Hero.MainHero;
+            if (hero == null)
+            {
+                Logger.Warn($"ModTreasury.Refund: Hero.MainHero == null; cannot refund {category} +{amount}d");
+                return false;
+            }
+
+            try { hero.ChangeHeroGold(amount); }
+            catch (Exception ex)
+            {
+                Logger.Error($"ModTreasury.Refund: ChangeHeroGold failed for {category} +{amount}d", ex);
+                return false;
+            }
+
+            // 负 amount 写入 ledger 以便报告看到"今日 -1000 + refund 1000 = 净 0"
+            ModExpenseLedger.Record(category, -amount, "refund:" + note);
+
+            DecisionAuditLogger.LogRule(
+                decisionType: "mod_refund",
+                inputSummary: $"category={category} amount={amount} note={note}",
+                decisionJson: $"{{\"category\":\"{category}\",\"amount\":{amount},\"note\":\"{EscapeJson(note ?? "")}\"}}",
+                accepted: true);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ModTreasury.Refund failed for {category} +{amount}d", ex);
+            return false;
+        }
+    }
+
     private static string EscapeJson(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
@@ -109,6 +153,8 @@ public enum ExpenseCategory
     Upgrade,
     /// <summary>出击队的初始本钱（100 denar）</summary>
     SallySeed,
+    /// <summary>派出巡逻队的初始本钱（2000 denar）</summary>
+    PatrolSeed,
     /// <summary>兜底</summary>
     Other
 }

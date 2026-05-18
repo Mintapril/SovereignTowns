@@ -3,6 +3,7 @@ using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
+using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
@@ -100,16 +101,18 @@ public sealed class PatrolDispatcher
             var garrison = town?.GarrisonParty;
             var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
             int batchSize = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolTroopBatchRatio, minimumWhenPositive: 1);
+            Logger.Info($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' garrison={garrisonCount} ratio={PatrolTroopBatchRatio:F2} → batch={batchSize}");
             if (batchSize <= 0)
             {
-                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
+                Logger.Info($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
                 return;
             }
 
             int reserveAfterCreation = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolReserveAfterCreationRatio, minimumWhenPositive: 0);
+            Logger.Info($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' reserveAfterCreation={reserveAfterCreation} (ratio={PatrolReserveAfterCreationRatio:P0}) garrison-batch={garrisonCount - batchSize}");
             if (garrisonCount - batchSize < reserveAfterCreation)
             {
-                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} (ratio {PatrolReserveAfterCreationRatio:P0}), defer patrol creation");
+                Logger.Info($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} — defer (garrison-batch < reserve)");
                 return;
             }
 
@@ -147,6 +150,7 @@ public sealed class PatrolDispatcher
                 moved = TroopTransferHelper.TransferFromGarrison(
                     gRoster, pRoster, batchSize, TroopTransferHelper.SortStrategy.LowestTierFirst);
             }
+            Logger.Info($"[DIAG] PatrolDispatcher '{settlement.Name}' transfer: requested={batchSize}, gRoster?={gRoster != null}, pRoster?={pRoster != null}, moved={moved}, garrison-after-transfer={gRoster?.TotalManCount ?? -1}");
 
             if (moved <= 0)
             {
@@ -159,6 +163,43 @@ public sealed class PatrolDispatcher
             if (created.PartyComponent is StPatrolPartyComponent stc)
             {
                 stc.SnapshotInitialMembers(created);
+
+                // 2026-05-18：巡逻队自负盈亏经济模型 — 出发时注入 2000d 队伍资金，立刻在首府市场买 3 天食物。
+                //
+                // 玩家氏族 vs AI 氏族走不同路径，与 RecruitmentDispatcher / SallyDispatcher 惯例对称：
+                //   - 玩家氏族（ShouldChargeClan=true）：扣款走 ModTreasury.Charge，受 PauseSpendingWhenBroke
+                //     门控、写 ledger + audit；扣款失败时把已抽兵员还回 garrison 并销毁实例（回滚）。
+                //   - AI 氏族（ShouldChargeClan=false）：仍走 InitTeamFundsFromHomeOwner 从 AI 领主 hero.Gold
+                //     扣（vanilla 路径，不经 ModTreasury）。
+                const int patrolSeedGold = 2000;
+                bool shouldChargePatrol = CapitalRegistry.ShouldChargeClan(settlement.OwnerClan);
+                if (shouldChargePatrol)
+                {
+                    // 玩家路径：先预检，再扣款，成功后直接把资金写入队伍（不从 hero.Gold 扣第二次）。
+                    if (!ModTreasury.CanAfford(patrolSeedGold))
+                    {
+                        Logger.Info($"PatrolDispatcher: '{settlement.Name}' 玩家金币不足 (need {patrolSeedGold})，回滚巡逻队");
+                        TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
+                        PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher insufficient funds rollback", deferIfInMapEvent: false);
+                        return;
+                    }
+                    if (!ModTreasury.Charge(ExpenseCategory.PatrolSeed, patrolSeedGold, $"patrol_seed home={settlement.StringId}"))
+                    {
+                        Logger.Info($"PatrolDispatcher: '{settlement.Name}' ModTreasury.Charge 拒绝，回滚巡逻队");
+                        TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
+                        PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher Charge rejected rollback", deferIfInMapEvent: false);
+                        return;
+                    }
+                    // 扣款成功 → 把 2000d 写入队伍资金（队伍在路上用它买粮买装）
+                    stc.SetTeamFunds(patrolSeedGold);
+                }
+                else
+                {
+                    // AI 路径：从 AI 领主 hero.Gold 扣（vanilla 路径，不受 PauseSpendingWhenBroke 影响）。
+                    stc.InitTeamFundsFromHomeOwner(created, patrolSeedGold);
+                }
+
+                stc.BuyFoodAtSettlement(created, settlement, 3f);
             }
 
             _lifecycle.RegisterTrackedParty(created, settlement, PartyLifecycleManager.KindPatrol);
@@ -170,19 +211,29 @@ public sealed class PatrolDispatcher
                 accepted: true);
             Logger.Info($"PatrolDispatcher: created ST patrol '{created.StringId}' for '{settlement.Name}' (template='{templateId}', moved={moved} troops)");
 
-            // B7.26：新巡逻队的首站走 scheduler
+            // B7.26：新巡逻队的首站走 scheduler。
+            // 2026-05-18 产品语义：巡逻队不允许把 home 当巡逻站（ClanPatrolScheduler 已 filter 排除）。
+            // 若 PickNextStop 返 null（clan 只有 home 一个 settlement，或所有非-home settlement 全被
+            // 过滤）→ 巡逻队无处可去 → 把刚抽出的兵员还回 garrison 并销毁实例，避免在 home 旁傻站浪费。
             try
             {
                 var schedulerCapitalMgr = _capitalRegistry?.GetForSettlement(settlement);
                 if (schedulerCapitalMgr != null)
                 {
-                    schedulerCapitalMgr.PatrolScheduler.RecordVisit(settlement);  // 标记首府刚访问，避免立刻回家
+                    schedulerCapitalMgr.PatrolScheduler.RecordVisit(settlement);  // 标记首府刚访问
                     var nextStop = schedulerCapitalMgr.PatrolScheduler.PickNextStop(created);
                     if (nextStop != null)
                     {
                         try { created.SetMoveGoToSettlement(nextStop, MobileParty.NavigationType.Default, false); }
                         catch (Exception navEx) { Logger.Error($"first-hop SetMoveGoToSettlement failed for '{created.Name}' -> '{nextStop.Name}'", navEx); }
                         Logger.Info($"PatrolDispatcher: '{created.Name}' first hop -> '{nextStop.Name}'");
+                    }
+                    else
+                    {
+                        Logger.Warn($"PatrolDispatcher: '{created.Name}' no non-home candidate at create-time — returning {moved} troops and destroying empty patrol");
+                        PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(created, settlement, "PatrolDispatcher empty patrol rollback (no candidate)");
+                        PartyMergeService.Instance.DisbandAndUntrack(created, "PatrolDispatcher first-hop no candidate");
+                        return;
                     }
                 }
             }
@@ -213,14 +264,19 @@ public sealed class PatrolDispatcher
             {
                 if (p == null || !p.IsActive) continue;
                 if (ownerClan != null && p.ActualClan != null && p.ActualClan != ownerClan) continue;
-                if (p.PartyComponent is StPatrolPartyComponent stc && stc.HomeSettlement == settlement) count++;
+                // R6/R5: 用 HomeSettlementOrNull 防止损坏存档下 HomeSettlement getter 抛出 → 整段
+                // 早年版本被 catch 后返回 int.MaxValue 永久阻塞巡逻队创建（fail-deadly）。
+                if (p.PartyComponent is StPatrolPartyComponent stc && stc.HomeSettlementOrNull == settlement) count++;
             }
             return count;
         }
         catch (Exception ex)
         {
-            Logger.Error($"CountExistingPatrolsAtHome failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
-            return int.MaxValue; // 失败时报最大值，等同于"已超 cap"，停止创建（fail-safe）
+            // R5 (DeepSeek audit 2026-05-18)：原实现注释自称 fail-safe 但返回 int.MaxValue =
+            // existing >= cap 永远 true → 该城**永久**无法再创建巡逻队，无恢复路径。改为 0
+            // (允许下次再试)，宁可多创建一支也不要永久关闭通道。
+            Logger.Error($"CountExistingPatrolsAtHome failed for '{PartyNameFormatter.SafeName(settlement)}' — returning 0 to keep creation channel open", ex);
+            return 0;
         }
     }
 

@@ -23,7 +23,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 15;
+    public const int CurrentConfigVersion = 16;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -39,11 +39,22 @@ public static class ConfigurationManager
     private static string _lastValidationError = "";
 
     /// <summary>
-    /// B17.4 B1：PerSettlementOverrides 或 GlobalDefaults 变更后触发。
+    /// B17.4 B1 / Issue #1：PerSettlementOverrides 或 GlobalDefaults 变更后触发。
     /// 参数：被改的 settlement.StringId，或 null 表示全局/未知（订阅者需对所有 in-flight 队伍重规划）。
-    /// 仅在 ReplaceAndSave 成功后触发（Save 单独存当前 _current,不触发 — 避免无变化时刷屏）。
+    /// 永远从主线程触发 —— Web 路径走 <see cref="WebConfigGameThreadSync.RequestConfigChanged"/>
+    /// 入队，下一次 Drain 在 campaign tick 主线程上调用 <see cref="RaiseConfigChanged"/>。
     /// </summary>
     public static event Action<string?>? OnConfigChanged;
+
+    /// <summary>
+    /// Issue #1：仅供 <see cref="SovereignTowns.WebConfig.WebConfigGameThreadSync.Drain"/> 在主线程
+    /// 调用。其他路径不应直接 invoke 事件（事件 access 受 C# 编译器限制本就只能在本类内）。
+    /// </summary>
+    internal static void RaiseConfigChanged(string? settlementId)
+    {
+        try { OnConfigChanged?.Invoke(settlementId); }
+        catch (Exception ex) { Logger.Warn($"OnConfigChanged invocation failed: {ex.Message}"); }
+    }
 
     /// <summary>当前已加载的全局配置。Initialize 之前调用返回默认配置。</summary>
     public static GlobalConfig Current
@@ -81,12 +92,15 @@ public static class ConfigurationManager
                 string configPath = GetConfigFilePath();
                 EnsureConfigDirectoryExists(configPath);
                 TryMigrateLegacyConfigPath(configPath);
+                // Issue #2: 上次写盘途中崩溃可能留下 .bak 但主文件缺失 — 启动时尝试回滚。
+                TryRestoreFromBak(configPath);
 
                 if (!File.Exists(configPath))
                 {
                     Logger.Info($"Config file not found at '{configPath}', creating defaults");
                     _current = GlobalConfig.CreateDefault();
-                    WriteToDiskUnlocked(configPath, _current);
+                    try { WriteToDiskUnlocked(configPath, _current); }
+                    catch (Exception writeEx) { Logger.Error($"Initial WriteToDisk failed for '{configPath}'; running with in-memory defaults", writeEx); }
                 }
                 else
                 {
@@ -95,6 +109,17 @@ public static class ConfigurationManager
                     {
                         Logger.Warn("Falling back to default GlobalConfig because load/validation failed");
                         _current = GlobalConfig.CreateDefault();
+                        // DeepSeek audit fix (2026-05-18)：fallback 后立即把默认写回磁盘，
+                        // 否则磁盘上的旧版本/坏配置永久滞留 → 用户点"重载"反复 422。
+                        try
+                        {
+                            WriteToDiskUnlocked(configPath, _current);
+                            Logger.Info($"Persisted default config to '{configPath}' after fallback (disk version synced to in-memory)");
+                        }
+                        catch (Exception writeEx)
+                        {
+                            Logger.Error($"Failed to persist default config after fallback for '{configPath}'; in-memory and disk versions may diverge", writeEx);
+                        }
                     }
                     else
                     {
@@ -178,6 +203,28 @@ public static class ConfigurationManager
         }
     }
 
+    // -------- content-diff helper --------
+
+    /// <summary>
+    /// 把两个 GlobalConfig 序列化为 JSON 字符串后逐字符比较。
+    /// 利用 Newtonsoft 默认 reflection 顺序（稳定）保证同字段顺序；
+    /// Ignore NullValueHandling 与正常写盘设置一致，防止多余 null 字段造成假差异。
+    /// </summary>
+    private static bool ConfigsAreEqual(GlobalConfig a, GlobalConfig b)
+    {
+        try
+        {
+            string jsonA = JsonConvert.SerializeObject(a, _jsonSettings);
+            string jsonB = JsonConvert.SerializeObject(b, _jsonSettings);
+            return string.Equals(jsonA, jsonB, StringComparison.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"ConfigsAreEqual serialization failed; treating as changed: {ex.Message}");
+            return false; // 序列化异常时保守地认为有变化，确保事件仍触发
+        }
+    }
+
     /// <summary>
     /// 将 Current 序列化到 global.json。覆盖式写入。
     /// 写盘前先做 <see cref="ValidateConfig"/>；若失败则拒绝写盘，记录原因并返回 false，
@@ -201,7 +248,15 @@ public static class ConfigurationManager
                 string configPath = GetConfigFilePath();
                 EnsureConfigDirectoryExists(configPath);
                 _current.LastModified = DateTime.UtcNow.ToString("O");
-                WriteToDiskUnlocked(configPath, _current);
+                try
+                {
+                    WriteToDiskUnlocked(configPath, _current);
+                }
+                catch (Exception writeEx)
+                {
+                    Logger.Error("ConfigurationManager.Save: write failed", writeEx);
+                    return false;
+                }
                 Logger.Info($"Config saved to '{configPath}'");
                 return true;
             }
@@ -214,13 +269,16 @@ public static class ConfigurationManager
     }
 
     /// <summary>
-    /// B7.3 引入：把 newConfig 完整替换到 Current 并写盘。原子操作：
+    /// B7.3 / Issue #2：把 newConfig 完整替换到 Current 并写盘。原子操作：
     /// Validate 失败 → in-memory 不动，返回 false + reason；
-    /// Validate 通过 → 替换 + 写盘；写盘 IO 失败 → 替换仍然生效（与 Save 行为一致），返回 false。
-    /// 用于网页 PUT /api/config 路径。
+    /// Validate 通过 → 替换 + 写盘；写盘 IO 失败 → **回滚 in-memory**，返回 false + reason。
+    /// 用于网页 PUT /api/config 路径。Issue #9：ConfigVersion 由本端强制覆盖到 CurrentConfigVersion。
+    /// P0-1 修复：<paramref name="changed"/> 指示内容是否真正变化（JSON diff），
+    /// 调用方仅在 changed=true 时才广播 OnConfigChanged，避免无变化 PUT 重置 in-flight 队伍。
     /// </summary>
-    public static bool ReplaceAndSave(GlobalConfig newConfig, out string reason)
+    public static bool ReplaceAndSave(GlobalConfig newConfig, out string reason, out bool changed)
     {
+        changed = false;
         if (newConfig is null)
         {
             reason = "newConfig is null";
@@ -231,6 +289,10 @@ public static class ConfigurationManager
         {
             lock (_gate)
             {
+                // Issue #9：ConfigVersion 永远由本端管理 — 客户端提交什么都强制对齐，
+                // 避免下次启动被 TryLoadFromDisk 的版本校验丢回默认。
+                newConfig.ConfigVersion = CurrentConfigVersion;
+
                 if (!ValidateConfig(newConfig, out reason))
                 {
                     _lastValidationError = reason;
@@ -238,19 +300,39 @@ public static class ConfigurationManager
                     return false;
                 }
 
+                // P0-1 修复：JSON content-diff，UI-only 字段（ShowDailySummary 等）
+                // 和真正影响 in-flight recruiter 的字段一起比较；只有真变化才让上层广播。
+                changed = !ConfigsAreEqual(_current, newConfig);
+
+                var previousConfig = _current;
                 _current = newConfig;
                 _lastValidationError = "";
 
                 string configPath = GetConfigFilePath();
                 EnsureConfigDirectoryExists(configPath);
                 _current.LastModified = DateTime.UtcNow.ToString("O");
-                WriteToDiskUnlocked(configPath, _current);
-                Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}'");
+                try
+                {
+                    WriteToDiskUnlocked(configPath, _current);
+                }
+                catch (Exception writeEx)
+                {
+                    // Issue #2：写盘真正失败必须让上层知道；同时回滚 in-memory，
+                    // 避免"内存已换、磁盘是旧的"导致重启后玩家配置静默丢失。
+                    _current = previousConfig;
+                    changed = false;
+                    reason = $"WriteToDisk failed: {writeEx.Message}";
+                    Logger.Error("ReplaceAndSave: write failed; rolled back in-memory config", writeEx);
+                    return false;
+                }
 
-                // B17.4 B1：通知订阅者 config 已变 — 让 in-flight 队伍重规划。
-                // 写盘后触发（失败的 replace 不应通知，避免订阅者瞎刷新）。
-                try { OnConfigChanged?.Invoke(null); }
-                catch (Exception evEx) { Logger.Warn($"OnConfigChanged invocation failed: {evEx.Message}"); }
+                if (changed)
+                    Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}' (content changed → will broadcast OnConfigChanged)");
+                else
+                    Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}' (content identical → no broadcast)");
+
+                // Issue #1：OnConfigChanged 已迁移到 WebConfigGameThreadSync.Drain
+                // 在主线程触发；此处不再直接 invoke（HTTP 路径下我们在 ThreadPool 线程上）。
 
                 reason = "";
                 return true;
@@ -259,14 +341,25 @@ public static class ConfigurationManager
         catch (Exception ex)
         {
             reason = $"ReplaceAndSave threw: {ex.Message}";
+            changed = false;
             Logger.Error("ReplaceAndSave failed", ex);
             return false;
         }
     }
 
-    /// <summary>从磁盘重新读取（用户手编 JSON 后可调用）。失败回退到上次成功的 Current。</summary>
-    public static void Reload()
+    /// <summary>兼容旧调用方（不关心 changed 信号）的重载。</summary>
+    public static bool ReplaceAndSave(GlobalConfig newConfig, out string reason)
+        => ReplaceAndSave(newConfig, out reason, out _);
+
+    /// <summary>
+    /// 从磁盘重新读取（用户手编 JSON 后可调用）。失败回退到上次成功的 Current。
+    /// 返回 (ok, reason)：ok=true 表示已替换内存配置；false 时 reason 给出失败原因（UI 用）。
+    /// P0-1 修复：<paramref name="changed"/> 指示磁盘内容是否与当前 in-memory 不同（JSON diff）。
+    /// 调用方仅在 changed=true 时才广播 OnConfigChanged，避免无变化 reload 重置 in-flight 队伍。
+    /// </summary>
+    public static bool TryReload(out string reason, out bool changed)
     {
+        changed = false;
         try
         {
             lock (_gate)
@@ -274,26 +367,45 @@ public static class ConfigurationManager
                 string configPath = GetConfigFilePath();
                 if (!File.Exists(configPath))
                 {
+                    reason = $"config file not found: {configPath}";
                     Logger.Warn($"Reload requested but '{configPath}' does not exist; keeping current in-memory config");
-                    return;
+                    return false;
                 }
 
                 var loaded = TryLoadFromDisk(configPath);
                 if (loaded is null)
                 {
+                    reason = "config load/parse/validation failed (see logs); kept previous in-memory config";
                     Logger.Warn("Reload failed; keeping previous in-memory config");
-                    return;
+                    return false;
                 }
 
+                // P0-1 修复：JSON content-diff — 只有磁盘内容与内存不同才算"真变化"。
+                changed = !ConfigsAreEqual(_current, loaded);
                 _current = loaded;
-                Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count}");
+                reason = "";
+
+                if (changed)
+                    Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count} (content changed → will broadcast OnConfigChanged)");
+                else
+                    Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count} (content identical → no broadcast)");
+
+                return true;
             }
         }
         catch (Exception ex)
         {
+            reason = $"reload threw: {ex.Message}";
             Logger.Error("ConfigurationManager.Reload failed", ex);
+            return false;
         }
     }
+
+    /// <summary>兼容旧调用方（不关心 changed 信号）的重载。</summary>
+    public static bool TryReload(out string reason) => TryReload(out reason, out _);
+
+    /// <summary>旧 void 包装 — 兼容现有调用方。新代码请用 <see cref="TryReload"/>。</summary>
+    public static void Reload() => TryReload(out _, out _);
 
     // -------- path / IO helpers --------
 
@@ -423,14 +535,16 @@ public static class ConfigurationManager
     };
 
     /// <summary>
-    /// B17.4 S4：原子写盘 — tmp → swap → backup。崩溃/断电中途绝不留半截/0 字节文件。
+    /// B17.4 S4 / Issue #2：原子写盘 — tmp → swap → backup。崩溃/断电中途绝不留半截/0 字节文件。
     /// net472 缺 File.Replace 跨卷保证；用 Delete + Move 替代,前一份保留为 .bak。
-    /// 单步失败：尽力恢复（删除残留 .tmp），保留原 global.json 不动。
+    /// 失败时清残留 tmp，并尽力把刚搬走的 main 从 .bak 滚回；**始终向调用方抛**，
+    /// 让 <see cref="Save"/> / <see cref="ReplaceAndSave"/> 把失败传递到上层（HTTP/UI 报错）。
     /// </summary>
     private static void WriteToDiskUnlocked(string configPath, GlobalConfig config)
     {
         string tmpPath = configPath + ".tmp";
         string bakPath = configPath + ".bak";
+        bool mainMovedToBak = false;
         try
         {
             string json = JsonConvert.SerializeObject(config, _jsonSettings);
@@ -438,21 +552,12 @@ public static class ConfigurationManager
             // 1. 全量写到 tmp（独立文件，失败不污染主文件）
             File.WriteAllText(tmpPath, json);
 
-            // 2. 把当前 main 备份到 .bak（若 main 存在）。备份失败仅 warn，继续 swap。
+            // 2. 把当前 main 备份到 .bak（若 main 存在）
             if (File.Exists(configPath))
             {
-                try
-                {
-                    if (File.Exists(bakPath)) File.Delete(bakPath);
-                    File.Move(configPath, bakPath);
-                }
-                catch (Exception bakEx)
-                {
-                    Logger.Warn($"WriteToDiskUnlocked: backup to '{bakPath}' failed; proceeding without backup: {bakEx.Message}");
-                    // 若 .bak 创建失败但 main 还在 — 直接删 main 让下一步 Move 成功
-                    try { if (File.Exists(configPath)) File.Delete(configPath); }
-                    catch (Exception delEx) { Logger.Error($"WriteToDiskUnlocked: failed to remove stale main '{configPath}' before swap", delEx); throw; }
-                }
+                if (File.Exists(bakPath)) File.Delete(bakPath);
+                File.Move(configPath, bakPath);
+                mainMovedToBak = true;
             }
 
             // 3. tmp → main（这一刻起新内容生效）
@@ -461,9 +566,49 @@ public static class ConfigurationManager
         catch (Exception ex)
         {
             Logger.Error($"Failed to write config to '{configPath}' (atomic swap)", ex);
+
             // 残留 tmp 清理：不留半截文件给下次 Reload 误读
             try { if (File.Exists(tmpPath)) File.Delete(tmpPath); }
             catch (Exception cleanupEx) { Logger.Warn($"WriteToDiskUnlocked: failed to clean up '{tmpPath}': {cleanupEx.Message}"); }
+
+            // 若 main 已搬到 .bak 但 swap 失败 → 主文件丢失。尽力滚回。
+            if (mainMovedToBak)
+            {
+                try
+                {
+                    if (!File.Exists(configPath) && File.Exists(bakPath))
+                    {
+                        File.Move(bakPath, configPath);
+                        Logger.Info($"WriteToDiskUnlocked: restored '{configPath}' from '.bak' after swap failure");
+                    }
+                }
+                catch (Exception restoreEx)
+                {
+                    Logger.Error($"WriteToDiskUnlocked: failed to restore '{configPath}' from '.bak'; manual recovery required", restoreEx);
+                }
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Issue #2 启动期兜底：若主文件不存在但 .bak 存在 → 把 .bak 滚回主文件。
+    /// 通常发生在上次写盘途中进程崩溃 / 断电。失败仅 warn，不阻断 Initialize。
+    /// </summary>
+    private static void TryRestoreFromBak(string configPath)
+    {
+        try
+        {
+            if (File.Exists(configPath)) return;
+            string bakPath = configPath + ".bak";
+            if (!File.Exists(bakPath)) return;
+            File.Move(bakPath, configPath);
+            Logger.Warn($"Restored config from '.bak' (main missing): '{configPath}' — previous write likely interrupted");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"TryRestoreFromBak failed for '{configPath}'", ex);
         }
     }
 
@@ -503,7 +648,44 @@ public static class ConfigurationManager
         {
             return false;
         }
+        // Issue：ClanPatrol / ClanRecruiter 之前缺校验，负数 / NaN 会进 scheduler。
+        if (config.ClanPatrol != null && !ValidateClanPatrol(config.ClanPatrol, out reason))
+        {
+            return false;
+        }
+        if (config.ClanRecruiter != null && !ValidateClanRecruiter(config.ClanRecruiter, out reason))
+        {
+            return false;
+        }
 
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateClanPatrol(ClanPatrolConfig c, out string reason)
+    {
+        if (!IsNonNegativeFloat(c.EtaBufferHours) || c.EtaBufferHours > 168f)
+        { reason = $"ClanPatrol.EtaBufferHours invalid ({c.EtaBufferHours}); [0, 168]"; return false; }
+        if (!IsNonNegativeFloat(c.StuckTimeoutHours) || c.StuckTimeoutHours > 720f || c.StuckTimeoutHours < 1f)
+        { reason = $"ClanPatrol.StuckTimeoutHours invalid ({c.StuckTimeoutHours}); [1, 720]"; return false; }
+        if (!IsNonNegativeFloat(c.MinVisitGapHours) || c.MinVisitGapHours > 720f)
+        { reason = $"ClanPatrol.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"; return false; }
+        if (!IsNonNegativeFloat(c.DistanceWeightHoursPerTile) || c.DistanceWeightHoursPerTile > 100f)
+        { reason = $"ClanPatrol.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
+        if (!IsNonNegativeFloat(c.SupportEtaThresholdHours) || c.SupportEtaThresholdHours > 168f)
+        { reason = $"ClanPatrol.SupportEtaThresholdHours invalid ({c.SupportEtaThresholdHours}); [0, 168]"; return false; }
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateClanRecruiter(ClanRecruiterConfig c, out string reason)
+    {
+        if (!IsNonNegativeFloat(c.EtaBufferHours) || c.EtaBufferHours > 168f)
+        { reason = $"ClanRecruiter.EtaBufferHours invalid ({c.EtaBufferHours}); [0, 168]"; return false; }
+        if (!IsNonNegativeFloat(c.MinVisitGapHours) || c.MinVisitGapHours > 720f)
+        { reason = $"ClanRecruiter.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"; return false; }
+        if (!IsNonNegativeFloat(c.DistanceWeightHoursPerTile) || c.DistanceWeightHoursPerTile > 100f)
+        { reason = $"ClanRecruiter.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
         reason = "";
         return true;
     }
@@ -538,12 +720,75 @@ public static class ConfigurationManager
         { reason = $"Thresholds.SallyExtractionRatio invalid ({t.SallyExtractionRatio}); must be in [0,1]"; return false; }
         if (!IsNonNegativeFloat(t.SallyTargetPartySizeMultiplier))
         { reason = $"Thresholds.SallyTargetPartySizeMultiplier invalid ({t.SallyTargetPartySizeMultiplier})"; return false; }
-        if (t.SallyTargetPartySizeMultiplier > 100f)
-        { reason = $"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} 超过上限 100"; return false; }
+        // C (DeepSeek audit 2026-05-18)：与前端 thresholdSpecs max=5 对齐。原 100 上限远超合理范围。
+        if (t.SallyTargetPartySizeMultiplier > 5f)
+        { reason = $"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} 超过上限 5"; return false; }
         if (t.SallyCreateMinPartyCount < 1)
         { reason = $"Thresholds.SallyCreateMinPartyCount invalid ({t.SallyCreateMinPartyCount}); must be >= 1"; return false; }
         if (t.SallyCreateMinPartyCount > 1000)
         { reason = $"Thresholds.SallyCreateMinPartyCount {t.SallyCreateMinPartyCount} 超过上限 1000"; return false; }
+
+        // Issue #5：B17.4 新增阈值校验。
+        if (t.RecruiterMinHomeGarrison < 0)
+        { reason = $"Thresholds.RecruiterMinHomeGarrison invalid ({t.RecruiterMinHomeGarrison}); must be >= 0"; return false; }
+        if (t.RecruiterMinHomeGarrison > 10000)
+        { reason = $"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} 超过上限 10000"; return false; }
+        if (t.PartyPrisonerCap < 0)
+        { reason = $"Thresholds.PartyPrisonerCap invalid ({t.PartyPrisonerCap}); must be >= 0"; return false; }
+        if (t.PartyPrisonerCap > 10000)
+        { reason = $"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} 超过上限 10000"; return false; }
+        if (!IsNonNegativeFloat(t.StuckTeleportHours))
+        { reason = $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"; return false; }
+        if (t.StuckTeleportHours > 720f)
+        { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 720"; return false; }
+        if (!IsNonNegativeFloat(t.RecruitmentFallbackMaxDistance))
+        { reason = $"Thresholds.RecruitmentFallbackMaxDistance invalid ({t.RecruitmentFallbackMaxDistance}); must be >= 0"; return false; }
+        if (t.RecruitmentFallbackMaxDistance > 1000f)
+        { reason = $"Thresholds.RecruitmentFallbackMaxDistance {t.RecruitmentFallbackMaxDistance} 超过上限 1000"; return false; }
+        if (!IsNonNegativeFloat(t.FoodReplenishMinDays))
+        { reason = $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"; return false; }
+        if (t.FoodReplenishMinDays > 365f)
+        { reason = $"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} 超过上限 365"; return false; }
+        if (!IsNonNegativeFloat(t.FoodReplenishTopUpDays))
+        { reason = $"Thresholds.FoodReplenishTopUpDays invalid ({t.FoodReplenishTopUpDays})"; return false; }
+        if (t.FoodReplenishTopUpDays > 365f)
+        { reason = $"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} 超过上限 365"; return false; }
+
+        // DeepSeek audit 2026-05-18 新增字段校验
+        if (!IsNonNegativeFloat(t.IdleHoursBeforeForceReturn) || t.IdleHoursBeforeForceReturn < 1f || t.IdleHoursBeforeForceReturn > 720f)
+        { reason = $"Thresholds.IdleHoursBeforeForceReturn invalid ({t.IdleHoursBeforeForceReturn}); [1, 720]"; return false; }
+        if (!IsNonNegativeFloat(t.IdleHoursBeforeDisband) || t.IdleHoursBeforeDisband < 1f || t.IdleHoursBeforeDisband > 720f)
+        { reason = $"Thresholds.IdleHoursBeforeDisband invalid ({t.IdleHoursBeforeDisband}); [1, 720]"; return false; }
+        if (t.IdleHoursBeforeDisband < t.IdleHoursBeforeForceReturn)
+        { reason = $"Thresholds.IdleHoursBeforeDisband ({t.IdleHoursBeforeDisband}) 必须 ≥ IdleHoursBeforeForceReturn ({t.IdleHoursBeforeForceReturn})"; return false; }
+        if (!IsNonNegativeFloat(t.SallyDetectionRadius) || t.SallyDetectionRadius < 10f || t.SallyDetectionRadius > 500f)
+        { reason = $"Thresholds.SallyDetectionRadius invalid ({t.SallyDetectionRadius}); [10, 500]"; return false; }
+        if (!IsNonNegativeFloat(t.SallyCooldownHours) || t.SallyCooldownHours > 168f)
+        { reason = $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"; return false; }
+        if (t.SallyMinSustainedTicks < 1 || t.SallyMinSustainedTicks > 48)
+        { reason = $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"; return false; }
+        if (!IsNonNegativeFloat(t.TransferMaxPairDistance) || t.TransferMaxPairDistance > 1000f)
+        { reason = $"Thresholds.TransferMaxPairDistance invalid ({t.TransferMaxPairDistance}); [0, 1000]"; return false; }
+        if (!IsRatio(t.TransferCapacityWeight))
+        { reason = $"Thresholds.TransferCapacityWeight invalid ({t.TransferCapacityWeight}); [0, 1]"; return false; }
+        if (!IsNonNegativeFloat(t.TransferBranchToBranchPenalty) || t.TransferBranchToBranchPenalty > 100f)
+        { reason = $"Thresholds.TransferBranchToBranchPenalty invalid ({t.TransferBranchToBranchPenalty}); [0, 100]"; return false; }
+        if (!IsNonNegativeFloat(t.TransferCapitalSourcePenalty) || t.TransferCapitalSourcePenalty > 100f)
+        { reason = $"Thresholds.TransferCapitalSourcePenalty invalid ({t.TransferCapitalSourcePenalty}); [0, 100]"; return false; }
+        if (!IsRatio(t.AutoUpgradeMinTierRatio))
+        { reason = $"Thresholds.AutoUpgradeMinTierRatio invalid ({t.AutoUpgradeMinTierRatio}); [0, 1]"; return false; }
+        if (t.AutoUpgradeMinBudget < 0 || t.AutoUpgradeMinBudget > 50000)
+        { reason = $"Thresholds.AutoUpgradeMinBudget invalid ({t.AutoUpgradeMinBudget}); [0, 50000]"; return false; }
+        if (t.AutoUpgradeMaxPerCall < 1 || t.AutoUpgradeMaxPerCall > 500)
+        { reason = $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"; return false; }
+        if (t.RecruiterSeedGold < 0 || t.RecruiterSeedGold > 100000)
+        { reason = $"Thresholds.RecruiterSeedGold invalid ({t.RecruiterSeedGold}); [0, 100000]"; return false; }
+        if (t.SallySeedGold < 0 || t.SallySeedGold > 100000)
+        { reason = $"Thresholds.SallySeedGold invalid ({t.SallySeedGold}); [0, 100000]"; return false; }
+        if (t.RecruitmentCandidateBatchSize < 1 || t.RecruitmentCandidateBatchSize > 50)
+        { reason = $"Thresholds.RecruitmentCandidateBatchSize invalid ({t.RecruitmentCandidateBatchSize}); [1, 50]"; return false; }
+        if (!IsNonNegativeFloat(t.RecruitmentPlanMaxDistance) || t.RecruitmentPlanMaxDistance > 1000f)
+        { reason = $"Thresholds.RecruitmentPlanMaxDistance invalid ({t.RecruitmentPlanMaxDistance}); [0, 1000]"; return false; }
 
         reason = "";
         return true;
