@@ -1015,14 +1015,12 @@
           { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: '征兵队：首府最低驻军', hint: '派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭闸门，允许 0 兵裸车（默认 0）', min: 0, max: 10000, discrete: true },
           { key: 'PartyPrisonerCap', root: 'Thresholds', label: '通用：俘虏上限', hint: '所有 ST 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每 hour 随机踢出非英雄；0 = 关闭（默认 30）', min: 0, max: 10000, discrete: true },
           { key: 'StuckTeleportHours', root: 'Thresholds', label: '通用：卡死瞬移阈值（真实小时）', hint: '首次检测到卡死起累计真实小时，超过此值二段瞬移到 home.GatePosition；0 关闭（默认 24）', min: 0, max: 720, discrete: false, step: 1 },
-          { key: 'RecruitmentFallbackMaxDistance', root: 'Thresholds', label: '征兵：扩展搜索距离', hint: '第一轮 maxDistance=100 无候选时第二轮的搜索距离上限；0 关闭降级搜索（默认 200）', min: 0, max: 1000, discrete: false, step: 25 },
           // DeepSeek audit 2026-05-18 新增 (R1/R2/R3/R4/H7-H10)
           { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: '生命周期：空闲遣返小时', hint: '本mod队伍空闲此时长后强制遣返回 home（默认 24，必须 ≥ 1）', min: 1, max: 720, discrete: true },
           { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: '生命周期：空闲解散小时', hint: '本mod队伍空闲此时长后直接解散（默认 36，必须 ≥ 遣返小时）', min: 1, max: 720, discrete: true },
           { key: 'SallyDetectionRadius', root: 'Thresholds', label: '主动出击：搜索半径', hint: 'Sally 在城周围搜索敌方目标的 Vec2 半径（默认 50）', min: 10, max: 500, discrete: false, step: 5 },
           { key: 'SallyCooldownHours', root: 'Thresholds', label: '主动出击：冷却小时', hint: '上次出击结束（合并/销毁）后的冷却时长（默认 24）', min: 0, max: 168, discrete: false, step: 1 },
           { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: '主动出击：连续可见 tick 数', hint: '敌方需在视野内连续 N 个 hourly tick 才触发出击，避免一进检测圈就冲（默认 3）', min: 1, max: 48, discrete: true },
-          { key: 'TransferMaxPairDistance', root: 'Thresholds', label: '调拨：源-目的最大距离', hint: '调拨源城-目的城最大距离上限，超过此值不会被选；领土大时调到更高（默认 100）', min: 0, max: 1000, discrete: false, step: 10 },
           { key: 'TransferCapacityWeight', root: 'Thresholds', label: '调拨：容量评分权重', hint: 'score -= min(capacity, maxPerTask) × 此值；调大利好高容量源（默认 0.05）', min: 0, max: 1, discrete: false, step: 0.01 },
           { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: '调拨：branch→branch 惩罚', hint: '非首府间的调拨在评分中减去此值（值越大越避免）（默认 25）', min: 0, max: 100, discrete: false, step: 1 },
           { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: '调拨：首府出兵惩罚', hint: '从首府向 branch 调兵时评分加上此值（值越大越保留首府兵力）（默认 10）', min: 0, max: 100, discrete: false, step: 1 },
@@ -1032,7 +1030,13 @@
           // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，不再可配置；
           // 移除 RecruiterSeedGold / SallySeedGold spec。
           { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: '征兵：每轮候选数', hint: 'RankCandidates 每轮返回的候选村庄数（默认 8）', min: 1, max: 50, discrete: true },
-          { key: 'RecruitmentPlanMaxDistance', root: 'Thresholds', label: '征兵：第一轮搜索距离', hint: '第一轮的最大搜索距离；无候选时再扩展到 FallbackMaxDistance（默认 100）', min: 0, max: 1000, discrete: false, step: 10 },
+          // MCMF solver
+          { key: 'McmfHardPenalty', root: 'Thresholds', label: 'MCMF：硬不匹配罚分', hint: 'role 不符或 exact template 不在升级树上的硬罚（默认 1000）', min: 0, max: 100000, discrete: true },
+          { key: 'McmfTierPenalty', root: 'Thresholds', label: 'MCMF：Tier 差距罚分', hint: '每差 1 tier 的匹配罚分（默认 50）', min: 0, max: 100000, discrete: true },
+          { key: 'McmfLeniency', root: 'Thresholds', label: 'MCMF：缺口宽容度', hint: '缺口越大越降低匹配罚分；0=严格，1=最大宽容（默认 0.8）', min: 0, max: 1, discrete: false, step: 0.05 },
+          { key: 'McmfUnmetCost', root: 'Thresholds', label: 'MCMF：未满足成本', hint: '需求未满足 bypass 的 cost；低于极差路线时会选择暂不派遣（默认 2000）', min: 0, max: 100000, discrete: true },
+          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: 'MCMF：征兵队固定成本', hint: 'VillageNotableSource 派 recruiter 的固定成本（默认 100）', min: 0, max: 100000, discrete: true },
+          { key: 'McmfTransferOverhead', root: 'Thresholds', label: 'MCMF：调拨队固定成本', hint: 'GarrisonSurplusSource 派 transfer 的固定成本（默认 50）', min: 0, max: 100000, discrete: true },
           // ClanPatrol scheduler (H17)
           { key: 'EtaBufferHours', root: 'ClanPatrol', label: '巡逻调度：ETA 缓冲', hint: '预占时长 = ETA + 此值（默认 1.0）', min: 0, max: 168, discrete: false, step: 0.5 },
           { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: '巡逻调度：卡死超时', hint: '单段路超过此时长视为卡死，强制重选下一站（默认 12）', min: 1, max: 720, discrete: false, step: 1 },
@@ -1092,8 +1096,6 @@
                 spec('Thresholds', 'RecruiterReturnRecruitedCount'),
                 spec('Thresholds', 'RecruiterMinHomeGarrison'),
                 spec('Thresholds', 'RecruitmentCandidateBatchSize'),
-                spec('Thresholds', 'RecruitmentPlanMaxDistance'),
-                spec('Thresholds', 'RecruitmentFallbackMaxDistance'),
                 spec('ClanRecruiter', 'EtaBufferHours'),
                 spec('ClanRecruiter', 'MinVisitGapHours'),
                 spec('ClanRecruiter', 'DistanceWeightHoursPerTile'),
@@ -1116,7 +1118,6 @@
                 spec('Thresholds', 'TransferRatio'),
                 spec('Thresholds', 'TransferMaxTroopsPerTaskRatio'),
                 spec('Thresholds', 'TransferMinTroopRatio'),
-                spec('Thresholds', 'TransferMaxPairDistance'),
                 spec('Thresholds', 'TransferCapacityWeight'),
                 spec('Thresholds', 'TransferBranchToBranchPenalty'),
                 spec('Thresholds', 'TransferCapitalSourcePenalty'),
@@ -1133,6 +1134,19 @@
                 spec('Thresholds', 'SallyExtractionRatio'),
                 spec('Thresholds', 'SallyTargetPartySizeMultiplier'),
                 spec('Thresholds', 'SallyCreateMinPartyCount'),
+              ]),
+            },
+            {
+              key: 'mcmf',
+              label: 'MCMF 调度',
+              hint: '供需图调度器的匹配罚分、未满足成本和派队固定成本。',
+              specs: clean([
+                spec('Thresholds', 'McmfHardPenalty'),
+                spec('Thresholds', 'McmfTierPenalty'),
+                spec('Thresholds', 'McmfLeniency'),
+                spec('Thresholds', 'McmfUnmetCost'),
+                spec('Thresholds', 'McmfRecruiterOverhead'),
+                spec('Thresholds', 'McmfTransferOverhead'),
               ]),
             },
             {

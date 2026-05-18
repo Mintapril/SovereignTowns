@@ -40,6 +40,7 @@ public sealed class TransferDispatcher
             var source = task.Source;
             var destination = task.Destination;
             var requested = task.RequestedTroops;
+            var role = task.Role;
 
             if (source == null || destination == null)
             {
@@ -93,11 +94,17 @@ public sealed class TransferDispatcher
 
             var transferRoster = TroopRoster.CreateDummyTroopRoster();
             int extracted = TroopTransferHelper.TransferFromGarrison(
-                sourceRoster, transferRoster, requested, TroopTransferHelper.SortStrategy.LowestTierFirst);
+                sourceRoster,
+                transferRoster,
+                requested,
+                TroopTransferHelper.SortStrategy.LowestTierFirst,
+                role.HasValue
+                    ? character => GenericTroopMatcher.GetRole(character) == role.Value
+                    : null);
 
             if (extracted <= 0)
             {
-                Logger.Warn($"  TransferDispatcher: '{source.Name}' extracted 0 troops (req={requested}, available={totalAvailable})");
+                Logger.Warn($"  TransferDispatcher: '{source.Name}' extracted 0 troops (req={requested}, role={role?.ToString() ?? "Any"}, available={totalAvailable})");
                 return false;
             }
 
@@ -130,10 +137,10 @@ public sealed class TransferDispatcher
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchTransfer",
-                inputSummary: $"source={source.StringId} dest={destination.StringId} requested={requested} extracted={extracted} priority={task.Priority:F2} reason={task.Reason}",
-                decisionJson: $"{{\"source\":\"{source.StringId}\",\"dest\":\"{destination.StringId}\",\"requested\":{requested},\"extracted\":{extracted},\"priority\":{task.Priority:F2}}}",
+                inputSummary: $"source={source.StringId} dest={destination.StringId} requested={requested} extracted={extracted} role={role?.ToString() ?? "Any"} priority={task.Priority:F2} reason={task.Reason}",
+                decisionJson: $"{{\"source\":\"{source.StringId}\",\"dest\":\"{destination.StringId}\",\"requested\":{requested},\"extracted\":{extracted},\"role\":\"{role?.ToString() ?? "Any"}\",\"priority\":{task.Priority:F2}}}",
                 accepted: true);
-            Logger.Info($"  TransferDispatcher: 派出调拨队 '{source.Name}' -> '{destination.Name}' (兵员={extracted}, priority={task.Priority:F1})");
+            Logger.Info($"  TransferDispatcher: 派出调拨队 '{source.Name}' -> '{destination.Name}' (兵员={extracted}, role={role?.ToString() ?? "Any"}, priority={task.Priority:F1})");
             return true;
         }
         catch (Exception ex)

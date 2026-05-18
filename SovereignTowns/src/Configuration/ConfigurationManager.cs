@@ -23,7 +23,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 17;
+    public const int CurrentConfigVersion = 18;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -758,10 +758,6 @@ public static class ConfigurationManager
         { reason = $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"; return false; }
         if (t.StuckTeleportHours > 720f)
         { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 720"; return false; }
-        if (!IsNonNegativeFloat(t.RecruitmentFallbackMaxDistance))
-        { reason = $"Thresholds.RecruitmentFallbackMaxDistance invalid ({t.RecruitmentFallbackMaxDistance}); must be >= 0"; return false; }
-        if (t.RecruitmentFallbackMaxDistance > 1000f)
-        { reason = $"Thresholds.RecruitmentFallbackMaxDistance {t.RecruitmentFallbackMaxDistance} 超过上限 1000"; return false; }
         if (!IsNonNegativeFloat(t.FoodReplenishMinDays))
         { reason = $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"; return false; }
         if (t.FoodReplenishMinDays > 365f)
@@ -784,8 +780,6 @@ public static class ConfigurationManager
         { reason = $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"; return false; }
         if (t.SallyMinSustainedTicks < 1 || t.SallyMinSustainedTicks > 48)
         { reason = $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"; return false; }
-        if (!IsNonNegativeFloat(t.TransferMaxPairDistance) || t.TransferMaxPairDistance > 1000f)
-        { reason = $"Thresholds.TransferMaxPairDistance invalid ({t.TransferMaxPairDistance}); [0, 1000]"; return false; }
         if (!IsRatio(t.TransferCapacityWeight))
         { reason = $"Thresholds.TransferCapacityWeight invalid ({t.TransferCapacityWeight}); [0, 1]"; return false; }
         if (!IsNonNegativeFloat(t.TransferBranchToBranchPenalty) || t.TransferBranchToBranchPenalty > 100f)
@@ -801,8 +795,18 @@ public static class ConfigurationManager
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruitmentCandidateBatchSize < 1 || t.RecruitmentCandidateBatchSize > 50)
         { reason = $"Thresholds.RecruitmentCandidateBatchSize invalid ({t.RecruitmentCandidateBatchSize}); [1, 50]"; return false; }
-        if (!IsNonNegativeFloat(t.RecruitmentPlanMaxDistance) || t.RecruitmentPlanMaxDistance > 1000f)
-        { reason = $"Thresholds.RecruitmentPlanMaxDistance invalid ({t.RecruitmentPlanMaxDistance}); [0, 1000]"; return false; }
+        if (t.McmfHardPenalty < 0 || t.McmfHardPenalty > 100000)
+        { reason = $"Thresholds.McmfHardPenalty invalid ({t.McmfHardPenalty}); [0, 100000]"; return false; }
+        if (t.McmfTierPenalty < 0 || t.McmfTierPenalty > 100000)
+        { reason = $"Thresholds.McmfTierPenalty invalid ({t.McmfTierPenalty}); [0, 100000]"; return false; }
+        if (!IsRatio(t.McmfLeniency))
+        { reason = $"Thresholds.McmfLeniency invalid ({t.McmfLeniency}); [0, 1]"; return false; }
+        if (t.McmfUnmetCost < 0 || t.McmfUnmetCost > 100000)
+        { reason = $"Thresholds.McmfUnmetCost invalid ({t.McmfUnmetCost}); [0, 100000]"; return false; }
+        if (t.McmfRecruiterOverhead < 0 || t.McmfRecruiterOverhead > 100000)
+        { reason = $"Thresholds.McmfRecruiterOverhead invalid ({t.McmfRecruiterOverhead}); [0, 100000]"; return false; }
+        if (t.McmfTransferOverhead < 0 || t.McmfTransferOverhead > 100000)
+        { reason = $"Thresholds.McmfTransferOverhead invalid ({t.McmfTransferOverhead}); [0, 100000]"; return false; }
 
         reason = "";
         return true;

@@ -1,61 +1,24 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
-using SovereignTowns.Configuration;
-using SovereignTowns.Evaluators;
-using SovereignTowns.Parties;
 using SovereignTowns.Recruitment;
 using SovereignTowns.Transfer;
-using SovereignTowns.Upgrades;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
-using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 
 namespace SovereignTowns.Managers;
 
 /// <summary>
 /// 首府级驻军后勤调度器。
-/// 每日按 clan 汇总首府与所有自有城镇/城堡的缺口、富余和在途调拨，然后由首府统一决定：
-/// 1) 首府本城 notable 招募；
-/// 2) 是否从首府派出征兵队；
-/// 3) 由哪些自有 settlement 向缺兵目标调拨兵力。
+/// 每日按 clan 构造 MCMF 供需图，然后把 flow 解码为执行层 instruction。
+/// 该类只负责求解和派发；siege、food、party cap、扣款、rollback 仍由各 dispatcher 自己校验。
 /// </summary>
 public sealed class CapitalLogisticsManager
 {
-    // 阈值改读 PartyThresholds（玩家可在网页面板调）。人数阈值均按实际驻军比例派生。
-    internal static float CriticalProjectedRatio
-        => ConfigurationManager.Current?.Thresholds?.TransferCriticalProjectedRatio ?? 0.24f;
-    private static float TransferRatio
-        => ConfigurationManager.Current?.Thresholds?.TransferRatio ?? 0.30f;
-    private static float MaxTroopsPerTaskRatio
-        => ConfigurationManager.Current?.Thresholds?.TransferMaxTroopsPerTaskRatio ?? 0.67f;
-    private static float MinTransferTroopRatio
-        => ConfigurationManager.Current?.Thresholds?.TransferMinTroopRatio ?? 0.13f;
-    private static float MinRecruitmentDemandRatio
-        => ConfigurationManager.Current?.Thresholds?.RecruitmentMinDemandRatio ?? 0.07f;
-
-    // R3 (DeepSeek audit 2026-05-18)：调拨评分常数改为 PartyThresholds 配置。
-    private static float MaxPairDistance
-        => ConfigurationManager.Current?.Thresholds?.TransferMaxPairDistance ?? 100f;
-    private static float TransferCapacityWeight
-        => ConfigurationManager.Current?.Thresholds?.TransferCapacityWeight ?? 0.05f;
-    private static float TransferBranchToBranchPenalty
-        => ConfigurationManager.Current?.Thresholds?.TransferBranchToBranchPenalty ?? 25f;
-    private static float TransferCapitalSourcePenalty
-        => ConfigurationManager.Current?.Thresholds?.TransferCapitalSourcePenalty ?? 10f;
-
-    // R4：自动升级触发参数改为 PartyThresholds 配置。
-    private static float AutoUpgradeMinTierRatio
-        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMinTierRatio ?? 0.30f;
-    private static int AutoUpgradeMinBudget
-        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMinBudget ?? 500;
-    private static int AutoUpgradeMaxPerCall
-        => ConfigurationManager.Current?.Thresholds?.AutoUpgradeMaxPerCall ?? 20;
-
     private readonly CapitalRegistry _capitalRegistry;
     private readonly RecruitmentDispatcher _recruitmentDispatcher;
     private readonly TransferDispatcher _transferDispatcher;
@@ -113,445 +76,181 @@ public sealed class CapitalLogisticsManager
             return;
         }
 
-        var nodes = BuildNodes(manager, capitalSettlement);
-        if (nodes.Count == 0)
+        var result = RunMcmf(manager, capitalSettlement);
+        if (result.SettlementCount == 0)
         {
             Logger.Debug($"CapitalLogisticsManager: clan={manager.OwnerClan?.StringId} has no owned town/castle nodes");
             return;
         }
 
-        AccountInFlightParties(nodes, manager.OwnerClan);
-        var capitalNode = nodes.FirstOrDefault(n => n.IsCapital);
-        if (capitalNode == null)
-        {
-            Logger.Warn($"CapitalLogisticsManager: capital '{capitalSettlement.Name}' not found in owned nodes");
-            return;
-        }
-
-        LogClanSnapshot(manager, nodes);
-        TryUpgradeCapital(capitalNode);
-        CoordinateRecruitment(capitalNode, nodes);
-
-        // 原地招募/派征兵队可能改变首府驻军，调拨前重建一次快照。
-        nodes = BuildNodes(manager, capitalSettlement);
-        AccountInFlightParties(nodes, manager.OwnerClan);
-        capitalNode = nodes.FirstOrDefault(n => n.IsCapital);
-        if (capitalNode == null) return;
-
-        DispatchTransfers(manager, capitalNode, nodes);
+        ExecuteMcmfInstructions(manager, result);
     }
 
-    private static List<LogisticsNode> BuildNodes(CapitalManager manager, Settlement capitalSettlement)
+    private static SupplyDemandGraphResult RunMcmf(CapitalManager manager, Settlement capitalSettlement)
     {
-        var result = new List<LogisticsNode>();
         try
         {
-            foreach (var town in Town.AllTowns)
-            {
-                if (town == null) continue;
-                if (!(town.IsTown || town.IsCastle)) continue;
-                // OwnerClan == null 时（刚被攻陷未交接的极短窗口）`!= manager.OwnerClan` 不能区分
-                // "本氏族" 与 "无主"——必须显式排除无主，避免被当成本氏族城拉进 nodes。
-                if (town.OwnerClan == null || town.OwnerClan != manager.OwnerClan) continue;
-
-                var settlement = town.Settlement;
-                if (settlement == null || !settlement.IsActive) continue;
-
-                var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
-                var risk = RiskAssessmentService.Assess(settlement);
-                int current = town.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
-                bool isCapital = settlement == capitalSettlement;
-                int desired = ComputeDesiredTarget(rule, risk);
-
-                result.Add(new LogisticsNode(town, settlement, rule, risk, current, desired, isCapital));
-            }
+            return SupplyDemandGraph.Run(manager, capitalSettlement);
         }
         catch (Exception ex)
         {
-            Logger.Error($"CapitalLogisticsManager.BuildNodes failed (clan={manager.OwnerClan?.StringId})", ex);
+            Logger.Error($"CapitalLogisticsManager.MCMF failed (clan={manager.OwnerClan?.StringId})", ex);
+            return new SupplyDemandGraphResult(0, 0, 0, 0, 0, new List<DispatchInstruction>());
         }
-        return result;
     }
 
-    private static int ComputeDesiredTarget(TownGarrisonRule rule, RiskAssessment risk)
+    private void ExecuteMcmfInstructions(CapitalManager manager, SupplyDemandGraphResult result)
     {
-        float multiplier = risk.Level >= RiskLevel.High
-            ? rule.WartimeMultiplier
-            : rule.PeacetimeMultiplier;
-        int scaled = (int)Math.Round(rule.TargetTotalCount * multiplier);
-        return Math.Max(1, scaled);
-    }
-
-    private static void AccountInFlightParties(List<LogisticsNode> nodes, Clan? ownerClan)
-    {
-        // 直接收 manager.OwnerClan 作为权威氏族过滤源，避免从 nodes[0].Settlement.OwnerClan 反推
-        // ——刚易主一瞬间该字段可能为 null 或已指向新主人，会让跨氏族 in-flight 错误计入。
-        if (ownerClan == null) return;
-
-        var bySettlement = new Dictionary<Settlement, LogisticsNode>();
-        foreach (var node in nodes)
-        {
-            if (!bySettlement.ContainsKey(node.Settlement))
-                bySettlement[node.Settlement] = node;
-        }
+        int accepted = 0;
+        int skipped = 0;
 
         try
         {
-            var parties = MobileParty.AllCustomParties;
-            if (parties == null) return;
+            var inPlaceInstructions = new List<InPlaceRecruitInstruction>();
+            var recruiterInstructions = new List<RecruiterPartyInstruction>();
 
-            foreach (var party in parties)
+            foreach (var instruction in result.Instructions)
             {
-                if (party == null || !party.IsActive) continue;
-                var partyClan = ResolvePartyClan(party);
-                if (partyClan == null || partyClan != ownerClan) continue;
-                int men = party.MemberRoster?.TotalManCount ?? 0;
-                if (men <= 0) continue;
-
-                if (party.PartyComponent is StTransferPartyComponent transfer)
+                if (instruction == null || instruction.Count <= 0)
                 {
-                    var source = transfer.Source;
-                    var destination = transfer.Destination;
-                    var target = party.TargetSettlement;
-
-                    if (source != null
-                        && destination != null
-                        && target == source
-                        && bySettlement.TryGetValue(source, out var returningSource))
-                    {
-                        returningSource.Inbound += men;
-                        continue;
-                    }
-
-                    if (source != null && bySettlement.TryGetValue(source, out var sourceNode))
-                    {
-                        sourceNode.Outbound += men;
-                    }
-                    if (destination != null && bySettlement.TryGetValue(destination, out var destNode))
-                    {
-                        destNode.Inbound += men;
-                    }
+                    skipped++;
+                    continue;
                 }
-                else if (party.PartyComponent is StRecruiterPartyComponent recruiter)
+
+                if (instruction is InPlaceRecruitInstruction inPlace)
                 {
-                    // R6 (DeepSeek audit 2026-05-18)：用 OrNull 防止损坏存档下 getter 抛 InvalidOperationException
-                    // 击穿外层 catch、丢失整个 AccountInFlightParties 评估。
-                    var home = recruiter.HomeSettlementOrNull;
-                    if (home != null && bySettlement.TryGetValue(home, out var homeNode))
-                    {
-                        homeNode.Inbound += men;
-                    }
+                    inPlaceInstructions.Add(inPlace);
+                    continue;
                 }
+                if (instruction is RecruiterPartyInstruction recruiter)
+                {
+                    recruiterInstructions.Add(recruiter);
+                    continue;
+                }
+
+                bool ok = ExecuteMcmfInstruction(manager, instruction);
+                if (ok) accepted++;
+                else skipped++;
             }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("CapitalLogisticsManager.AccountInFlightParties failed", ex);
-        }
-    }
 
-    private static Clan? ResolvePartyClan(MobileParty party)
-    {
-        try
-        {
-            if (party.ActualClan != null) return party.ActualClan;
-            if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
-            if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlementOrNull?.OwnerClan;
-        }
-        catch
-        {
-            return null;
-        }
-        return null;
-    }
+            foreach (var group in inPlaceInstructions.GroupBy(x => x.Settlement))
+            {
+                var first = group.First();
+                int count = group.Sum(x => x.Count);
+                bool ok = ExecuteInPlaceRecruitment(new InPlaceRecruitInstruction(first.Settlement, first.Role, count));
+                if (ok) accepted++;
+                else skipped++;
+            }
 
-    private static void LogClanSnapshot(CapitalManager manager, List<LogisticsNode> nodes)
-    {
-        try
-        {
-            int demand = nodes.Sum(n => n.Demand);
-            int criticalDemand = nodes.Sum(n => n.CriticalDemand);
-            int capacity = nodes.Sum(n => n.TransferCapacity);
-            int inbound = nodes.Sum(n => n.Inbound);
-            int outbound = nodes.Sum(n => n.Outbound);
+            foreach (var group in recruiterInstructions.GroupBy(x => new { x.Town, x.ReturnSettlement }))
+            {
+                var first = group.First();
+                int count = group.Sum(x => x.Count);
+                bool ok = ExecuteRecruiterDispatch(manager, new RecruiterPartyInstruction(first.Town, first.ReturnSettlement, first.Role, count));
+                if (ok) accepted++;
+                else skipped++;
+            }
 
             Logger.Info(
-                $"CapitalLogistics clan={manager.OwnerClan?.StringId}: nodes={nodes.Count} " +
-                $"demand={demand} critical={criticalDemand} capacity={capacity} inbound={inbound} outbound={outbound}");
-
-            foreach (var node in nodes.OrderByDescending(n => n.IsCapital).ThenByDescending(n => n.Priority))
-            {
-                Logger.Info(
-                    $"  node '{node.Settlement.Name}' capital={node.IsCapital} risk={node.Risk.Level} " +
-                    $"current={node.CurrentMen} inbound={node.Inbound} outbound={node.Outbound} projected={node.ProjectedMen} " +
-                    $"desired={node.DesiredTarget} demand={node.Demand} capacity={node.TransferCapacity}");
-            }
+                $"CapitalLogistics MCMF execution: clan={manager.OwnerClan?.StringId} " +
+                $"accepted={accepted} skipped={skipped} unmet={result.Unmet}");
         }
         catch (Exception ex)
         {
-            Logger.Error("CapitalLogisticsManager.LogClanSnapshot failed", ex);
+            Logger.Error($"CapitalLogisticsManager.ExecuteMcmfInstructions failed (clan={manager.OwnerClan?.StringId})", ex);
         }
     }
 
-    private static void TryUpgradeCapital(LogisticsNode capitalNode)
+    private bool ExecuteMcmfInstruction(CapitalManager manager, DispatchInstruction instruction)
     {
         try
         {
-            var rule = capitalNode.Rule;
-            if (!rule.AllowAutoUpgrade) return;
-
-            var snap = TroopCompositionEvaluator.Snapshot(capitalNode.Town.GarrisonParty?.MemberRoster);
-            if (snap.Total <= 0) return;
-            // R4 (DeepSeek audit 2026-05-18)：触发阈值与上限改读 PartyThresholds。
-            if (snap.Tier1To2 < snap.Total * AutoUpgradeMinTierRatio) return;
-
-            int budgetCap = Math.Max(rule.BudgetLimit / 4, AutoUpgradeMinBudget);
-            var report = TroopUpgradeService.TryUpgradeGarrison(capitalNode.Town, budgetCap, maxUpgradesPerCall: AutoUpgradeMaxPerCall);
-            if (report.DidWork)
+            switch (instruction)
             {
-                Logger.Info($"CapitalLogistics: upgraded capital '{capitalNode.Settlement.Name}' units={report.UpgradedUnits}");
+                case InPlaceRecruitInstruction x:
+                    return ExecuteInPlaceRecruitment(x);
+
+                case RecruiterPartyInstruction x:
+                    return ExecuteRecruiterDispatch(manager, x);
+
+                case TransferPartyInstruction x:
+                    return ExecuteTransferDispatch(manager, x);
+
+                case PrisonerConvertInstruction x:
+                    Logger.Debug(
+                        $"CapitalLogistics MCMF: prisoner instruction skipped pending instruction-scoped prisoner conversion " +
+                        $"settlement={x.Settlement?.StringId} role={x.Role} count={x.Count}");
+                    return false;
+
+                default:
+                    Logger.Warn($"CapitalLogistics MCMF: unknown instruction '{instruction.GetType().Name}'");
+                    return false;
             }
         }
         catch (Exception ex)
         {
-            Logger.Error($"CapitalLogisticsManager.TryUpgradeCapital failed for '{capitalNode.Settlement?.Name}'", ex);
+            Logger.Error($"CapitalLogisticsManager.ExecuteMcmfInstruction failed ({instruction?.GetType().Name})", ex);
+            return false;
         }
     }
 
-    private void CoordinateRecruitment(LogisticsNode capitalNode, List<LogisticsNode> nodes)
+    private static bool ExecuteInPlaceRecruitment(InPlaceRecruitInstruction instruction)
     {
-        try
+        var settlement = instruction.Settlement;
+        var garrison = settlement?.Town?.GarrisonParty?.MemberRoster;
+        int current = garrison?.TotalManCount ?? 0;
+        string reason = $"mcmf in-place role={instruction.Role} count={instruction.Count}";
+        int recruited = CapitalInPlaceRecruiter.RecruitFromCapitalNotables(
+            settlement,
+            current + instruction.Count,
+            reason);
+        if (recruited > 0)
         {
-            if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment)
-            {
-                Logger.Debug("CapitalLogistics recruitment skipped: AutoRecruitment disabled");
-                return;
-            }
-
-            int totalDemand = nodes.Sum(n => n.Demand);
-            int branchDemand = nodes.Where(n => !n.IsCapital).Sum(n => n.Demand);
-            int criticalDemand = nodes.Sum(n => n.CriticalDemand);
-            if (totalDemand <= 0 && criticalDemand <= 0) return;
-
-            int stockpileForBranches = Math.Min(branchDemand, Math.Max(0, capitalNode.Rule.TargetTotalCount));
-            int desiredCapitalStock = Math.Max(
-                capitalNode.DesiredTarget,
-                capitalNode.DesiredTarget + stockpileForBranches);
-
-            string reason =
-                $"capital logistics totalDemand={totalDemand} branchDemand={branchDemand} criticalDemand={criticalDemand}";
-
-            int inPlace = CapitalInPlaceRecruiter.RecruitFromCapitalNotables(
-                capitalNode.Settlement,
-                desiredCapitalStock,
-                reason);
-
-            if (inPlace > 0)
-            {
-                Logger.Info($"CapitalLogistics: capital in-place recruited {inPlace} troop(s) for '{capitalNode.Settlement.Name}'");
-            }
-
-            int remainingDemand = Math.Max(0, totalDemand - inPlace);
-            int remainingCriticalDemand = Math.Max(0, criticalDemand - inPlace);
-            int recruitmentDemandThreshold = Math.Max(
-                1,
-                GarrisonThresholdMath.CountFromRatio(capitalNode.CurrentMen, MinRecruitmentDemandRatio, minimumWhenPositive: 1));
-            if (remainingDemand >= recruitmentDemandThreshold || remainingCriticalDemand > 0)
-            {
-                _recruitmentDispatcher.TryDispatchRecruiter(capitalNode.Town, Math.Max(remainingDemand, remainingCriticalDemand), reason);
-            }
+            Logger.Info(
+                $"CapitalLogistics MCMF: in-place recruited {recruited} troop(s) " +
+                $"settlement='{settlement?.Name}' role={instruction.Role} requested={instruction.Count}");
+            return true;
         }
-        catch (Exception ex)
-        {
-            Logger.Error($"CapitalLogisticsManager.CoordinateRecruitment failed for '{capitalNode.Settlement?.Name}'", ex);
-        }
+        return false;
     }
 
-    private void DispatchTransfers(CapitalManager manager, LogisticsNode capitalNode, List<LogisticsNode> nodes)
+    private bool ExecuteRecruiterDispatch(CapitalManager manager, RecruiterPartyInstruction instruction)
     {
-        try
+        var capital = manager.GetCapital();
+        if (capital == null || instruction.Town != capital || instruction.ReturnSettlement != capital.Settlement)
         {
-            if (!ConfigurationManager.Current.EnabledFeatures.TroopTransfers)
-            {
-                Logger.Debug("CapitalLogistics transfers skipped: TroopTransfers disabled");
-                return;
-            }
-
-            var remainingCapacity = new Dictionary<Settlement, int>();
-            var remainingDemand = new Dictionary<Settlement, int>();
-            foreach (var node in nodes)
-            {
-                remainingCapacity[node.Settlement] = node.TransferCapacity;
-                remainingDemand[node.Settlement] = node.Demand;
-            }
-
-            var demands = nodes
-                .Where(n => n.Demand > 0 && !n.Settlement.IsUnderSiege)
-                .OrderByDescending(n => n.Priority)
-                .ThenBy(n => Distance(capitalNode.Settlement, n.Settlement))
-                .ToList();
-
-            int dispatched = 0;
-            foreach (var dest in demands)
-            {
-                int guard = 0;
-                while (remainingDemand.TryGetValue(dest.Settlement, out var demand) && demand > 0 && guard++ < nodes.Count)
-                {
-                    var source = FindBestSource(dest, nodes, remainingCapacity, capitalNode);
-                    if (source == null) break;
-
-                    int capacity = remainingCapacity[source.Settlement];
-                    int maxTroopsPerTask = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MaxTroopsPerTaskRatio, minimumWhenPositive: 1);
-                    if (maxTroopsPerTask <= 0) break;
-                    int byRatio = Math.Max(1, (int)Math.Round(source.CurrentMen * TransferRatio));
-                    int amount = Math.Min(maxTroopsPerTask, Math.Min(demand, Math.Min(capacity, byRatio)));
-                    if (amount <= 0) break;
-                    int minTransferTroops = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MinTransferTroopRatio, minimumWhenPositive: 0);
-                    if (amount < minTransferTroops && dest.CriticalDemand <= 0)
-                    {
-                        Logger.Debug(
-                            $"CapitalLogistics: skip trivial transfer src='{source.Settlement.Name}' dest='{dest.Settlement.Name}' amount={amount} min={minTransferTroops}");
-                        break;
-                    }
-
-                    string routeKind = source.IsCapital || dest.IsCapital ? "capital-coordinated" : "branch-to-branch";
-                    string reason =
-                        $"{routeKind} clan={manager.OwnerClan?.StringId} " +
-                        $"srcCurrent={source.CurrentMen} srcCapacity={capacity} destDemand={demand} " +
-                        $"destCritical={dest.CriticalDemand} destRisk={dest.Risk.Level}";
-
-                    var task = new TransferTask(source.Settlement, dest.Settlement, amount, dest.Priority, reason);
-                    bool ok = _transferDispatcher.TryDispatchTransfer(task);
-                    if (ok)
-                    {
-                        remainingCapacity[source.Settlement] = Math.Max(0, capacity - amount);
-                        remainingDemand[dest.Settlement] = Math.Max(0, demand - amount);
-                        dispatched++;
-
-                        DecisionAuditLogger.LogRule(
-                            decisionType: "CapitalLogisticsTransfer",
-                            inputSummary: $"clan={manager.OwnerClan?.StringId} src={source.Settlement.StringId} dest={dest.Settlement.StringId} amount={amount}",
-                            decisionJson: $"{{\"src\":\"{source.Settlement.StringId}\",\"dest\":\"{dest.Settlement.StringId}\",\"amount\":{amount},\"priority\":{dest.Priority},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
-                            accepted: true);
-                    }
-                    else
-                    {
-                        remainingCapacity[source.Settlement] = 0;
-                    }
-                }
-            }
-
-            Logger.Info($"CapitalLogistics transfers: clan={manager.OwnerClan?.StringId} dispatched={dispatched}");
+            Logger.Debug(
+                $"CapitalLogistics MCMF: recruiter skipped because current dispatcher only supports capital dispatch " +
+                $"town={instruction.Town?.Settlement?.StringId} return={instruction.ReturnSettlement?.StringId}");
+            return false;
         }
-        catch (Exception ex)
-        {
-            Logger.Error($"CapitalLogisticsManager.DispatchTransfers failed (clan={manager.OwnerClan?.StringId})", ex);
-        }
+
+        string reason =
+            $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={instruction.Role} count={instruction.Count}";
+        return _recruitmentDispatcher.TryDispatchRecruiter(instruction.Town, instruction.Count, reason);
     }
 
-    private static LogisticsNode? FindBestSource(
-        LogisticsNode destination,
-        List<LogisticsNode> nodes,
-        Dictionary<Settlement, int> remainingCapacity,
-        LogisticsNode capitalNode)
+    private bool ExecuteTransferDispatch(CapitalManager manager, TransferPartyInstruction instruction)
     {
-        LogisticsNode? best = null;
-        float bestScore = float.MaxValue;
-
-        foreach (var source in nodes)
+        string reason =
+            $"mcmf transfer clan={manager.OwnerClan?.StringId} role={instruction.Role} count={instruction.Count}";
+        var task = new TransferTask(
+            instruction.Source,
+            instruction.Destination,
+            instruction.Count,
+            instruction.Count,
+            reason,
+            instruction.Role);
+        bool ok = _transferDispatcher.TryDispatchTransfer(task);
+        if (ok)
         {
-            if (source.Settlement == destination.Settlement) continue;
-            if (!remainingCapacity.TryGetValue(source.Settlement, out var capacity) || capacity <= 0) continue;
-            if (source.Settlement.OwnerClan != destination.Settlement.OwnerClan) continue;
-            if (source.Settlement.MapFaction != destination.Settlement.MapFaction) continue;
-            if (source.Settlement.IsUnderSiege) continue;
-            if (source.Risk.Level >= RiskLevel.High) continue;
-
-            if (destination.IsCapital && source.IsCapital) continue;
-
-            float distance = Distance(source.Settlement, destination.Settlement);
-            if (distance > MaxPairDistance) continue;
-
-            int maxTroopsPerTask = GarrisonThresholdMath.CountFromRatio(source.CurrentMen, MaxTroopsPerTaskRatio, minimumWhenPositive: 1);
-            float score = distance - Math.Min(capacity, maxTroopsPerTask) * TransferCapacityWeight;
-
-            if (!destination.IsCapital)
-            {
-                if (!source.IsCapital)
-                {
-                    score -= TransferBranchToBranchPenalty;
-                }
-                else if (source.Settlement == capitalNode.Settlement)
-                {
-                    score += TransferCapitalSourcePenalty;
-                }
-            }
-
-            if (score < bestScore)
-            {
-                best = source;
-                bestScore = score;
-            }
+            DecisionAuditLogger.LogRule(
+                decisionType: "CapitalLogisticsMcmfTransfer",
+                inputSummary: $"clan={manager.OwnerClan?.StringId} src={instruction.Source.StringId} dest={instruction.Destination.StringId} role={instruction.Role} amount={instruction.Count}",
+                decisionJson: $"{{\"src\":\"{instruction.Source.StringId}\",\"dest\":\"{instruction.Destination.StringId}\",\"role\":\"{instruction.Role}\",\"amount\":{instruction.Count}}}",
+                accepted: true);
         }
-
-        return best;
+        return ok;
     }
 
-    private static float Distance(Settlement a, Settlement b)
-    {
-        try { return (a.GetPosition2D - b.GetPosition2D).Length; }
-        catch { return float.MaxValue; }
-    }
-
-    private sealed class LogisticsNode
-    {
-        public LogisticsNode(
-            Town town,
-            Settlement settlement,
-            TownGarrisonRule rule,
-            RiskAssessment risk,
-            int currentMen,
-            int desiredTarget,
-            bool isCapital)
-        {
-            Town = town;
-            Settlement = settlement;
-            Rule = rule;
-            Risk = risk;
-            CurrentMen = currentMen;
-            DesiredTarget = desiredTarget;
-            IsCapital = isCapital;
-        }
-
-        public Town Town { get; }
-        public Settlement Settlement { get; }
-        public TownGarrisonRule Rule { get; }
-        public RiskAssessment Risk { get; }
-        public int CurrentMen { get; }
-        public int DesiredTarget { get; }
-        public bool IsCapital { get; }
-        public int Inbound { get; set; }
-        public int Outbound { get; set; }
-
-        public int ProjectedMen => Math.Max(0, CurrentMen + Inbound);
-
-        public int CriticalThreshold =>
-            CriticalProjectedRatio <= 0f
-                ? 0
-                : Math.Max(1, GarrisonThresholdMath.CountFromRatio(DesiredTarget, CriticalProjectedRatio, minimumWhenPositive: 1));
-
-        public int CriticalDemand => Math.Max(0, CriticalThreshold - ProjectedMen);
-
-        public int Demand => Math.Max(0, DesiredTarget - ProjectedMen);
-
-        public int Reserve => DesiredTarget;
-
-        public int TransferCapacity => Math.Max(0, CurrentMen - Reserve);
-
-        public int Priority =>
-            (CriticalDemand > 0 ? 1000 : 0)
-            + ((int)Risk.Level * 100)
-            + Demand
-            + CriticalDemand * 2;
-    }
 }

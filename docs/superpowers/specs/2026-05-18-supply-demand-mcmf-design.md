@@ -52,14 +52,14 @@ mod 的核心功能 = **管理多个 settlement 的兵力组成**，涉及四个
 |---|---|---|
 | Q1 | 算法选型 | **MCMF（最小费用最大流）**，独立算法库 |
 | Q2 | 招兵与调兵合并 | **合并到同一次 MCMF Solve**（四种 source 统一抽象） |
-| Q3 | 兵种粒度 | **A2 — 按 role 分桶**（infantry / archer / cavalry，3 桶）；不再细到 exact stringId 维度 |
+| Q3 | 兵种粒度 | **A2 — 按现有 `GenericTroopRole` 分桶**（`Infantry` / `Ranged` / `Cavalry` / `HorseArcher`，4 桶）；不再细到 exact stringId 维度 |
 | Q4 | exact template 模式去留 | **保留**，但只用于 `matchPenalty` 函数中的 lookup（判断 bucket 是否在 template 的升级树上） |
 | Q5 | 升级路径 | **保持独立 hourly tick，只在首府升级**。`GarrisonXpInjector` 不动。`CapitalLogisticsManager.TryUpgradeCapital` 删除（不再由 daily 调度触发） |
 | Q6 | 调兵物理路径 | **任意 friendly settlement 间均可**（"首府中心"= 决策中心，不是物理起点）。与现有 `DispatchTransfers` 行为一致 |
 | Q7 | recruiter 派遣聚合 | **一个 town 一个 recruiter**：`VillageNotableSource(town)` 节点 capacity 聚合该 town 下所有村庄 notable，派遣时 recruiter 跑该 town 的所有村庄（不跨 town） |
 | Q8 | 软化 rule 的权重 | **进 `GlobalConfig.Thresholds`** 作为可调参数：`W_TIER`、`W_HARD`、`LENIENCY`、`U_UNMET`、`RecruiterOverhead`、`TransferOverhead` |
 | Q9 | dispatcher 校验失败处理 | **静默 skip，下个 daily tick 重算**。不做熔断（YAGNI，后续按需加） |
-| Q10 | 迭代提升机制 | **castle 现有兵也是 source**（同 settlement 既是 demand 又是 source）。MCMF 自然在 capital 有更优兵时把 castle 的"将就兵"流回首府升级 |
+| Q10 | 迭代提升机制 | **castle 现有低质兵可作为 replacement source**。但不能只靠普通 demand/surplus 自然发生；必须显式建模质量缺口，或采用两阶段 replacement |
 | Q11 | **已知 trade-off** | 「只能在首府升级」约束下，castle 收到的低 tier 兵不会就地升级；只能靠迭代提升机制（capital 有更好兵时反向替换）。用户已确认接受 |
 
 ---
@@ -116,7 +116,7 @@ public sealed class MinCostFlow
 
 `DispatchInstruction` 是 discriminated union：
 - `InPlaceRecruit(settlement, role, count)`
-- `RecruiterParty(town, destinationSettlement, role, count)`
+- `RecruiterParty(town, returnSettlement, role, count)`（本版不改 `StRecruiterPartyComponent`，`returnSettlement` 必须是该 recruiter 的 home/回收点；若要直送其他 settlement，需先改组件持久化 destination）
 - `PrisonerConvert(settlement, role, count)`
 - `TransferParty(srcSettlement, dstSettlement, role, count)`
 
@@ -178,7 +178,7 @@ GarrisonSurplusSource(s,r) → DemandNode(other, r)           允许
 GarrisonSurplusSource(s,r) → DemandNode(s, r)               禁止（自己流向自己无意义）
 ```
 
-**跨 role 流动**：默认禁止（infantry 不流向 archer demand）。降级容忍由 cost 控制，不由跨 role 流动控制。
+**跨 role 流动**：默认禁止（`Infantry` 不流向 `Ranged` demand）。降级容忍由 cost 控制，不由跨 role 流动控制。
 
 ### 5.3 cost 公式
 
@@ -247,11 +247,11 @@ SuperBypass → DemandNode(any)   capacity = ∞   cost = U_UNMET
 
 ### 5.5 bucket 拆分细节
 
-每个 settlement 的 garrison roster 按 (role) 分 3 桶（infantry / archer / cavalry）：
+每个 settlement 的 garrison roster 按现有 `GenericTroopRole` 分 4 桶（`Infantry` / `Ranged` / `Cavalry` / `HorseArcher`）：
 
 ```
 Bucket {
-  role: TroopRole         // infantry / archer / cavalry，由 GenericTroopMatcher.GetRole 给
+  role: GenericTroopRole  // Infantry / Ranged / Cavalry / HorseArcher，由 GenericTroopMatcher.GetRole 给
   count: int
   minTier: int            // 桶内最低 tier
   representative: CharacterObject  // 选最低 tier 的一个代表，用于 exact template lookup
@@ -272,34 +272,37 @@ Bucket {
 
 | Day | Capital 状态 | MCMF 看到 InPlaceSource 容量 | 派遣行为 |
 |-----|------------|----------------------------|---------|
-| 1 | 招到 30（t2-t3 混合） | infantry: 25, archer: 5 | 调 30 到 castle |
-| 2 | 又招到 40（部分升 t4） | infantry: 35, archer: 10 | 调 45 |
-| 3 | 招满 + 升级若干 | infantry: 40, archer: 15 | 调 55 |
+| 1 | 招到 30（t2-t3 混合） | `Infantry`: 25, `Ranged`: 5 | 调 30 到 castle |
+| 2 | 又招到 40（部分升 t4） | `Infantry`: 35, `Ranged`: 10 | 调 45 |
+| 3 | 招满 + 升级若干 | `Infantry`: 40, `Ranged`: 15 | 调 55 |
 
 不需要"等"。每天评估当前 capital 有什么，能调就调。
 
 ### 6.2 迭代提升（关键机制）
 
-让每个 settlement 同时是 source 和 demand：
-- 当 castle 已被 t2 兵填满，capital 又招到 t5 完美兵时：
-  - castle 的 `GarrisonSurplusSource(castle, infantry, minTier=2)` 容量 = 0（因为 current = desired），但...
-  - **特殊规则**：如果某 settlement 的 current 兵中 minTier < rule.MinTier 的部分，视为"可让位 surplus"
+不能只让每个 settlement 同时是 source 和 demand，然后期待 MCMF “自然替换”。原因：
+- 当 castle 已被 t2 兵填满时，普通 `DemandNode.capacity = desired - current - inflight` 已经是 0
+- capital 即使有 t5 同 role 兵，也没有可流入 castle 的 demand 边
+- 把 castle t2 标为 source 只会产生“低质兵回 capital”的供给，不会自动产生“高质兵去 castle”的成对动作
 
-具体在 GraphBuilder 里：
+因此迭代提升要显式建模，推荐两阶段实现：
 
-```csharp
-// 计算 GarrisonSurplusSource 时
-foreach (var bucket in garrisonBuckets(s, role)):
-    if (bucket.minTier < rule.MinTier):
-        // 这部分是"不达标的将就兵"，允许流回 capital（即使 settlement 看似不"surplus"）
-        surplusCapacity += bucket.count
+**Phase A：填空位。**
+按 §5.1 的普通 demand 建图，目标是让空虚 settlement 先有兵。此阶段允许低 tier 兵通过 `LENIENCY` 降低 penalty，解决“等升完才调”的玩家体感问题。
+
+**Phase B：质量替换。**
+只对已经接近满员、但存在低于 rule 要求兵种的 settlement 建 replacement demand：
+
+```
+ReplacementDemandNode(settlement, role)
+  capacity = count(current troops in role below rule.MinTier or outside exact-template upgrade tree)
 ```
 
-但要严控不空 castle：**castle 的 `GarrisonSurplusSource → other DemandNode` 的边只在以下条件存在**：
-- demand settlement 是 capital，且
-- capital 有同 role 高 tier 兵作为 InPlaceSource 准备流向 castle 同 role demand
+该 demand 只允许同 role、更优 bucket 的 source 流入。若 MCMF 为 replacement demand 分配了高质兵，再生成一对 instruction：
+- `TransferParty(capitalOrSource, settlement, role, count)`：高质兵去 castle
+- `TransferParty(settlement, capital, role, count)`：等量低质兵回 capital，等待首府升级
 
-简化实现：**让 MCMF 自然处理**。castle 低 tier 兵向 capital 的反向流，cost 设为正常 `distance + TransferOverhead + matchPenalty(rule of capital)`。只有当替换后总 cost 真正降低时，MCMF 才会触发这条边。
+如果无法形成成对 replacement，就不生成低质兵回流，避免把 castle 抽空。
 
 ### 6.3 「只能在首府升级」约束下的代价
 
@@ -317,7 +320,9 @@ foreach (var bucket in garrisonBuckets(s, role)):
 
 ### 7.1 RecruitmentDispatcher
 
-**输入**：`RecruiterParty(town, destination, role, count)` instruction
+**输入**：`RecruiterParty(town, returnSettlement, role, count)` instruction
+
+约束：本版不修改 `StRecruiterPartyComponent`，所以 `returnSettlement` 必须等于该 recruiter 的 home/回收点。若 MCMF 逻辑上想用某个 village source 满足其他 castle 的需求，decoder 不能假装 recruiter 会直送 castle；应先把 recruiter 招回回收点，后续 daily tick 再通过 `TransferParty` 分发。
 
 **职责**：
 1. 校验：feature flag、围城、party 上限、foodGuard、capital 食粮
@@ -374,6 +379,23 @@ foreach (var bucket in garrisonBuckets(s, role)):
 
 所有 dispatcher 校验失败 → **静默 skip + 写一条 Logger.Info**。不抛异常、不熔断。下一个 daily tick MCMF 重算时，supply 没被消费，demand 仍在，自然重试。
 
+### 7.6 执行层落地约束（2026-05-18）
+
+执行版图必须只放入当前 dispatcher 能真实消费的 source，否则 MCMF 会把 flow 分配给不可执行来源，反而压掉本应发生的 transfer。
+
+本次执行层接入采用以下边界：
+
+1. `TransferPartyInstruction` 已接到 `TransferDispatcher`，并通过 `TransferTask.Role` 做按 role 抽兵。这样避免“计划补骑兵，实际抽低 tier 步兵”的偏差。
+2. `InPlaceRecruitInstruction` 已接到 `CapitalInPlaceRecruiter`。该执行器仍按现有 rule 和 notable slot 做安全校验，MCMF 的 count 只作为本次 desired cap 增量，不绕过 food、siege、budget、party limit。
+3. `RecruiterPartyInstruction` 只对当前 clan capital 生效。现有 `RecruitmentDispatcher` 明确只允许首府派征兵队，且 `StRecruiterPartyComponent` 回收点就是 home settlement；因此执行版图只把首府周边 village volunteers 建成可用 source。非首府 town 的 village source 暂不进入执行版 MCMF。
+4. 分城缺兵但首府不缺兵时，图会创建“首府补库 demand”。该 demand 只能被首府 in-place / village recruiter source 满足，不能被 garrison transfer 满足。这样保留旧逻辑中“先招到首府，后续 tick 再调拨到分城”的行为。
+5. `PrisonerConvertInstruction` 暂不进入执行版 MCMF source。现有 `PrisonerRecruitmentManager` 是 settlement daily tick 粒度，不是 instruction-scoped 的 role/count 执行器；强行纳入会导致求解器高估可用供给。俘虏转化继续走现有首府 daily 路径，等后续拆出按 settlement/role/count 的执行 API 后再纳入图。
+6. 在途统计按 role 计入目标 projected demand。注意 transfer party 创建时兵已经从 source garrison 扣走，所以 source surplus 不能再额外扣 outbound，否则会二次扣减；recruiter party 的当前 roster 作为回城 inbound 估计，语义沿用旧逻辑。
+7. 不保留距离硬门槛。garrison transfer 的距离只进入 cost，让 MCMF 在远距离 transfer 与 unmet bypass 之间做统一权衡；recruiter 候选也不再有第一轮 / fallback 搜索距离配置，只保留距离作为评分权重。
+8. 执行顺序固定为 transfer → in-place recruit → recruiter dispatch。同一 settlement 的 in-place 指令、同一 town 的 recruiter 指令会先聚合再执行，避免多 role flow 生成多次重复招募，也避免刚招到的兵被同日 transfer 当成图中未建模的二跳供给。
+
+这些约束不是设计回退，而是为了让“求解可执行性”先成立。后续若要把 prisoner 和非首府 recruiter 纳入 MCMF，必须先把对应 dispatcher 改成真正的 instruction executor。
+
 ---
 
 ## 8. 文件级改动清单
@@ -395,7 +417,7 @@ foreach (var bucket in garrisonBuckets(s, role)):
   - Decoder：把 MCMF flow 结果翻译为 `DispatchInstruction`
 - `src/Algorithm/MatchPolicy.cs`（~60 行）
   - `matchPenalty(bucket, rule)` 纯函数
-  - `bucketize(roster)` 把 roster 拆成 3 桶
+  - `bucketize(roster)` 把 roster 拆成 4 个 `GenericTroopRole` 桶
   - 完全无游戏依赖，可单测
 - `src/Algorithm/DispatchInstruction.cs`（~30 行）
   - 4 种 instruction 的 discriminated union（C# record + sealed types）
@@ -474,11 +496,75 @@ bump `CurrentConfigVersion`。pre-release 阶段无需迁移代码（用户已�
 
 4. **prison source 受 daily conformity 限制**，capacity 计算要保守。某些情况下 MCMF 算的 prisoner 流量会比实际可转化的多。结果是 dispatcher 转化到一半因 conformity 耗尽而中止 — 写日志，下日继续。
 
-5. **「跨 role 流动禁止」可能造成 demand 不满足**：例如 castle 缺 archer 而 capital 只有 infantry。MCMF 走 SuperBypass → demand 未满。这是设计的：tactical 替换需要玩家或 rule 调整决定，算法不擅自做。
+5. **「跨 role 流动禁止」可能造成 demand 不满足**：例如 castle 缺 `Ranged` 而 capital 只有 `Infantry`。MCMF 走 SuperBypass → demand 未满。这是设计的：tactical 替换需要玩家或 rule 调整决定，算法不擅自做。
 
 ---
 
-## 11. 实施步骤建议
+## 11. 复杂度收益与实施注意事项
+
+### 11.1 结论
+
+**修订后的 MCMF 方案可以显著降低复杂度并提升代码质量，但前提是先把图模型与现有组件语义对齐。**
+
+收益不是来自 MCMF 本身“更高级”，而是来自职责边界变清楚：
+- `CapitalLogisticsManager` 从“多套启发式决策 + 执行协调”收敛为“构图、求解、派发 instruction”
+- `RecruitmentDispatcher` / `TransferDispatcher` / `PrisonerRecruitmentManager` / `CapitalInPlaceRecruiter` 从“判断该不该做”退化为“校验并执行”
+- 兵种匹配、距离、overhead、leniency、unmet fallback 都集中在 `MatchPolicy` / `SupplyDemandGraph`，调参点集中
+- `MinCostFlow` 与游戏对象隔离，能用纯算例测试，降低回归成本
+
+如果按修订后的边界实现，算法复杂度会从多处嵌套启发式和隐式状态转为一个可审计的 flow result。代码行数是否精确降到 700 行不是核心指标；更重要的是“决策代码集中、执行代码局部、失败可重算、日志可解释”。
+
+### 11.2 预期代码质量提升
+
+| 维度 | 当前状态 | 修订后目标 |
+|------|----------|------------|
+| 决策入口 | `CapitalLogisticsManager`、planner、dispatcher、matcher 多处分散 | 单次 `SupplyDemandGraph.Solve()` 输出全部 instruction |
+| 调参位置 | 多个权重常数散落在 planner / dispatcher / manager | `PartyThresholds` + `MatchPolicy` 集中 |
+| 可测试性 | 大多依赖 Campaign runtime 和实际 settlement 状态 | `MinCostFlow` / `MatchPolicy` / graph decoder 可纯测试 |
+| 可解释性 | 日志能看到执行，但难解释“为什么选这条路线” | 每条 flow 边能记录 source、demand、cost 组成 |
+| 失败处理 | dispatcher 失败会影响当日启发式状态 | skip 后下个 daily tick 重新构图，天然恢复 |
+| 变更风险 | 每加一个 supply 类型都要碰多处决策 | 新增 source kind + edge rule，不改求解器 |
+
+### 11.3 实施前必须修订的设计点
+
+1. **role 桶必须沿用现有 4 桶**。
+   当前代码和 UI 是 `Cavalry` / `HorseArcher` / `Infantry` / `Ranged`，本文档已按 4 桶修正。GraphBuilder、`MatchPolicy`、UI 文案和日志都必须使用同一套 `GenericTroopRole`，避免把骑射错误归入 cavalry 或 ranged。
+
+2. **recruiter 的“交付目的地”必须遵守组件语义**。
+   现有 `StRecruiterPartyComponent` 的 home settlement 是创建时的 town，回家时由基类把兵合并回 home garrison。本文档默认不修改 `StPartyComponent` 子类，所以 `RecruiterParty` 只表达“从 town 村庄招回 home/回收点”；其他 castle 的补兵由后续 `TransferParty` 分发。若未来要允许 recruiter 直送 destination，就必须先修订本 spec，并新增 destination 的 save field、到达检测、合并和失守 fallback。
+
+3. **迭代提升不能只靠普通 demand/surplus 自然发生**。
+   当 castle 已被低 tier 兵填满时，`desired - current` 为 0，普通 DemandNode 不会再吸收 capital 的高 tier 兵。必须显式建模“质量缺口”，或采用两阶段策略：
+   - Phase A：MCMF 填空位，解决空城问题
+   - Phase B：只在有高 tier 替换供给时，为低 tier 建 replacement demand，并生成成对 transfer（高 tier 去 castle，低 tier 回 capital）
+
+4. **in-flight accounting 必须按 role / source kind 细化**。
+   现有在途统计按总人数算 inbound/outbound。MCMF 需要避免重复满足同一个 role demand：transfer party 可从 roster 推断 role；recruiter party 的未来构成只能估计。本次执行层接入按 party roster 估算 recruiter inbound；transfer outbound 不额外扣 source surplus，因为创建 transfer party 时 source garrison 已经扣兵。
+
+5. **exact template 的语义要明确是软偏好还是强目标**。
+   如果 demand 只按 role 建节点，exact template 会退化为 `matchPenalty` 的软偏好，无法保证 exact stringId 比例。若玩家期望 exact template 强约束，则 exact mode 的 DemandNode 应按 template target 或 upgrade-tree bucket 建，而不是只按 role。
+
+6. **SuperBypass 要接入完整流网络**。
+   图中应明确为 `SuperSource -> SuperBypass -> DemandNode -> SuperSink`，否则 unmet bypass 不是可选供给路径。`U_UNMET` 还必须和最大可能 edge cost 有明确相对关系，防止永远 bypass 或永远强行派遣。
+
+7. **cost 计算要做参数防御**。
+   `1 - deficitRatio * LENIENCY` 必须 clamp 到 `[0, 1]`。所有 cost 进入 MCMF 前应转成非负整数，并记录 distance / overhead / penalty / leniency 四部分，方便日志解释。
+
+8. **不要为了行数目标删掉执行层保护**。
+   dispatcher 里的 siege、food、party cap、seed gold、rollback、`AddGarrisonParty`、`PartyMergeService`、`SafeMoveHelper` 等保护属于质量边界，不是“旧复杂度”。重构只能删除决策逻辑，不能删除执行安全网。
+
+### 11.4 推荐的修订后实施策略
+
+低风险路线是先做一个 **shadow mode**，不要直接替换旧流程。每日 tick 同时构图、求解、输出 instruction 和 cost breakdown，但旧 dispatcher 仍按旧逻辑运行。观察 3 类日志：
+- MCMF 是否在 castle 空虚时立即生成补兵 instruction
+- MCMF 是否不会在 party cap / food / siege 明显失败时生成大量无效 instruction
+- MCMF 的 role 分配是否与当前 rule/UI 一致
+
+若按用户要求直接切到执行层，必须先满足 §7.6 的可执行 source 约束，并保留 dispatcher 现有安全校验。这样能把风险分成“求解是否合理”和“执行是否可靠”两类，不会把算法问题、组件 home 语义和 vanilla API 副作用混在同一次大改里。
+
+---
+
+## 12. 实施步骤建议
 
 按以下顺序分阶段实施，每阶段独立可验证：
 
@@ -521,7 +607,7 @@ bump `CurrentConfigVersion`。pre-release 阶段无需迁移代码（用户已�
 
 ---
 
-## 12. 关键 reference
+## 13. 关键 reference
 
 ### 现有代码 reference
 
@@ -545,9 +631,9 @@ bump `CurrentConfigVersion`。pre-release 阶段无需迁移代码（用户已�
 
 ---
 
-## 13. 给 implementing agent 的指示
+## 14. 给 implementing agent 的指示
 
-1. **按 §11 的 Phase 顺序推进**。每个 Phase 内部可并行，跨 Phase 不可。
+1. **按 §12 的 Phase 顺序推进**。每个 Phase 内部可并行，跨 Phase 不可。
 2. **每个 Phase 结束**先 `dotnet build SovereignTowns\src\SovereignTowns.csproj -c Debug`，0 errors / 0 warnings 才进下一 Phase。
 3. **MCMF 算法库的单测**：因为项目无单测框架，可临时在算法库内写一个 `MinCostFlow.SelfTest()` 方法包含 3-5 个硬编码 transportation problem 用例，启动时调用并 Logger.Info 输出。每个用例的最优 cost 应用穷举或手算验证。开发完成后可移除自检调用但保留方法供回归。
 4. **不要凭记忆调 vanilla API**。所有 `Campaign.Current.Models.X` / `MobileParty.X` / `Hero.X` 调用先在 `SovereignTowns/_research/` 下 grep 实际签名。

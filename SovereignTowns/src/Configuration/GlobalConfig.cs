@@ -229,9 +229,6 @@ public sealed class PartyThresholds
     /// <summary>A5：scheduler.IsStuck 重发指令后仍卡死多少 hour 触发二段瞬移到 home.GatePosition。0 关闭。默认 24。</summary>
     public float StuckTeleportHours { get; set; } = 24f;
 
-    /// <summary>B2：RecruitmentPlanner.RankCandidates 第一轮 maxDistance=100 无候选时第二轮的上限。0 关闭降级搜索。默认 200。</summary>
-    public float RecruitmentFallbackMaxDistance { get; set; } = 200f;
-
     /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
     public float FoodReplenishMinDays { get; set; } = 2f;
 
@@ -254,9 +251,6 @@ public sealed class PartyThresholds
 
     /// <summary>R2：敌方需连续可见 N 个 hourly tick 才触发 Sally。原硬编码 3。范围 [1, 48]。</summary>
     public int SallyMinSustainedTicks { get; set; } = 3;
-
-    /// <summary>R3：调拨源-目的最大距离（Vec2 单位）。距离 > 此值的对不会被选。原 CapitalLogisticsManager 硬编码 100。范围 [0, 1000]。</summary>
-    public float TransferMaxPairDistance { get; set; } = 100f;
 
     /// <summary>R3：调拨评分中容量项的权重（score -= capacity × 此值）。原硬编码 0.05f。范围 [0, 1]。</summary>
     public float TransferCapacityWeight { get; set; } = 0.05f;
@@ -282,6 +276,22 @@ public sealed class PartyThresholds
     /// <summary>H9：RecruitmentPlanner 每轮候选村庄数。原硬编码 8。范围 [1, 50]。</summary>
     public int RecruitmentCandidateBatchSize { get; set; } = 8;
 
-    /// <summary>H10：RecruitmentPlanner 第一轮搜索距离（Vec2 单位）。原硬编码 100。范围 [0, 1000]。</summary>
-    public float RecruitmentPlanMaxDistance { get; set; } = 100f;
+    // ── MCMF solver（SupplyDemandGraph）──────────────────────────────────
+    /// <summary>兵种 role 不符或 exact template 不在升级树上的硬罚。默认 1000。</summary>
+    public int McmfHardPenalty { get; set; } = 1000;
+
+    /// <summary>每差 1 tier 的罚分。默认 50。</summary>
+    public int McmfTierPenalty { get; set; } = 50;
+
+    /// <summary>缺口越大越宽容的强度。范围 [0,1]，默认 0.8。</summary>
+    public float McmfLeniency { get; set; } = 0.8f;
+
+    /// <summary>需求未满足的 bypass cost。默认 2000。</summary>
+    public int McmfUnmetCost { get; set; } = 2000;
+
+    /// <summary>VillageNotableSource 派 recruiter 的固定成本。默认 100。</summary>
+    public int McmfRecruiterOverhead { get; set; } = 100;
+
+    /// <summary>GarrisonSurplusSource 派 transfer 的固定成本。默认 50。</summary>
+    public int McmfTransferOverhead { get; set; } = 50;
 }

@@ -16,7 +16,7 @@ namespace SovereignTowns.Recruitment;
 ///   - PickNextVillage / RecordVisit / PreemptiveBook / IsStuck / TryMarkArrival /
 ///     NotifySettlementLost / NotifyAllLost / NotifyPartyDestroyed 均由基类提供；
 ///   - 子类只补：候选源（RecruitmentPlanner.RankCandidates 取首府的 Top-N 村庄）、
-///     无附加过滤（RankCandidates 已处理兵种匹配/距离/风险/村庄状态/72h 冷却）、
+///     无附加过滤（RankCandidates 已处理兵种匹配/风险/村庄状态/72h 冷却）、
 ///     以及配置 getter（ClanRecruiter 段）。
 ///
 /// 与 VillageCooldownHours=72h 协作：72h 是硬性冷却（RankCandidates 内 RecruitmentCooldown 表保护），
@@ -41,10 +41,9 @@ public sealed class ClanRecruiterScheduler : BaseSettlementVisitScheduler
         var rule = ConfigurationManager.GetRuleFor(capitalTown);
         if (rule == null) return System.Array.Empty<Settlement>();
 
-        // 用现有 RecruitmentPlanner 取候选（已处理：兵种匹配、距离、风险、村庄状态、72h 冷却）
+        // 用现有 RecruitmentPlanner 取候选（已处理：兵种匹配、风险、村庄状态、72h 冷却）
         var candidates = RecruitmentPlanner.RankCandidates(
             capitalTown,
-            maxDistance: ConfigurationManager.Current?.Thresholds?.RecruitmentPlanMaxDistance ?? 100f,
             maxResults: ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? 8,
             excludeSettlements: null,
             matchingRule: rule);
@@ -56,7 +55,7 @@ public sealed class ClanRecruiterScheduler : BaseSettlementVisitScheduler
     }
 
     /// <summary>
-    /// RankCandidates 已处理兵种匹配/距离/风险/村庄状态/72h 冷却等所有过滤，
+    /// RankCandidates 已处理兵种匹配/风险/村庄状态/72h 冷却等所有过滤，
     /// 此处无需再加任何附加过滤。
     /// </summary>
     protected override bool PassesCandidateFilter(Settlement s, MobileParty party) => true;

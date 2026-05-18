@@ -31,12 +31,9 @@ public sealed class RecruitmentDispatcher
     // H9/H10 (DeepSeek audit 2026-05-18)：常量改读 PartyThresholds。
     // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold 配置项。
     private const int CandidateBatchSizeDefault = 8;
-    private const float PlanMaxDistanceDefault = 100f;
 
     private static int CandidateBatchSize
         => ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? CandidateBatchSizeDefault;
-    private static float PlanMaxDistance
-        => ConfigurationManager.Current?.Thresholds?.RecruitmentPlanMaxDistance ?? PlanMaxDistanceDefault;
 
     private static float EscortRatio
         => ConfigurationManager.Current?.Thresholds?.RecruiterEscortRatio ?? 0.10f;
@@ -108,25 +105,9 @@ public sealed class RecruitmentDispatcher
 
             var candidates = RecruitmentPlanner.RankCandidates(
                 homeTown,
-                maxDistance: PlanMaxDistance,
                 maxResults: CandidateBatchSize,
                 excludeSettlements: null,
                 matchingRule: rule);
-            // B17.4 B2：第一轮无候选 → 第二轮扩大到 Thresholds.RecruitmentFallbackMaxDistance。
-            if (candidates.Count == 0)
-            {
-                float fallbackDist = ConfigurationManager.Current?.Thresholds?.RecruitmentFallbackMaxDistance ?? 0f;
-                if (fallbackDist > PlanMaxDistance)
-                {
-                    Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 第一轮无候选，第二轮扩大到 {fallbackDist}");
-                    candidates = RecruitmentPlanner.RankCandidates(
-                        homeTown,
-                        maxDistance: fallbackDist,
-                        maxResults: CandidateBatchSize,
-                        excludeSettlements: null,
-                        matchingRule: rule);
-                }
-            }
             if (candidates.Count == 0)
             {
                 Logger.Warn($"  RecruitmentDispatcher: '{homeTown.Name}' 无可招募村庄候选 — 周边 village notable 没有符合规则 (Tier {rule.MinTier}-{rule.MaxTier} / 比例非零兵种) 的兵。考虑放宽 MinTier。");

@@ -583,7 +583,7 @@ Returning：
 5. 源没有被围攻。
 6. 源风险低于 High。
 7. 不是“首府给首府”。
-8. 源到目的地距离不超过 `TransferMaxPairDistance`，默认 100。
+8. 不再有源到目的地的最大距离硬限制；距离只作为调度评分 / MCMF cost 的一部分。
 
 源评分：
 
@@ -1211,7 +1211,6 @@ XP 注入前提：
 | `TransferRatio` | 0.30 | 源城单次按当前驻军这个比例抽兵 |
 | `TransferMaxTroopsPerTaskRatio` | 0.67 | 单次调拨人数上限比例 |
 | `TransferMinTroopRatio` | 0.13 | 非危急调拨小于该比例就放弃 |
-| `TransferMaxPairDistance` | 100 | 源城到目的地最大距离 |
 | `TransferCapacityWeight` | 0.05 | 调拨源评分里的容量权重 |
 | `TransferBranchToBranchPenalty` | 25 | 当前代码中对非首府源减分，实际偏好 branch-to-branch |
 | `TransferCapitalSourcePenalty` | 10 | 从首府出兵到非首府时加分惩罚，越大越不愿用首府 |

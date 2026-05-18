@@ -1,3 +1,4 @@
+using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem.Settlements;
 
 namespace SovereignTowns.Transfer;
@@ -13,13 +14,15 @@ public sealed class TransferTask
         Settlement destination,
         int requestedTroops,
         int priority,
-        string reason)
+        string reason,
+        GenericTroopRole? role = null)
     {
         Source = source;
         Destination = destination;
         RequestedTroops = requestedTroops;
         Priority = priority;
         Reason = reason ?? string.Empty;
+        Role = role;
     }
 
     public Settlement Source { get; }
@@ -31,4 +34,6 @@ public sealed class TransferTask
     public int Priority { get; }
 
     public string Reason { get; }
+
+    public GenericTroopRole? Role { get; }
 }
