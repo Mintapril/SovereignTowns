@@ -461,7 +461,7 @@
           <div x-show="activeTab === 1" class="tab-content p-8">
             <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">策略 参数</h2>
             <p class="text-parchment-200 text-sm mb-6">
-              合并原「数量预算」与「资源调度」。全局规则应用于所有受管领地，单个领地仍可在「按领地覆盖」里微调。
+              合并原「数量预算」与「资源调度」。全局规则（首府）应用于所有受管首府；非首府只受「非首府驻军」标签页约束。
             </p>
             <div class="diamond-divider mb-6"></div>
 
@@ -781,7 +781,7 @@
                 <div class="col-span-9 md:col-span-6">
                   <input type="range" class="w-full" min="0" max="100000" step="1"
                          :value="config.BranchDefaults?.TargetPower ?? 150"
-                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value; branchPowerDisplay = $event.target.value" />
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value" />
                 </div>
                 <div class="col-span-3 md:col-span-2">
                   <input type="number"
