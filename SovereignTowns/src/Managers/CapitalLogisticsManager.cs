@@ -4,11 +4,14 @@ using System.Linq;
 using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
+using SovereignTowns.Configuration;
+using SovereignTowns.Evaluators;
 using SovereignTowns.Recruitment;
 using SovereignTowns.Transfer;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 
 namespace SovereignTowns.Managers;
 
@@ -197,21 +200,43 @@ public sealed class CapitalLogisticsManager
     private static bool ExecuteInPlaceRecruitment(InPlaceRecruitInstruction instruction)
     {
         var settlement = instruction.Settlement;
-        var garrison = settlement?.Town?.GarrisonParty?.MemberRoster;
-        int current = garrison?.TotalManCount ?? 0;
-        string reason = $"mcmf in-place role={instruction.Role} count={instruction.Count}";
-        int recruited = CapitalInPlaceRecruiter.RecruitFromCapitalNotables(
-            settlement,
-            current + instruction.Count,
-            reason);
-        if (recruited > 0)
+        if (settlement == null) return false;
+        var capitalRegistry = SovereignTowns.Capital.CapitalRegistry.Instance;
+        bool isCapital = capitalRegistry != null
+            && settlement == capitalRegistry.GetCapitalForClan(settlement.OwnerClan);
+
+        if (isCapital)
         {
-            Logger.Info(
-                $"CapitalLogistics MCMF: in-place recruited {recruited} troop(s) " +
-                $"settlement='{settlement?.Name}' role={instruction.Role} requested={instruction.Count}");
-            return true;
+            var garrison = settlement.Town?.GarrisonParty?.MemberRoster;
+            int current = garrison?.TotalManCount ?? 0;
+            string reason = $"mcmf in-place role={instruction.Role} count={instruction.Count}";
+            int recruited = CapitalInPlaceRecruiter.RecruitFromCapitalNotables(
+                settlement,
+                current + instruction.Count,
+                reason);
+            if (recruited > 0)
+            {
+                Logger.Info($"CapitalLogistics MCMF: capital in-place recruited {recruited} troop(s) settlement='{settlement.Name}' requested={instruction.Count}");
+                return true;
+            }
+            return false;
         }
-        return false;
+        else
+        {
+            var branchRule = ConfigurationManager.GetBranchRuleFor(settlement.Town) ?? BranchRule.CreateDefault();
+            int currentPower = (int)Math.Round(GarrisonPowerEvaluator.ComputeRosterPower(settlement.Town?.GarrisonParty?.MemberRoster));
+            int desiredPower = currentPower + instruction.Count;  // instruction.Count is head-count flow units; treat as additional power target delta
+            int recruited = BranchInPlaceRecruiter.RecruitFromBranchNotables(
+                settlement,
+                Math.Min(desiredPower, branchRule.TargetPower),
+                $"mcmf branch in-place delta={instruction.Count}");
+            if (recruited > 0)
+            {
+                Logger.Info($"CapitalLogistics MCMF: branch in-place recruited {recruited} troop(s) settlement='{settlement.Name}' targetPower={desiredPower}");
+                return true;
+            }
+            return false;
+        }
     }
 
     private bool ExecuteRecruiterDispatch(CapitalManager manager, RecruiterPartyInstruction instruction)
