@@ -196,28 +196,32 @@ public static class ConfigurationManager
 
     /// <summary>
     /// 为某 Town 取非首府规则（BranchRule）。
-    /// 玩家氏族返回 <see cref="GlobalConfig.BranchDefaults"/>。
-    /// AI 氏族（启用 ApplyToAiSettlementsToo 时）调 vanilla 公式动态算 TargetPower；
-    /// LowTierMinFraction 沿用全局 BranchDefaults。
+    /// 玩家氏族：直接返回 <see cref="GlobalConfig.BranchDefaults"/> 的 clone。
+    /// AI 氏族（启用 ApplyToAiSettlementsToo 时）：在 BranchDefaults clone 之上，
+    /// 用 <see cref="SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower"/>
+    /// 动态算 TargetPower；LowTierMinFraction 沿用全局 BranchDefaults。
     /// </summary>
     public static BranchRule GetBranchRuleFor(Town town)
     {
         try
         {
+            BranchRule rule;
+            bool needsAiTarget;
             lock (_gate)
             {
-                var rule = (_current.BranchDefaults ?? BranchRule.CreateDefault()).Clone();
-
-                if (town?.OwnerClan != null
+                rule = (_current.BranchDefaults ?? BranchRule.CreateDefault()).Clone();
+                needsAiTarget = town?.OwnerClan != null
                     && town.OwnerClan != Clan.PlayerClan
-                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
-                {
-                    int aiTarget = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower(town);
-                    if (aiTarget > 0) rule.TargetPower = aiTarget;
-                }
-
-                return rule;
+                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true;
             }
+
+            if (needsAiTarget)
+            {
+                int aiTarget = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower(town);
+                if (aiTarget > 0) rule.TargetPower = aiTarget;
+            }
+
+            return rule;
         }
         catch (Exception ex)
         {
@@ -995,8 +999,5 @@ public static class ConfigurationManager
         reason = "";
         return true;
     }
-
-
-
 
 }
