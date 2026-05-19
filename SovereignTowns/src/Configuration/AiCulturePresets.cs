@@ -6,7 +6,7 @@ namespace SovereignTowns.Configuration;
 /// 按 vanilla 阵营文化为 AI 城提供的 <see cref="TownGarrisonRule"/> 预设。
 /// 仅在 <see cref="ConfigurationManager.GetRuleFor"/> 内、且
 /// <see cref="EnabledFeatures.ApplyToAiSettlementsToo"/> = true、且 town 属于 AI clan 的路径上被查询。
-/// 玩家城（OwnerClan == PlayerClan）永远走 PerSettlementOverrides → GlobalDefaults 老路径，不受本表影响。
+/// 玩家城（OwnerClan == PlayerClan）永远走 GlobalDefaults 路径，不受本表影响。
 ///
 /// <para>
 /// ratio 设计基于 vanilla 1.3.15 各阵营 roster 招牌成分（社区共识）：

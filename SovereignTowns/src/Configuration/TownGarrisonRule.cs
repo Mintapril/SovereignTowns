@@ -3,8 +3,7 @@ using System.Collections.Generic;
 namespace SovereignTowns.Configuration;
 
 /// <summary>
-/// 单个 Town 驻军规则的 POCO。可被 GlobalConfig.GlobalDefaults 或
-/// GlobalConfig.PerSettlementOverrides[settlementStringId] 引用。所有字段必须可由
+/// 单个 Town 驻军规则的 POCO。可被 GlobalConfig.GlobalDefaults 引用（首府规则）。所有字段必须可由
 /// System.Text.Json 直接序列化/反序列化（公开属性 + 公开 setter）。
 /// </summary>
 public sealed class TownGarrisonRule

@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace SovereignTowns.Configuration;
 
 /// <summary>
@@ -14,11 +12,12 @@ public sealed class GlobalConfig
     /// <summary>上次写盘时的 UTC 时间戳（ISO 8601, "O" format）。仅作记录用。</summary>
     public string LastModified { get; set; } = "";
 
-    /// <summary>未在 PerSettlementOverrides 出现的 Town 使用此规则。</summary>
+    /// <summary>首府（capital town，由 CapitalRegistry 标记）的驻军规则。模板 / 比例 / Tier 等所有字段。</summary>
     public TownGarrisonRule GlobalDefaults { get; set; } = TownGarrisonRule.CreateDefault();
 
-    /// <summary>键为 Settlement.StringId 的逐 Town 覆盖规则。</summary>
-    public Dictionary<string, TownGarrisonRule> PerSettlementOverrides { get; set; } = new();
+    /// <summary>所有非首府（branch town / castle）共享的极简规则。
+    /// 玩家氏族用此字段的 TargetPower；AI 氏族走 GarrisonPowerEvaluator.ComputeAiVanillaTargetPower。</summary>
+    public BranchRule BranchDefaults { get; set; } = BranchRule.CreateDefault();
 
     /// <summary>逐特性开关。各 MVP 阶段渐进开启。</summary>
     public EnabledFeatures EnabledFeatures { get; set; } = new();
@@ -61,7 +60,7 @@ public sealed class GlobalConfig
         ConfigVersion = ConfigurationManager.CurrentConfigVersion,
         LastModified = "",
         GlobalDefaults = TownGarrisonRule.CreateDefault(),
-        PerSettlementOverrides = new Dictionary<string, TownGarrisonRule>(),
+        BranchDefaults = BranchRule.CreateDefault(),
         EnabledFeatures = new EnabledFeatures(),
         ClanPatrol = new ClanPatrolConfig(),
         ClanRecruiter = new ClanRecruiterConfig(),

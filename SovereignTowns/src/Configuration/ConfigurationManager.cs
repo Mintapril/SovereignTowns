@@ -23,7 +23,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 18;
+    public const int CurrentConfigVersion = 19;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -39,7 +39,7 @@ public static class ConfigurationManager
     private static string _lastValidationError = "";
 
     /// <summary>
-    /// B17.4 B1 / Issue #1：PerSettlementOverrides 或 GlobalDefaults 变更后触发。
+    /// B17.4 B1 / Issue #1：GlobalDefaults 或 BranchDefaults 变更后触发。
     /// 参数：被改的 settlement.StringId，或 null 表示全局/未知（订阅者需对所有 in-flight 队伍重规划）。
     /// 永远从主线程触发 —— Web 路径走 <see cref="WebConfigGameThreadSync.RequestConfigChanged"/>
     /// 入队，下一次 Drain 在 campaign tick 主线程上调用 <see cref="RaiseConfigChanged"/>。
@@ -142,7 +142,7 @@ public static class ConfigurationManager
                     else
                     {
                         _current = loaded;
-                        Logger.Info($"Config loaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count}");
+                        Logger.Info($"Config loaded: version={_current.ConfigVersion}");
                     }
                 }
 
@@ -166,10 +166,9 @@ public static class ConfigurationManager
     }
 
     /// <summary>
-    /// 为某 Town 取最终生效规则。lookup 优先级：
-    ///   1) 先取有效基础规则：AI 城 + ApplyToAiSettlementsToo=true 走 <see cref="AiCulturePresets"/>，否则走 GlobalDefaults
-    ///   2) 若 PerSettlementOverrides[town.Settlement.StringId] 存在，只覆盖网页面板真正暴露的单城字段
-    ///      （避免单城覆盖冻结兵种模板、Tier、文化过滤等隐藏字段）
+    /// 为某 Town 取首府规则（CapitalRule）。仅供首府路径调用 —
+    /// 非首府请用 <see cref="GetBranchRuleFor"/>。
+    /// AI 城 + ApplyToAiSettlementsToo=true 走 <see cref="AiCulturePresets"/>，否则走 GlobalDefaults。
     /// </summary>
     public static TownGarrisonRule GetRuleFor(Town town)
     {
@@ -177,16 +176,15 @@ public static class ConfigurationManager
         {
             lock (_gate)
             {
-                var effective = BuildBaseRuleFor(town);
-
-                if (town?.Settlement?.StringId is { } id
-                    && _current.PerSettlementOverrides.TryGetValue(id, out var settlementOverride)
-                    && settlementOverride is not null)
+                if (town?.OwnerClan != null
+                    && town.OwnerClan != Clan.PlayerClan
+                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
                 {
-                    ApplySettlementOverrideFields(effective, settlementOverride);
+                    var preset = AiCulturePresets.TryGet(town.OwnerClan.Culture?.StringId);
+                    if (preset != null) return preset.Clone();
                 }
 
-                return effective;
+                return (_current.GlobalDefaults ?? TownGarrisonRule.CreateDefault()).Clone();
             }
         }
         catch (Exception ex)
@@ -196,27 +194,36 @@ public static class ConfigurationManager
         }
     }
 
-    private static TownGarrisonRule BuildBaseRuleFor(Town? town)
+    /// <summary>
+    /// 为某 Town 取非首府规则（BranchRule）。
+    /// 玩家氏族返回 <see cref="GlobalConfig.BranchDefaults"/>。
+    /// AI 氏族（启用 ApplyToAiSettlementsToo 时）调 vanilla 公式动态算 TargetPower；
+    /// LowTierMinFraction 沿用全局 BranchDefaults。
+    /// </summary>
+    public static BranchRule GetBranchRuleFor(Town town)
     {
-        if (town?.OwnerClan != null
-            && town.OwnerClan != Clan.PlayerClan
-            && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
+        try
         {
-            var preset = AiCulturePresets.TryGet(town.OwnerClan.Culture?.StringId);
-            if (preset != null) return preset.Clone();
+            lock (_gate)
+            {
+                var rule = (_current.BranchDefaults ?? BranchRule.CreateDefault()).Clone();
+
+                if (town?.OwnerClan != null
+                    && town.OwnerClan != Clan.PlayerClan
+                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true)
+                {
+                    int aiTarget = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower(town);
+                    if (aiTarget > 0) rule.TargetPower = aiTarget;
+                }
+
+                return rule;
+            }
         }
-
-        return (_current.GlobalDefaults ?? TownGarrisonRule.CreateDefault()).Clone();
-    }
-
-    private static void ApplySettlementOverrideFields(TownGarrisonRule target, TownGarrisonRule settlementOverride)
-    {
-        target.TargetTotalCount = settlementOverride.TargetTotalCount;
-        target.MinimumDefenderRatio = settlementOverride.MinimumDefenderRatio;
-        target.BudgetLimit = settlementOverride.BudgetLimit;
-        target.WartimeMultiplier = settlementOverride.WartimeMultiplier;
-        target.PeacetimeMultiplier = settlementOverride.PeacetimeMultiplier;
-        target.FoodSafetyThreshold = settlementOverride.FoodSafetyThreshold;
+        catch (Exception ex)
+        {
+            Logger.Error("GetBranchRuleFor failed; returning a fresh default branch rule", ex);
+            return BranchRule.CreateDefault();
+        }
     }
 
     /// <summary>
@@ -426,9 +433,9 @@ public static class ConfigurationManager
                 reason = "";
 
                 if (changed)
-                    Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count} (content changed → will broadcast OnConfigChanged)");
+                    Logger.Info($"Config reloaded: version={_current.ConfigVersion} (content changed → will broadcast OnConfigChanged)");
                 else
-                    Logger.Info($"Config reloaded: version={_current.ConfigVersion}, overrides={_current.PerSettlementOverrides.Count} (content identical → no broadcast)");
+                    Logger.Info($"Config reloaded: version={_current.ConfigVersion} (content identical → no broadcast)");
 
                 return true;
             }
@@ -529,7 +536,7 @@ public static class ConfigurationManager
             // Newtonsoft 不会自动调用 POCO 的字段默认初始化器去填 null 嵌套对象，
             // 这里兜底确保后续校验/调用不会 NRE。
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
-            parsed.PerSettlementOverrides ??= new System.Collections.Generic.Dictionary<string, TownGarrisonRule>();
+            parsed.BranchDefaults ??= BranchRule.CreateDefault();
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
@@ -665,18 +672,14 @@ public static class ConfigurationManager
         {
             return false;
         }
-
-        foreach (var kv in config.PerSettlementOverrides)
+        if (config.BranchDefaults is null)
         {
-            if (kv.Value is null)
-            {
-                reason = $"PerSettlementOverrides['{kv.Key}'] is null";
-                return false;
-            }
-            if (!ValidateRule(kv.Value, $"PerSettlementOverrides['{kv.Key}']", out reason))
-            {
-                return false;
-            }
+            reason = "BranchDefaults is null";
+            return false;
+        }
+        if (!ValidateBranchRule(config.BranchDefaults, "BranchDefaults", out reason))
+        {
+            return false;
         }
 
         if (config.VillageCooldownHours < 12 || config.VillageCooldownHours > 240)
@@ -965,6 +968,18 @@ public static class ConfigurationManager
             return false;
         }
 
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateBranchRule(BranchRule rule, string ctx, out string reason)
+    {
+        if (rule.TargetPower < 0)
+        { reason = $"{ctx}.TargetPower < 0"; return false; }
+        if (rule.TargetPower > 100_000)
+        { reason = $"{ctx}.TargetPower {rule.TargetPower} 超过上限 100000"; return false; }
+        if (!IsRatio(rule.LowTierMinFraction))
+        { reason = $"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} 必须在 [0,1]"; return false; }
         reason = "";
         return true;
     }
