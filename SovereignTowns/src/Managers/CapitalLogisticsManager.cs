@@ -241,7 +241,7 @@ public sealed class CapitalLogisticsManager
         var capital = manager.GetCapital();
         if (capital == null || instruction.Town != capital || instruction.ReturnSettlement != capital.Settlement)
         {
-            Logger.Debug(
+            Logger.Warn(
                 $"CapitalLogistics MCMF: recruiter skipped because current dispatcher only supports capital dispatch " +
                 $"town={instruction.Town?.Settlement?.StringId} return={instruction.ReturnSettlement?.StringId}");
             return false;

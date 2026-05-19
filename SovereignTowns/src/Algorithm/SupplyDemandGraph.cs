@@ -65,8 +65,6 @@ public static class SupplyDemandGraph
             Buckets = MatchPolicy.Bucketize(town.GarrisonParty?.MemberRoster);
             Inbound = new Dictionary<GenericTroopRole, int>();
             InboundPower = 0f;
-            InboundHeadCount = 0;
-            InboundLowTierHeadCount = 0;
             var garrisonRoster = town.GarrisonParty?.MemberRoster;
             CurrentPower = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(garrisonRoster);
             CurrentHeadCount = garrisonRoster?.TotalManCount ?? 0;
@@ -83,8 +81,6 @@ public static class SupplyDemandGraph
         public List<TroopBucket> Buckets { get; }
         public Dictionary<GenericTroopRole, int> Inbound { get; }
         public float InboundPower { get; private set; }
-        public int InboundHeadCount { get; private set; }
-        public int InboundLowTierHeadCount { get; private set; }
 
         public int Current(GenericTroopRole role)
             => Buckets.Where(b => b.Role == role).Sum(b => b.Count);
@@ -102,11 +98,9 @@ public static class SupplyDemandGraph
         public void AddInbound(GenericTroopRole role, int count)
             => AddCount(Inbound, role, count);
 
-        public void AddInboundPower(float power, int totalHeads, int lowTierHeads)
+        public void AddInboundPower(float power)
         {
             if (power > 0f) InboundPower += power;
-            if (totalHeads > 0) InboundHeadCount += totalHeads;
-            if (lowTierHeads > 0) InboundLowTierHeadCount += lowTierHeads;
         }
 
         private static int Count(IReadOnlyDictionary<GenericTroopRole, int> values, GenericTroopRole role)
@@ -437,16 +431,7 @@ public static class SupplyDemandGraph
             state.AddInbound(bucket.Role, bucket.Count);
 
         float power = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(roster);
-        int totalHeads = roster.TotalManCount;
-        int lowTierHeads = 0;
-        for (int i = 0; i < roster.Count; i++)
-        {
-            var el = roster.GetElementCopyAtIndex(i);
-            if (el.Character == null || el.Character.IsHero) continue;
-            if (el.Character.Tier <= SovereignTowns.Evaluators.GarrisonPowerEvaluator.LowTierMaxInclusive)
-                lowTierHeads += el.Number;
-        }
-        state.AddInboundPower(power, totalHeads, lowTierHeads);
+        state.AddInboundPower(power);
     }
 
     private static int ComputeDesiredTarget(TownGarrisonRule rule, RiskAssessment risk)
