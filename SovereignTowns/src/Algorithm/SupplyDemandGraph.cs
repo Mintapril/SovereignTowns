@@ -327,6 +327,12 @@ public static class SupplyDemandGraph
                     if (home != null && bySettlement.TryGetValue(home, out var homeState))
                         AddInbound(homeState, buckets);
                 }
+                else if (party.PartyComponent is StSallyPartyComponent sally)
+                {
+                    var home = sally.HomeSettlementOrNull;
+                    if (home != null && bySettlement.TryGetValue(home, out var homeState))
+                        AddInbound(homeState, buckets);
+                }
             }
         }
         catch (Exception ex)
@@ -342,6 +348,7 @@ public static class SupplyDemandGraph
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
             if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlementOrNull?.OwnerClan;
+            if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlementOrNull?.OwnerClan;
         }
         catch
         {
