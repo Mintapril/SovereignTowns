@@ -67,6 +67,10 @@ public static class SupplyDemandGraph
             InboundPower = 0f;
             InboundHeadCount = 0;
             InboundLowTierHeadCount = 0;
+            var garrisonRoster = town.GarrisonParty?.MemberRoster;
+            CurrentPower = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(garrisonRoster);
+            CurrentHeadCount = garrisonRoster?.TotalManCount ?? 0;
+            CurrentLowTierHeadCount = ComputeLowTierHeadCount(garrisonRoster);
         }
 
         public Town Town { get; }
@@ -90,30 +94,10 @@ public static class SupplyDemandGraph
 
         public int Available(GenericTroopRole role) => Current(role);
 
-        public float CurrentPower
-            => SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(Town.GarrisonParty?.MemberRoster);
-
+        public float CurrentPower { get; }
         public float ProjectedPower => CurrentPower + InboundPower;
-
-        public int CurrentHeadCount => Town.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
-
-        public int CurrentLowTierHeadCount
-        {
-            get
-            {
-                var roster = Town.GarrisonParty?.MemberRoster;
-                if (roster == null) return 0;
-                int sum = 0;
-                for (int i = 0; i < roster.Count; i++)
-                {
-                    var el = roster.GetElementCopyAtIndex(i);
-                    if (el.Character == null || el.Character.IsHero) continue;
-                    if (el.Character.Tier <= SovereignTowns.Evaluators.GarrisonPowerEvaluator.LowTierMaxInclusive)
-                        sum += el.Number;
-                }
-                return sum;
-            }
-        }
+        public int CurrentHeadCount { get; }
+        public int CurrentLowTierHeadCount { get; }
 
         public void AddInbound(GenericTroopRole role, int count)
             => AddCount(Inbound, role, count);
@@ -136,6 +120,20 @@ public static class SupplyDemandGraph
 
         public TroopBucket? Bucket(GenericTroopRole role)
             => Buckets.FirstOrDefault(b => b.Role == role && b.Count > 0);
+
+        private static int ComputeLowTierHeadCount(TaleWorlds.CampaignSystem.Roster.TroopRoster? roster)
+        {
+            if (roster == null) return 0;
+            int sum = 0;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var el = roster.GetElementCopyAtIndex(i);
+                if (el.Character == null || el.Character.IsHero) continue;
+                if (el.Character.Tier <= SovereignTowns.Evaluators.GarrisonPowerEvaluator.LowTierMaxInclusive)
+                    sum += el.Number;
+            }
+            return sum;
+        }
     }
 
     private sealed class SourceDef
@@ -239,13 +237,15 @@ public static class SupplyDemandGraph
             }
             else
             {
-                int demand = Math.Max(0, state.DesiredPower - (int)Math.Round(state.ProjectedPower));
+                float projected = state.ProjectedPower;
+                int projectedInt = (int)Math.Round(projected);
+                int demand = Math.Max(0, state.DesiredPower - projectedInt);
                 if (demand <= 0) continue;
 
                 // 非首府用 GenericTroopRole.Infantry 作为"占位 role"，仅为复用图节点结构；
                 // CanConnect 里所有 source role 都能连到 branch demand（详见 Step 5）。
                 int demandNode = nextNodeId++;
-                var def = new DemandDef(demandNode, state, GenericTroopRole.Infantry, state.DesiredPower, (int)Math.Round(state.ProjectedPower), demand, isRecruitmentStockpile: false);
+                var def = new DemandDef(demandNode, state, GenericTroopRole.Infantry, state.DesiredPower, projectedInt, demand, isRecruitmentStockpile: false);
                 demands[demandNode] = def;
                 graph.AddEdge(demandNode, superSink, demand, 0);
             }
@@ -425,12 +425,6 @@ public static class SupplyDemandGraph
             return null;
         }
         return null;
-    }
-
-    private static void AddInbound(SettlementState state, IEnumerable<TroopBucket> buckets)
-    {
-        foreach (var bucket in buckets)
-            state.AddInbound(bucket.Role, bucket.Count);
     }
 
     private static void AddInboundWithPower(SettlementState state, MobileParty party)
@@ -683,17 +677,19 @@ public static class SupplyDemandGraph
             if (!sources.TryGetValue(from, out var source)) continue;
             if (!demands.TryGetValue(to, out var demand)) continue;
 
+            // 非首府 demand 的 role 是占位（Infantry），不能传出来；用 source 的实际兵种 role。
+            var role = demand.State.IsCapital ? demand.Role : source.Bucket.Role;
             switch (source.Kind)
             {
                 case SourceKind.InPlace:
-                    instructions.Add(new InPlaceRecruitInstruction(source.Settlement, demand.Role, count));
+                    instructions.Add(new InPlaceRecruitInstruction(source.Settlement, role, count));
                     break;
                 case SourceKind.Village:
                     if (source.Town != null)
-                        instructions.Add(new RecruiterPartyInstruction(source.Town, source.Settlement, demand.Role, count));
+                        instructions.Add(new RecruiterPartyInstruction(source.Town, source.Settlement, role, count));
                     break;
                 case SourceKind.Garrison:
-                    instructions.Add(new TransferPartyInstruction(source.Settlement, demand.State.Settlement, demand.Role, count));
+                    instructions.Add(new TransferPartyInstruction(source.Settlement, demand.State.Settlement, role, count));
                     break;
             }
         }
