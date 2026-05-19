@@ -53,7 +53,8 @@ public static class SupplyDemandGraph
         public SettlementState(
             Town town, Settlement settlement,
             TownGarrisonRule? capitalRule, BranchRule? branchRule,
-            int desiredTotal, int desiredPower, bool isCapital)
+            int desiredTotal, int desiredPower, bool isCapital,
+            bool isOtherOwnedBranch = false)
         {
             Town = town;
             Settlement = settlement;
@@ -62,6 +63,7 @@ public static class SupplyDemandGraph
             DesiredTotal = desiredTotal;
             DesiredPower = desiredPower;
             IsCapital = isCapital;
+            IsOtherOwnedBranch = isOtherOwnedBranch;
             Buckets = MatchPolicy.Bucketize(town.GarrisonParty?.MemberRoster);
             Inbound = new Dictionary<GenericTroopRole, int>();
             InboundPower = 0f;
@@ -78,6 +80,14 @@ public static class SupplyDemandGraph
         public int DesiredTotal { get; }
         public int DesiredPower { get; }
         public bool IsCapital { get; }
+        /// <summary>
+        /// 同氏族但非"首府拥有者本人"持有的非首府 town/castle。
+        /// 这两个 BranchRule 配置（TargetPower/LowTierMinFraction）不应用：
+        ///   - 不作为 demand（不被 ST 补员；按 vanilla 行为补兵）
+        ///   - 仍可作为 Garrison surplus 抽兵源（DesiredPower 用 vanilla baseline，避免抽空）
+        ///   - 不作为 InPlace volunteer 招募源
+        /// </summary>
+        public bool IsOtherOwnedBranch { get; }
         public List<TroopBucket> Buckets { get; }
         public Dictionary<GenericTroopRole, int> Inbound { get; }
         public float InboundPower { get; private set; }
@@ -231,6 +241,9 @@ public static class SupplyDemandGraph
             }
             else
             {
+                // "同氏族其他领主持有"的非首府：BranchRule 不应用 → 不生成 demand（不被 ST 补员，按 vanilla 行为补兵）。
+                if (state.IsOtherOwnedBranch) continue;
+
                 float projected = state.ProjectedPower;
                 int projectedInt = (int)Math.Round(projected);
                 int demand = Math.Max(0, state.DesiredPower - projectedInt);
@@ -250,7 +263,7 @@ public static class SupplyDemandGraph
         if (autoRecruitmentEnabled && capitalState != null && !capitalState.Settlement.IsUnderSiege)
         {
             int totalBranchDemand = states
-                .Where(s => !s.IsCapital)
+                .Where(s => !s.IsCapital && !s.IsOtherOwnedBranch)
                 .Sum(s => Math.Max(0, s.DesiredPower - (int)Math.Round(s.ProjectedPower)));
             if (totalBranchDemand > 0)
             {
@@ -286,6 +299,10 @@ public static class SupplyDemandGraph
             if (troopTransfersEnabled)
                 AddRosterSurplusSources(graph, sources, ref nextNodeId, superSource, state);
             if (!autoRecruitmentEnabled) continue;
+
+            // 同氏族其他领主持有：不让 ST 在其 notable 处招兵（按 vanilla 行为补兵）。
+            // Garrison surplus 仍可被抽（已在 AddRosterSurplusSources 中按 vanilla baseline 处理）。
+            if (state.IsOtherOwnedBranch) continue;
 
             AddCharacterSources(graph, sources, ref nextNodeId, superSource, SourceKind.InPlace, state.Settlement, state.Town, EnumerateVolunteerTroops(state.Settlement));
             if (state.IsCapital)
@@ -334,9 +351,31 @@ public static class SupplyDemandGraph
             }
             else
             {
-                var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
-                result.Add(new SettlementState(town, settlement, capitalRule: null, branchRule: branch,
-                    desiredTotal: 0, desiredPower: branch.TargetPower, isCapital: false));
+                // 判别"首府拥有者本人持有" vs "同氏族其他领主持有"。
+                // 防御性回退：capitalSettlement.Owner / settlement.Owner 任一为 null 时按"首府主本人持有"处理（保留原行为）。
+                var capitalOwner = capitalSettlement?.Owner;
+                var branchOwner = settlement.Owner;
+                bool isOtherOwned = capitalOwner != null && branchOwner != null && branchOwner != capitalOwner;
+
+                if (isOtherOwned)
+                {
+                    // 他人持有：BranchRule 不应用 — 按 vanilla baseline 算 DesiredPower（仅供 Garrison surplus 计算用）。
+                    // baseline 算不出（vanilla helper 返回 0）→ 退化为 currentPower，相当于不允许抽兵兜底。
+                    int baseline = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower(town);
+                    if (baseline <= 0)
+                    {
+                        var rosterNow = town.GarrisonParty?.MemberRoster;
+                        baseline = (int)Math.Round(SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(rosterNow));
+                    }
+                    result.Add(new SettlementState(town, settlement, capitalRule: null, branchRule: null,
+                        desiredTotal: 0, desiredPower: baseline, isCapital: false, isOtherOwnedBranch: true));
+                }
+                else
+                {
+                    var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
+                    result.Add(new SettlementState(town, settlement, capitalRule: null, branchRule: branch,
+                        desiredTotal: 0, desiredPower: branch.TargetPower, isCapital: false));
+                }
             }
         }
         return result;
