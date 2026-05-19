@@ -1,6 +1,5 @@
 using System;
 using Helpers;
-using SovereignTowns.Configuration;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Roster;
@@ -91,7 +90,7 @@ public static class GarrisonPowerEvaluator
         }
         catch (Exception ex)
         {
-            Logger.Warn($"GarrisonPowerEvaluator.ComputeAiVanillaTargetPower threw for town '{town?.Settlement?.StringId}': {ex.Message}");
+            Logger.Error($"GarrisonPowerEvaluator.ComputeAiVanillaTargetPower threw for town '{town?.Settlement?.StringId}'", ex);
             return 0;
         }
     }
