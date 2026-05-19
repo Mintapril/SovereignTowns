@@ -461,7 +461,7 @@
           <div x-show="activeTab === 1" class="tab-content p-8">
             <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">策略 参数</h2>
             <p class="text-parchment-200 text-sm mb-6">
-              合并原「数量预算」与「资源调度」。全局规则应用于所有受管领地，单个领地仍可在「按领地覆盖」里微调。
+              合并原「数量预算」与「资源调度」。全局规则（首府）应用于所有受管首府；非首府只受「非首府驻军」标签页约束。
             </p>
             <div class="diamond-divider mb-6"></div>
 
@@ -760,58 +760,61 @@
             </div>
           </div>
 
-          <!-- =========== TAB 5: 按领地覆盖 =========== -->
+          <!-- =========== TAB 5: 非首府驻军 =========== -->
           <div x-show="activeTab === 4" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">按 领地 覆盖</h2>
+            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">非首府 驻军</h2>
             <p class="text-parchment-200 text-sm mb-6">
-              单个领地可使用独立规则。取消「覆盖」勾选会删除该 entry，恢复 GlobalDefaults。
+              非首府是 mod 内部的黑箱，仅由「目标兵力」和「低 Tier 头数占比下限」约束。
+              AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处的 TargetPower）。
             </p>
             <div class="diamond-divider mb-6"></div>
 
-            <div x-show="settlements.length === 0" class="text-[14px] text-parchment-300 italic">
-              玩家暂无城/堡（或网页刚加载，请稍候片刻）。
-            </div>
-
-            <div class="space-y-3">
-              <template x-for="s in settlements" :key="s.stringId">
-                <div class="card">
-                  <div class="flex items-center gap-3 p-4">
-                    <span class="font-display text-[10px] tracking-[0.2em] uppercase px-2 py-1 border"
-                          :class="s.isCastle ? 'border-gold-400 text-gold-200' : 'border-parchment-200 text-parchment-100'"
-                          x-text="s.isCastle ? '城堡' : '城镇'"></span>
-                    <span class="font-display text-lg text-gold-100 tracking-wider" x-text="s.name"></span>
-                    <span class="font-mono text-[12px] text-parchment-300" x-text="s.stringId"></span>
-                    <span class="flex-1"></span>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" class="gold-check"
-                             :checked="!!config.PerSettlementOverrides[s.stringId]"
-                             @change="toggleOverride(s.stringId, $event.target.checked)" />
-                      <span class="text-[13px] font-display tracking-widest uppercase text-parchment-200">覆盖</span>
-                    </label>
-                  </div>
-
-                  <div x-show="!!config.PerSettlementOverrides[s.stringId]" x-transition class="px-4 pb-4 pt-2 border-t border-gold-600/20 space-y-4">
-                    <template x-for="spec in perSettlementNumericSpecs" :key="spec.key">
-                      <div class="grid grid-cols-12 gap-3 items-center">
-                        <div class="col-span-4 text-[14px] text-parchment-100" x-text="spec.label"></div>
-                        <div class="col-span-6">
-                          <input type="range" class="w-full"
-                                 :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
-                                 :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
-                                 @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
-                        </div>
-                        <div class="col-span-2">
-                          <input type="number"
-                                 class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1 text-right focus:border-gold-300 focus:outline-none"
-                                 :min="spec.min" :max="spec.max" :step="spec.step || (spec.discrete ? 1 : 0.01)"
-                                 :value="config.PerSettlementOverrides[s.stringId]?.[spec.key]"
-                                 @input="setOverrideValue(s.stringId, spec, $event.target.value)" />
-                        </div>
-                      </div>
-                    </template>
+            <!-- TargetPower -->
+            <div class="card p-5 mb-4">
+              <div class="grid grid-cols-12 gap-4 items-center">
+                <div class="col-span-12 md:col-span-4">
+                  <div class="text-[15px] text-parchment-50 font-medium">TargetPower</div>
+                  <div class="text-[13px] text-parchment-300 mt-0.5">
+                    vanilla strength 口径，约 150 ≈ 100 个 T3 步兵。非首府城堡 / 非首府城镇通用目标兵力。
                   </div>
                 </div>
-              </template>
+                <div class="col-span-9 md:col-span-6">
+                  <input type="range" class="w-full" min="0" max="100000" step="1"
+                         :value="config.BranchDefaults?.TargetPower ?? 150"
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value" />
+                </div>
+                <div class="col-span-3 md:col-span-2">
+                  <input type="number"
+                         class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
+                         min="0" max="100000" step="1"
+                         :value="config.BranchDefaults?.TargetPower ?? 150"
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value" />
+                </div>
+              </div>
+            </div>
+
+            <!-- LowTierMinFraction -->
+            <div class="card p-5">
+              <div class="grid grid-cols-12 gap-4 items-center">
+                <div class="col-span-12 md:col-span-4">
+                  <div class="text-[15px] text-parchment-50 font-medium">LowTierMinFraction</div>
+                  <div class="text-[13px] text-parchment-300 mt-0.5">
+                    T1+T2 头数 ÷ 总头数必须 ≥ 此值，防「全 T6 几个人」。
+                  </div>
+                </div>
+                <div class="col-span-9 md:col-span-6">
+                  <input type="range" class="w-full" min="0" max="1" step="0.01"
+                         :value="config.BranchDefaults?.LowTierMinFraction ?? 0.20"
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value" />
+                </div>
+                <div class="col-span-3 md:col-span-2">
+                  <input type="number"
+                         class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
+                         min="0" max="1" step="0.01"
+                         :value="(config.BranchDefaults?.LowTierMinFraction ?? 0.20).toFixed(2)"
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value" />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -936,7 +939,7 @@
           { label: '策略参数' },
           { label: '兵种编制' },
           { label: '兵员模板' },
-          { label: '按领地覆盖' },
+          { label: '非首府驻军' },
           { label: '财务' },
         ],
         config: null,
@@ -1051,15 +1054,6 @@
           { key: 'EtaBufferHours', root: 'ClanRecruiter', label: '征兵调度：ETA 缓冲', hint: '预占时长 = ETA + 此值（默认 1.0）', min: 0, max: 168, discrete: false, step: 0.5 },
           { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: '征兵调度：回访间隔', hint: '同村庄的最小回访间隔（默认 4）', min: 0, max: 720, discrete: false, step: 1 },
           { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: '征兵调度：距离评分权重', hint: 'score = -hoursSinceVisit + 此值 × Vec2 距离（默认 0.5）', min: 0, max: 100, discrete: false, step: 0.1 },
-        ],
-
-        perSettlementNumericSpecs: [
-          { key: 'TargetTotalCount', label: '目标驻军总数', min: 50, max: 500, discrete: true },
-          { key: 'MinimumDefenderRatio', label: '最少防守比例', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'BudgetLimit', label: '招募预算基准', min: 0, max: 50000, discrete: true },
-          { key: 'WartimeMultiplier', label: '高威胁目标乘数', min: 0.5, max: 2.0, discrete: false },
-          { key: 'PeacetimeMultiplier', label: '常态目标乘数', min: 0.5, max: 2.0, discrete: false },
-          { key: 'FoodSafetyThreshold', label: '食物安全阈值', min: -50, max: 50, discrete: false, step: 0.5 },
         ],
 
         // ============ computed ============
@@ -1296,7 +1290,7 @@
           if (r.ok) {
             r.body.GlobalDefaults = r.body.GlobalDefaults || {};
             r.body.GlobalDefaults.ExactTroopTemplate = r.body.GlobalDefaults.ExactTroopTemplate || {};
-            r.body.PerSettlementOverrides = r.body.PerSettlementOverrides || {};
+            r.body.BranchDefaults = r.body.BranchDefaults || { TargetPower: 150, LowTierMinFraction: 0.20 };
             r.body.EnabledFeatures = r.body.EnabledFeatures || {};
             r.body.Thresholds = r.body.Thresholds || {};
             r.body.ClanPatrol = r.body.ClanPatrol || {};
@@ -1488,20 +1482,6 @@
           let biggest = others[0];
           for (const k of others) if ((tmpl[k] || 0) > (tmpl[biggest] || 0)) biggest = k;
           tmpl[biggest] = Math.max(0, Math.min(1, (tmpl[biggest] || 0) + drift));
-        },
-
-        // ============ Per-settlement ============
-        toggleOverride(id, enabled) {
-          if (enabled) {
-            this.config.PerSettlementOverrides[id] = JSON.parse(JSON.stringify(this.config.GlobalDefaults));
-          } else {
-            delete this.config.PerSettlementOverrides[id];
-          }
-        },
-        setOverrideValue(id, spec, raw) {
-          const rule = this.config.PerSettlementOverrides[id];
-          if (!rule) return;
-          rule[spec.key] = spec.discrete ? parseInt(raw) : parseFloat(raw);
         },
 
         // ============ helpers ============

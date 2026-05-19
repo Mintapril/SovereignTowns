@@ -50,24 +50,37 @@ public static class SupplyDemandGraph
 
     private sealed class SettlementState
     {
-        public SettlementState(Town town, Settlement settlement, TownGarrisonRule rule, int desiredTotal, bool isCapital)
+        public SettlementState(
+            Town town, Settlement settlement,
+            TownGarrisonRule? capitalRule, BranchRule? branchRule,
+            int desiredTotal, int desiredPower, bool isCapital)
         {
             Town = town;
             Settlement = settlement;
-            Rule = rule;
+            CapitalRule = capitalRule;
+            BranchRule = branchRule;
             DesiredTotal = desiredTotal;
+            DesiredPower = desiredPower;
             IsCapital = isCapital;
             Buckets = MatchPolicy.Bucketize(town.GarrisonParty?.MemberRoster);
             Inbound = new Dictionary<GenericTroopRole, int>();
+            InboundPower = 0f;
+            var garrisonRoster = town.GarrisonParty?.MemberRoster;
+            CurrentPower = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(garrisonRoster);
+            CurrentHeadCount = garrisonRoster?.TotalManCount ?? 0;
+            CurrentLowTierHeadCount = ComputeLowTierHeadCount(garrisonRoster);
         }
 
         public Town Town { get; }
         public Settlement Settlement { get; }
-        public TownGarrisonRule Rule { get; }
+        public TownGarrisonRule? CapitalRule { get; }
+        public BranchRule? BranchRule { get; }
         public int DesiredTotal { get; }
+        public int DesiredPower { get; }
         public bool IsCapital { get; }
         public List<TroopBucket> Buckets { get; }
         public Dictionary<GenericTroopRole, int> Inbound { get; }
+        public float InboundPower { get; private set; }
 
         public int Current(GenericTroopRole role)
             => Buckets.Where(b => b.Role == role).Sum(b => b.Count);
@@ -75,14 +88,20 @@ public static class SupplyDemandGraph
         public int Projected(GenericTroopRole role)
             => Math.Max(0, Current(role) + Count(Inbound, role));
 
-        public int Available(GenericTroopRole role)
-            => Current(role);
+        public int Available(GenericTroopRole role) => Current(role);
 
-        public TroopBucket? Bucket(GenericTroopRole role)
-            => Buckets.FirstOrDefault(b => b.Role == role && b.Count > 0);
+        public float CurrentPower { get; }
+        public float ProjectedPower => CurrentPower + InboundPower;
+        public int CurrentHeadCount { get; }
+        public int CurrentLowTierHeadCount { get; }
 
         public void AddInbound(GenericTroopRole role, int count)
             => AddCount(Inbound, role, count);
+
+        public void AddInboundPower(float power)
+        {
+            if (power > 0f) InboundPower += power;
+        }
 
         private static int Count(IReadOnlyDictionary<GenericTroopRole, int> values, GenericTroopRole role)
             => values.TryGetValue(role, out var count) ? count : 0;
@@ -91,6 +110,23 @@ public static class SupplyDemandGraph
         {
             if (role == GenericTroopRole.Unknown || count <= 0) return;
             values[role] = Count(values, role) + count;
+        }
+
+        public TroopBucket? Bucket(GenericTroopRole role)
+            => Buckets.FirstOrDefault(b => b.Role == role && b.Count > 0);
+
+        private static int ComputeLowTierHeadCount(TaleWorlds.CampaignSystem.Roster.TroopRoster? roster)
+        {
+            if (roster == null) return 0;
+            int sum = 0;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var el = roster.GetElementCopyAtIndex(i);
+                if (el.Character == null || el.Character.IsHero) continue;
+                if (el.Character.Tier <= SovereignTowns.Evaluators.GarrisonPowerEvaluator.LowTierMaxInclusive)
+                    sum += el.Number;
+            }
+            return sum;
         }
     }
 
@@ -171,7 +207,6 @@ public static class SupplyDemandGraph
 
         var sources = new Dictionary<int, SourceDef>();
         var demands = new Dictionary<int, DemandDef>();
-        var branchDemandByRole = new Dictionary<GenericTroopRole, int>();
         var capitalState = states.FirstOrDefault(s => s.IsCapital);
         var features = ConfigurationManager.Current?.EnabledFeatures;
         bool autoRecruitmentEnabled = features?.AutoRecruitment ?? true;
@@ -179,43 +214,61 @@ public static class SupplyDemandGraph
 
         foreach (var state in states)
         {
-            foreach (var role in MatchPolicy.Roles)
+            if (state.IsCapital)
             {
-                int desired = MatchPolicy.DesiredCount(state.Rule, role, state.DesiredTotal);
-                int current = state.Projected(role);
-                int demand = Math.Max(0, desired - current);
+                foreach (var role in MatchPolicy.Roles)
+                {
+                    int desired = MatchPolicy.DesiredCount(state.CapitalRule!, role, state.DesiredTotal);
+                    int current = state.Projected(role);
+                    int demand = Math.Max(0, desired - current);
+                    if (demand <= 0) continue;
+
+                    int demandNode = nextNodeId++;
+                    var def = new DemandDef(demandNode, state, role, desired, current, demand, isRecruitmentStockpile: false);
+                    demands[demandNode] = def;
+                    graph.AddEdge(demandNode, superSink, demand, 0);
+                }
+            }
+            else
+            {
+                float projected = state.ProjectedPower;
+                int projectedInt = (int)Math.Round(projected);
+                int demand = Math.Max(0, state.DesiredPower - projectedInt);
                 if (demand <= 0) continue;
 
+                // 非首府用 GenericTroopRole.Infantry 作为"占位 role"，仅为复用图节点结构；
+                // CanConnect 里所有 source role 都能连到 branch demand（详见 Step 5）。
                 int demandNode = nextNodeId++;
-                var def = new DemandDef(demandNode, state, role, desired, current, demand, isRecruitmentStockpile: false);
+                var def = new DemandDef(demandNode, state, GenericTroopRole.Infantry, state.DesiredPower, projectedInt, demand, isRecruitmentStockpile: false);
                 demands[demandNode] = def;
                 graph.AddEdge(demandNode, superSink, demand, 0);
-
-                if (!state.IsCapital)
-                    branchDemandByRole[role] = branchDemandByRole.TryGetValue(role, out var existing)
-                        ? existing + demand
-                        : demand;
             }
         }
 
+        // 首府"招募囤兵"需求：把所有 branch 缺口的 role 总和注入 capital 招募 stockpile。
+        // 非首府的 demand 已经记到 totalBranchDemand 里，这里只对 capital 仍然作为兵源囤兵。
         if (autoRecruitmentEnabled && capitalState != null && !capitalState.Settlement.IsUnderSiege)
         {
-            foreach (var role in MatchPolicy.Roles)
+            int totalBranchDemand = states
+                .Where(s => !s.IsCapital)
+                .Sum(s => Math.Max(0, s.DesiredPower - (int)Math.Round(s.ProjectedPower)));
+            if (totalBranchDemand > 0)
             {
-                int demand = branchDemandByRole.TryGetValue(role, out var value) ? value : 0;
-                if (demand <= 0 || !MatchPolicy.AllowsRole(capitalState.Rule, role)) continue;
-
-                int demandNode = nextNodeId++;
-                var def = new DemandDef(
-                    demandNode,
-                    capitalState,
-                    role,
-                    desired: demand,
-                    current: 0,
-                    demand: demand,
-                    isRecruitmentStockpile: true);
-                demands[demandNode] = def;
-                graph.AddEdge(demandNode, superSink, demand, 0);
+                foreach (var role in MatchPolicy.Roles)
+                {
+                    if (!MatchPolicy.AllowsRole(capitalState.CapitalRule!, role)) continue;
+                    int demandNode = nextNodeId++;
+                    var def = new DemandDef(
+                        demandNode,
+                        capitalState,
+                        role,
+                        desired: totalBranchDemand,
+                        current: 0,
+                        demand: totalBranchDemand,
+                        isRecruitmentStockpile: true);
+                    demands[demandNode] = def;
+                    graph.AddEdge(demandNode, superSink, totalBranchDemand, 0);
+                }
             }
         }
 
@@ -271,9 +324,20 @@ public static class SupplyDemandGraph
             var settlement = town.Settlement;
             if (settlement == null || !settlement.IsActive) continue;
 
-            var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
-            int desired = ComputeDesiredTarget(rule, RiskAssessmentService.Assess(settlement));
-            result.Add(new SettlementState(town, settlement, rule, desired, settlement == capitalSettlement));
+            bool isCapital = settlement == capitalSettlement;
+            if (isCapital)
+            {
+                var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
+                int desired = ComputeDesiredTarget(rule, RiskAssessmentService.Assess(settlement));
+                result.Add(new SettlementState(town, settlement, capitalRule: rule, branchRule: null,
+                    desiredTotal: desired, desiredPower: 0, isCapital: true));
+            }
+            else
+            {
+                var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
+                result.Add(new SettlementState(town, settlement, capitalRule: null, branchRule: branch,
+                    desiredTotal: 0, desiredPower: branch.TargetPower, isCapital: false));
+            }
         }
         return result;
     }
@@ -300,8 +364,8 @@ public static class SupplyDemandGraph
                 var partyClan = ResolvePartyClan(party);
                 if (partyClan == null || partyClan != ownerClan) continue;
 
-                var buckets = MatchPolicy.Bucketize(party.MemberRoster);
-                if (buckets.Count == 0) continue;
+                var roster = party.MemberRoster;
+                if (roster == null || roster.TotalManCount <= 0) continue;
 
                 if (party.PartyComponent is StTransferPartyComponent transfer)
                 {
@@ -314,18 +378,24 @@ public static class SupplyDemandGraph
                         && target == source
                         && bySettlement.TryGetValue(source, out var returningSource))
                     {
-                        AddInbound(returningSource, buckets);
+                        AddInboundWithPower(returningSource, party);
                         continue;
                     }
 
                     if (destination != null && bySettlement.TryGetValue(destination, out var destinationState))
-                        AddInbound(destinationState, buckets);
+                        AddInboundWithPower(destinationState, party);
                 }
                 else if (party.PartyComponent is StRecruiterPartyComponent recruiter)
                 {
                     var home = recruiter.HomeSettlementOrNull;
                     if (home != null && bySettlement.TryGetValue(home, out var homeState))
-                        AddInbound(homeState, buckets);
+                        AddInboundWithPower(homeState, party);
+                }
+                else if (party.PartyComponent is StSallyPartyComponent sally)
+                {
+                    var home = sally.HomeSettlementOrNull;
+                    if (home != null && bySettlement.TryGetValue(home, out var homeState))
+                        AddInboundWithPower(homeState, party);
                 }
             }
         }
@@ -342,6 +412,7 @@ public static class SupplyDemandGraph
             if (party.ActualClan != null) return party.ActualClan;
             if (party.PartyComponent is StTransferPartyComponent transfer) return transfer.Source?.OwnerClan;
             if (party.PartyComponent is StRecruiterPartyComponent recruiter) return recruiter.HomeSettlementOrNull?.OwnerClan;
+            if (party.PartyComponent is StSallyPartyComponent sally) return sally.HomeSettlementOrNull?.OwnerClan;
         }
         catch
         {
@@ -350,10 +421,17 @@ public static class SupplyDemandGraph
         return null;
     }
 
-    private static void AddInbound(SettlementState state, IEnumerable<TroopBucket> buckets)
+    private static void AddInboundWithPower(SettlementState state, MobileParty party)
     {
+        var roster = party?.MemberRoster;
+        if (roster == null) return;
+
+        var buckets = MatchPolicy.Bucketize(roster);
         foreach (var bucket in buckets)
             state.AddInbound(bucket.Role, bucket.Count);
+
+        float power = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeRosterPower(roster);
+        state.AddInboundPower(power);
     }
 
     private static int ComputeDesiredTarget(TownGarrisonRule rule, RiskAssessment risk)
@@ -371,13 +449,35 @@ public static class SupplyDemandGraph
         int superSource,
         SettlementState state)
     {
+        if (state.IsCapital)
+        {
+            // 首府：原行为 — 对每个 role 算 desired vs available 的超额头数
+            foreach (var bucket in state.Buckets)
+            {
+                int desired = MatchPolicy.DesiredCount(state.CapitalRule!, bucket.Role, state.DesiredTotal);
+                int surplus = Math.Max(0, state.Available(bucket.Role) - desired);
+                if (surplus <= 0) continue;
+
+                var sourceBucket = new TroopBucket(bucket.Role, surplus, bucket.MinTier, bucket.Representative);
+                AddSource(graph, sources, ref nextNodeId, superSource, SourceKind.Garrison, state.Settlement, state.Town, sourceBucket);
+            }
+            return;
+        }
+
+        // 非首府：把整城驻军挂为"可抽兵源"，但每桶上限是 TotalCount —
+        // (TotalPower / TargetPower) - 1) × 该桶头数（按比例匀分超额）。
+        // 简化做法：power 超过 TargetPower 时，每桶可抽 0..bucket.Count 头数，
+        // 实际抽多少由 MinCostFlow 解出来。
+        float currentPower = state.CurrentPower;
+        if (currentPower <= state.DesiredPower) return;
+
+        float overshootRatio = (currentPower - state.DesiredPower) / Math.Max(1f, currentPower);
         foreach (var bucket in state.Buckets)
         {
-            int desired = MatchPolicy.DesiredCount(state.Rule, bucket.Role, state.DesiredTotal);
-            int surplus = Math.Max(0, state.Available(bucket.Role) - desired);
-            if (surplus <= 0) continue;
+            int abstractable = Math.Max(0, (int)Math.Round(bucket.Count * overshootRatio));
+            if (abstractable <= 0) continue;
 
-            var sourceBucket = new TroopBucket(bucket.Role, surplus, bucket.MinTier, bucket.Representative);
+            var sourceBucket = new TroopBucket(bucket.Role, abstractable, bucket.MinTier, bucket.Representative);
             AddSource(graph, sources, ref nextNodeId, superSource, SourceKind.Garrison, state.Settlement, state.Town, sourceBucket);
         }
     }
@@ -472,8 +572,25 @@ public static class SupplyDemandGraph
 
     private static bool CanConnect(SourceDef source, DemandDef demand)
     {
-        if (source.Bucket.Role != demand.Role) return false;
         if (source.Settlement.IsUnderSiege || demand.State.Settlement.IsUnderSiege) return false;
+
+        // 非首府 demand：任意兵种皆可补，但 InPlace/Village 只能补本城（招募官只回首府）。
+        if (!demand.State.IsCapital)
+        {
+            switch (source.Kind)
+            {
+                case SourceKind.InPlace:
+                case SourceKind.Village:
+                    return source.Settlement == demand.State.Settlement;
+                case SourceKind.Garrison:
+                    return source.Settlement != demand.State.Settlement;
+                default:
+                    return false;
+            }
+        }
+
+        // 首府路径（含 capital 招募 stockpile）保持原行为
+        if (source.Bucket.Role != demand.Role) return false;
 
         if (demand.IsRecruitmentStockpile)
         {
@@ -502,11 +619,12 @@ public static class SupplyDemandGraph
             SourceKind.Garrison => Thresholds.McmfTransferOverhead,
             _ => 0
         };
-        int penalty = MatchPolicy.MatchPenalty(
-            source.Bucket,
-            demand.State.Rule,
-            Thresholds.McmfHardPenalty,
-            Thresholds.McmfTierPenalty);
+
+        // 非首府 demand：不考虑 tier 不符的硬罚，因 branch 是黑箱（任意 role 都接受）。
+        // 仅按距离 + overhead 计 cost。
+        int penalty = demand.State.IsCapital
+            ? MatchPolicy.MatchPenalty(source.Bucket, demand.State.CapitalRule!, Thresholds.McmfHardPenalty, Thresholds.McmfTierPenalty)
+            : 0;
         float distance = source.Kind == SourceKind.Garrison
             ? Distance(source.Settlement, demand.State.Settlement)
             : 0f;
@@ -544,17 +662,19 @@ public static class SupplyDemandGraph
             if (!sources.TryGetValue(from, out var source)) continue;
             if (!demands.TryGetValue(to, out var demand)) continue;
 
+            // 非首府 demand 的 role 是占位（Infantry），不能传出来；用 source 的实际兵种 role。
+            var role = demand.State.IsCapital ? demand.Role : source.Bucket.Role;
             switch (source.Kind)
             {
                 case SourceKind.InPlace:
-                    instructions.Add(new InPlaceRecruitInstruction(source.Settlement, demand.Role, count));
+                    instructions.Add(new InPlaceRecruitInstruction(source.Settlement, role, count));
                     break;
                 case SourceKind.Village:
                     if (source.Town != null)
-                        instructions.Add(new RecruiterPartyInstruction(source.Town, source.Settlement, demand.Role, count));
+                        instructions.Add(new RecruiterPartyInstruction(source.Town, source.Settlement, role, count));
                     break;
                 case SourceKind.Garrison:
-                    instructions.Add(new TransferPartyInstruction(source.Settlement, demand.State.Settlement, demand.Role, count));
+                    instructions.Add(new TransferPartyInstruction(source.Settlement, demand.State.Settlement, role, count));
                     break;
             }
         }

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -109,7 +108,7 @@ internal static class WebConfigEndpoints
 
             // 兜底空字段，与 ConfigurationManager.TryLoadFromDisk 一致。
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
-            parsed.PerSettlementOverrides ??= new Dictionary<string, TownGarrisonRule>();
+            parsed.BranchDefaults ??= BranchRule.CreateDefault();
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
@@ -260,7 +259,7 @@ internal static class WebConfigEndpoints
                 configVersion = cfg.ConfigVersion,
                 lastModified = cfg.LastModified,
                 features = cfg.EnabledFeatures,
-                perSettlementOverrideCount = cfg.PerSettlementOverrides.Count,
+                branchTargetPower = cfg.BranchDefaults?.TargetPower ?? 0,
                 exactTroopTemplateCount = cfg.GlobalDefaults?.ExactTroopTemplate?.Count ?? 0,
             };
             WebConfigServer.WriteJson(ctx, 200, status);
