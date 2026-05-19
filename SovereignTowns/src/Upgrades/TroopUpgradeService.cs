@@ -79,6 +79,16 @@ public static class TroopUpgradeService
                 return new UpgradeReport(0, 0, 0, 0);
             }
 
+            // 非首府不做升级 — 非首府按 BranchRule 黑箱处理，"够 power" 即可，
+            // 升级行为由首府独占。即便有兵进来也保持原 tier，让 power 自然累积。
+            var capitalRegistry = SovereignTowns.Capital.CapitalRegistry.Instance;
+            if (capitalRegistry != null
+                && homeTown.Settlement != capitalRegistry.GetCapitalForClan(homeTown.OwnerClan))
+            {
+                Logger.Debug($"TroopUpgradeService: '{homeTown.Settlement.Name}' is not a capital — skip upgrade per design");
+                return new UpgradeReport(0, 0, 0, 0);
+            }
+
             if (budgetCap < 0) budgetCap = 0;
             if (maxUpgradesPerCall <= 0)
             {
