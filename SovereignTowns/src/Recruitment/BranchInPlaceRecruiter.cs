@@ -28,7 +28,11 @@ public static class BranchInPlaceRecruiter
         {
             if (branch == null || (!branch.IsTown && !branch.IsCastle)) return 0;
             var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
-            if (registry != null && !registry.IsManagedClan(branch.OwnerClan)) return 0;
+            if (registry != null)
+            {
+                if (!registry.IsManagedClan(branch.OwnerClan)) return 0;
+            }
+            else if (branch.OwnerClan != Clan.PlayerClan) return 0;
             if (branch.IsUnderSiege) return 0;
             if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment) return 0;
 
@@ -46,9 +50,21 @@ public static class BranchInPlaceRecruiter
             int partySizeLimit = garrison.Party?.PartySizeLimit ?? int.MaxValue;
             if (memberRoster.TotalManCount >= partySizeLimit) return 0;
 
+            // BranchRule 不带 FoodSafetyThreshold（极简），与 TownGarrisonRule 默认 -2.0 对齐做硬阈值兜底。
+            const float branchFoodSafetyThreshold = -2.0f;
+            if (town.FoodChange < branchFoodSafetyThreshold)
+            {
+                Logger.Info($"BranchInPlace '{branch.Name}': 跳过 — town.FoodChange={town.FoodChange:F1} < {branchFoodSafetyThreshold:F1}");
+                return 0;
+            }
+
             var branchRule = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
             float currentPower = GarrisonPowerEvaluator.ComputeRosterPower(memberRoster);
-            if (currentPower >= desiredPower) return 0;
+            if (currentPower >= desiredPower)
+            {
+                Logger.Info($"BranchInPlace '{branch.Name}': 跳过 — currentPower={currentPower:F1} >= desiredPower={desiredPower}");
+                return 0;
+            }
 
             var ownerHero = branch.OwnerClan?.Leader;
             if (ownerHero == null) return 0;
@@ -91,12 +107,13 @@ public static class BranchInPlaceRecruiter
                 ? a.Troop.Tier.CompareTo(b.Troop.Tier)
                 : b.Troop.Tier.CompareTo(a.Troop.Tier));
 
+            bool shouldCharge = SovereignTowns.Capital.CapitalRegistry.ShouldChargeClan(branch.OwnerClan);
+
             foreach (var (troop, notable, idx) in candidates)
             {
                 if (memberRoster.TotalManCount + 1 > partySizeLimit) break;
                 if (GarrisonPowerEvaluator.ComputeRosterPower(memberRoster) >= desiredPower) break;
 
-                bool shouldCharge = SovereignTowns.Capital.CapitalRegistry.ShouldChargeClan(branch.OwnerClan);
                 if (shouldCharge && !ModTreasury.CanAfford(5)) break;
                 if (shouldCharge && !ModTreasury.Charge(ExpenseCategory.RecruiterWage, 5, $"branch_in_place branch={branch.StringId} troop={troop.StringId}")) break;
 
