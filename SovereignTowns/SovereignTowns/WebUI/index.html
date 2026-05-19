@@ -971,7 +971,7 @@
           { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击' },
           // T2 (doc §20 #2)：3 个战利品集中处理 toggle 已删除；所有 ST 队伍走基类自资金路径
           { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
-          { key: 'ApplyToAiSettlementsToo', root: 'EnabledFeatures', label: 'AI 城镇纳入 ST 规则', hint: '把有首府的 AI 氏族纳入首府、驻军评估、招募、调拨、主动出击、俘虏转化和巡逻等 ST 路径；AI 只招同文化兵，且招兵免费。' },
+          // ApplyToAiSettlementsToo toggle 已从 UI 移除 — backend flag 保留默认 false（永远关闭）。
           { key: 'PauseSpendingWhenBroke', root: 'EnabledFeatures', label: '金币不足时暂停支出', hint: '玩家金币不足时拒绝扣款 / 派遣 / 升级，防止"派出去又因没钱半截失败"' },
           { key: 'ShowDailySummary', root: 'EnabledFeatures', label: '每日活动汇总弹窗', hint: '每日 InformationManager 弹窗显示今日招/调/巡逻/出击/俘虏人数' },
           { key: 'VerboseLogging', root: 'EnabledFeatures', label: '详细诊断日志', hint: '开启后 Logger 等级降到 Debug：落盘所有 [DIAG] 行（hourly tick 状态、状态机迁移、食物维护跳过原因、scheduler 决策等）。日志文件会很大，调试用后请关闭。修改即时生效，无需重启。' },
@@ -1339,15 +1339,6 @@
         // ============ toggles ============
         getToggleValue(t) { return !!this.config?.[t.root]?.[t.key]; },
         setToggleValue(t, v) {
-          if (t.key === 'ApplyToAiSettlementsToo' &&
-              this.config?.[t.root]?.[t.key] === true && v === false) {
-            if (!window.confirm('即将解散所有 AI 氏族正在执行的 SovereignTowns 任务，是否继续？')) {
-              // 用户取消：写回原值以触发 Alpine 重新渲染 :checked 绑定，恢复勾选状态
-              this.config[t.root][t.key] = false;
-              this.$nextTick(() => { this.config[t.root][t.key] = true; });
-              return;
-            }
-          }
           this.config[t.root][t.key] = v;
         },
 
