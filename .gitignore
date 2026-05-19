@@ -8,3 +8,7 @@
 # Decompiled vanilla & 3rd-party mod sources — kept locally as reference,
 # but excluded from git (third-party copyright + repo bloat).
 **/_research/
+
+# Git worktrees for isolated subagent work
+.worktrees/
+.claude/worktrees/
