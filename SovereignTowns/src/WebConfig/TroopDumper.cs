@@ -203,7 +203,10 @@ public static class TroopDumper
         try { return f(); } catch { return false; }
     }
 
-    private sealed class TroopEntry
+    /// <summary>进程内取可招募兵种列表（游戏内控制面板用，不落盘）。</summary>
+    public static System.Collections.Generic.List<TroopEntry> Collect() => CollectTroops();
+
+    public sealed class TroopEntry
     {
         public string id { get; set; } = "";
         public string name { get; set; } = "";          // vanilla-localized character name
