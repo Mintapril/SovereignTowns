@@ -23,6 +23,7 @@ public sealed class ControlPanelVM : ViewModel
     // ── Tab VMs ──
     private FeaturesTabVM _featuresTab;
     private StrategyTabVM _strategyTab;
+    private CompositionTabVM _compositionTab;
     private BranchesTabVM _branchesTab;
 
     [DataSourceProperty]
@@ -37,6 +38,13 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _strategyTab;
         private set { _strategyTab = value; OnPropertyChanged(nameof(StrategyTab)); }
+    }
+
+    [DataSourceProperty]
+    public CompositionTabVM CompositionTab
+    {
+        get => _compositionTab;
+        private set { _compositionTab = value; OnPropertyChanged(nameof(CompositionTab)); }
     }
 
     [DataSourceProperty]
@@ -230,9 +238,10 @@ public sealed class ControlPanelVM : ViewModel
 
         if (_config != null)
         {
-            FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
-            StrategyTab = new StrategyTabVM(_config, MarkDirty);
-            BranchesTab = new BranchesTabVM(_config, MarkDirty);
+            FeaturesTab    = new FeaturesTabVM(_config, MarkDirty);
+            StrategyTab    = new StrategyTabVM(_config, MarkDirty);
+            CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
+            BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
@@ -333,9 +342,10 @@ public sealed class ControlPanelVM : ViewModel
         // 重建各 TabVM — 旧 VM 绑定已废弃的 _config，必须全部重建。
         if (_config != null)
         {
-            FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
-            StrategyTab = new StrategyTabVM(_config, MarkDirty);
-            BranchesTab = new BranchesTabVM(_config, MarkDirty);
+            FeaturesTab    = new FeaturesTabVM(_config, MarkDirty);
+            StrategyTab    = new StrategyTabVM(_config, MarkDirty);
+            CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
+            BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
     }
 

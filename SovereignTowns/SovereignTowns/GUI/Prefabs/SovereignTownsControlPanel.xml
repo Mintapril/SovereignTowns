@@ -517,9 +517,406 @@
                     <Widget IsVisible="@IsTab2Active"
                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                       <Children>
-                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                    Text="@Tab2Label"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                                   DataSource="{CompositionTab}">
+                          <Children>
+
+                            <!-- Scrollable content region -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                              <Children>
+
+                                <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                 InnerPanel="CompClipRect\CompInnerPanel"
+                                                 ClipRect="CompClipRect"
+                                                 VerticalScrollbar="..\CompScrollbarHolder\CompScrollbar"
+                                                 AutoHideScrollBars="true">
+                                  <Children>
+                                    <Widget Id="CompClipRect"
+                                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                            ClipContents="true">
+                                      <Children>
+                                        <ListPanel Id="CompInnerPanel"
+                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   VerticalAlignment="Top"
+                                                   StackLayout.LayoutMethod="VerticalBottomToTop">
+                                          <Children>
+
+                                            <!-- Generic-mode section (IsVisible=@IsGenericMode) -->
+                                            <Widget IsVisible="@IsGenericMode"
+                                                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                  <Children>
+
+                                                    <!-- ── Tier range ── -->
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                               MarginTop="16">
+                                                      <Children>
+
+                                                        <!-- Tier range text -->
+                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                    Text="@TierRangeText"
+                                                                    MarginTop="6" />
+
+                                                        <!-- Max tier chip row -->
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   MarginTop="4">
+                                                          <Children>
+                                                            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                                        SuggestedWidth="120"
+                                                                        Text="@MaxTierLabel"
+                                                                        VerticalAlignment="Center" />
+                                                            <ListPanel DataSource="{MaxTierChips}"
+                                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                                              <ItemTemplate>
+                                                                <STCPChip />
+                                                              </ItemTemplate>
+                                                            </ListPanel>
+                                                          </Children>
+                                                        </ListPanel>
+
+                                                        <!-- Min tier chip row -->
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   MarginTop="4">
+                                                          <Children>
+                                                            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                                        SuggestedWidth="120"
+                                                                        Text="@MinTierLabel"
+                                                                        VerticalAlignment="Center" />
+                                                            <ListPanel DataSource="{MinTierChips}"
+                                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                                              <ItemTemplate>
+                                                                <STCPChip />
+                                                              </ItemTemplate>
+                                                            </ListPanel>
+                                                          </Children>
+                                                        </ListPanel>
+
+                                                        <!-- Tier section header + reset button -->
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   VerticalAlignment="Center">
+                                                          <Children>
+                                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                        Text="@TierSectionLabel"
+                                                                        VerticalAlignment="Center" />
+                                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                                          Command.Click="ExecuteResetTier"
+                                                                          IsVisible="@ShowTierReset"
+                                                                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                                          SuggestedHeight="28"
+                                                                          VerticalAlignment="Center">
+                                                              <Children>
+                                                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                            Text="@TierResetLabel"
+                                                                            MarginLeft="8" MarginRight="8" />
+                                                              </Children>
+                                                            </ButtonWidget>
+                                                          </Children>
+                                                        </ListPanel>
+
+                                                        <!-- Divider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                SuggestedHeight="1"
+                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                MarginTop="12" />
+
+                                                      </Children>
+                                                    </ListPanel>
+
+                                                    <!-- ── Ratio sliders ── -->
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                               MarginTop="12">
+                                                      <Children>
+
+                                                        <!-- Ratio hint text -->
+                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                    Text="@RatioHintText"
+                                                                    MarginTop="6" />
+
+                                                        <!-- Σ sum display -->
+                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                    Text="@RatioSumText"
+                                                                    MarginTop="4" />
+
+                                                        <!-- Ranged slider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                MarginBottom="4">
+                                                          <Children>
+                                                            <STCPSliderRow DataSource="{RangedRow}" />
+                                                          </Children>
+                                                        </Widget>
+
+                                                        <!-- Infantry slider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                MarginBottom="4">
+                                                          <Children>
+                                                            <STCPSliderRow DataSource="{InfantryRow}" />
+                                                          </Children>
+                                                        </Widget>
+
+                                                        <!-- HorseArcher slider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                MarginBottom="4">
+                                                          <Children>
+                                                            <STCPSliderRow DataSource="{HorseArcherRow}" />
+                                                          </Children>
+                                                        </Widget>
+
+                                                        <!-- Cavalry slider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                MarginBottom="4">
+                                                          <Children>
+                                                            <STCPSliderRow DataSource="{CavalryRow}" />
+                                                          </Children>
+                                                        </Widget>
+
+                                                        <!-- Ratio section header + reset button -->
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   VerticalAlignment="Center">
+                                                          <Children>
+                                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                        Text="@RatioSectionLabel"
+                                                                        VerticalAlignment="Center" />
+                                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                                          Command.Click="ExecuteResetRatios"
+                                                                          IsVisible="@ShowRatioReset"
+                                                                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                                          SuggestedHeight="28"
+                                                                          VerticalAlignment="Center">
+                                                              <Children>
+                                                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                            Text="@RatioResetLabel"
+                                                                            MarginLeft="8" MarginRight="8" />
+                                                              </Children>
+                                                            </ButtonWidget>
+                                                          </Children>
+                                                        </ListPanel>
+
+                                                        <!-- Divider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                SuggestedHeight="1"
+                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                MarginTop="12" />
+
+                                                      </Children>
+                                                    </ListPanel>
+
+                                                    <!-- ── Culture filter ── -->
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                               MarginTop="12">
+                                                      <Children>
+
+                                                        <!-- Culture filter hint -->
+                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                    Text="@CultureFilterHint"
+                                                                    MarginTop="6" />
+
+                                                        <!-- Culture chips -->
+                                                        <ListPanel DataSource="{CultureChips}"
+                                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   MarginTop="4">
+                                                          <ItemTemplate>
+                                                            <STCPChip />
+                                                          </ItemTemplate>
+                                                        </ListPanel>
+
+                                                        <!-- Culture section header + reset button -->
+                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                                   VerticalAlignment="Center">
+                                                          <Children>
+                                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                        Text="@CultureSectionLabel"
+                                                                        VerticalAlignment="Center" />
+                                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                                          Command.Click="ExecuteResetCulture"
+                                                                          IsVisible="@ShowCultureReset"
+                                                                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                                          SuggestedHeight="28"
+                                                                          VerticalAlignment="Center">
+                                                              <Children>
+                                                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                            Text="@CultureResetLabel"
+                                                                            MarginLeft="8" MarginRight="8" />
+                                                              </Children>
+                                                            </ButtonWidget>
+                                                          </Children>
+                                                        </ListPanel>
+
+                                                        <!-- Divider -->
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                SuggestedHeight="1"
+                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                MarginTop="8" />
+
+                                                      </Children>
+                                                    </ListPanel>
+
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+
+                                            <!-- Exact-mode guide card (IsVisible=@IsExactMode) -->
+                                            <Widget IsVisible="@IsExactMode"
+                                                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    MarginTop="8" MarginBottom="8">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                           HorizontalAlignment="Center">
+                                                  <Children>
+
+                                                    <!-- Go-to-templates button -->
+                                                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                                                  Command.Click="ExecuteGoToTemplatesTab"
+                                                                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                                  SuggestedHeight="36"
+                                                                  HorizontalAlignment="Center">
+                                                      <Children>
+                                                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                    Text="@GoToTemplatesLabel"
+                                                                    MarginLeft="16" MarginRight="16" />
+                                                      </Children>
+                                                    </ButtonWidget>
+
+                                                    <!-- Exact mode description -->
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeCardDesc2"
+                                                                MarginTop="4" />
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeCardNoEffect"
+                                                                MarginTop="2" />
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeCardDesc1"
+                                                                MarginTop="2" />
+
+                                                    <!-- Exact mode card title -->
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeCardTitle"
+                                                                MarginTop="8" />
+
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+
+                                            <!-- Divider after mode buttons -->
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                    SuggestedHeight="1"
+                                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                                    MarginTop="8" MarginBottom="8" />
+
+                                            <!-- Mode buttons row (Exact) -->
+                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                          Command.Click="ExecuteSetExactMode"
+                                                          IsSelected="@IsExactMode"
+                                                          ButtonType="Toggle"
+                                                          WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                          MarginBottom="4">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                  <Children>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeDesc"
+                                                                MarginTop="2" />
+                                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                                Text="@ExactModeLabel"
+                                                                VerticalAlignment="Center" />
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </ButtonWidget>
+
+                                            <!-- Mode buttons row (Generic) -->
+                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                          Command.Click="ExecuteSetGenericMode"
+                                                          IsSelected="@IsGenericMode"
+                                                          ButtonType="Toggle"
+                                                          WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                          MarginBottom="4">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                  <Children>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@GenericModeDesc"
+                                                                MarginTop="2" />
+                                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                                Text="@GenericModeLabel"
+                                                                VerticalAlignment="Center" />
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </ButtonWidget>
+
+                                          </Children>
+                                        </ListPanel>
+                                      </Children>
+                                    </Widget>
+                                  </Children>
+                                </ScrollablePanel>
+
+                                <Widget Id="CompScrollbarHolder"
+                                        WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                        HorizontalAlignment="Right">
+                                  <Children>
+                                    <ScrollbarWidget Id="CompScrollbar"
+                                                     WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                     SuggestedWidth="10"
+                                                     AlignmentAxis="Vertical"
+                                                     Handle="CompScrollbarHandle"
+                                                     MinValue="0" MaxValue="100">
+                                      <Children>
+                                        <Widget Id="CompScrollbarHandle"
+                                                WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                SuggestedWidth="10" SuggestedHeight="20"
+                                                HorizontalAlignment="Center"
+                                                Sprite="BlankWhiteSquare_9"
+                                                Color="#B8960CFF" />
+                                      </Children>
+                                    </ScrollbarWidget>
+                                  </Children>
+                                </Widget>
+
+                              </Children>
+                            </Widget>
+
+                            <!-- Thin gold divider -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                    SuggestedHeight="1"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    MarginBottom="6" MarginTop="4" />
+
+                            <!-- Intro -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro"
+                                        MarginBottom="4" />
+
+                            <!-- Tab title -->
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="@Title"
+                                        MarginBottom="6" />
+
+                          </Children>
+                        </ListPanel>
                       </Children>
                     </Widget>
 

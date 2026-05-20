@@ -64,6 +64,14 @@ public sealed class SliderRowVM : ViewModel
 
     public void ExecuteReset() { if (_spec.Def.HasValue) Value = (float)_spec.Def.Value; }
 
+    /// <summary>外部改了底层值后强制刷新绑定（比例联动场景用）。</summary>
+    public void Refresh()
+    {
+        OnPropertyChanged(nameof(Value));
+        OnPropertyChanged(nameof(ValueText));
+        OnPropertyChanged(nameof(ShowReset));
+    }
+
     private double Clamp(double v)
     {
         if (v < _spec.Min) v = _spec.Min;
