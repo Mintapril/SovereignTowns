@@ -16,12 +16,12 @@
                    MarginBottom="2">
           <Children>
 
-            <!-- Tier color dot -->
+            <!-- Tier color dot (static gold-400 placeholder; per-tier coloring needs TierColor VM property) -->
             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                     SuggestedWidth="8" SuggestedHeight="8"
                     VerticalAlignment="Center"
                     MarginLeft="4" MarginRight="6"
-                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
 
             <!-- Name + meta line -->
             <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
@@ -34,19 +34,23 @@
                   <Children>
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@CultureName"
+                                Color="#cdba8cFF"
                                 VerticalAlignment="Center"
                                 MarginRight="8" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@TierText"
+                                Color="#cdba8cFF"
                                 VerticalAlignment="Center"
                                 MarginRight="8" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@TypeLabel"
+                                Color="#cdba8cFF"
                                 VerticalAlignment="Center" />
                   </Children>
                 </ListPanel>
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                             Text="@Name"
+                            Color="#ecdfb9FF"
                             VerticalAlignment="Center" />
               </Children>
             </ListPanel>
@@ -60,24 +64,27 @@
               <Children>
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                             Text="@EstimatedCount"
+                            Color="#cdba8cFF"
                             HorizontalAlignment="Right" />
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                             Text="@RatioPercent"
+                            Color="#f4e4bcFF"
                             HorizontalAlignment="Right" />
               </Children>
             </ListPanel>
 
-            <!-- Remove button -->
+            <!-- Remove button (danger) -->
             <ButtonWidget DoNotPassEventsToChildren="true"
                           Command.Click="ExecuteRemove"
                           WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                           SuggestedWidth="24" SuggestedHeight="24"
                           VerticalAlignment="Center"
                           MarginRight="4"
-                          Sprite="BlankWhiteSquare_9" Color="#7A2018FF" AlphaFactor="0.5">
+                          Sprite="BlankWhiteSquare_9" Color="#c34a4aFF" AlphaFactor="0.5">
               <Children>
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Color="#ecdfb9FF"
                             Text="X" />
               </Children>
             </ButtonWidget>
@@ -98,17 +105,17 @@
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                     SuggestedHeight="6"
                     VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#3A2E12FF" />
+                    Sprite="BlankWhiteSquare_9" Color="#1c1813FF" />
             <Widget Id="TplFiller" DoNotAcceptEvents="true"
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                     SuggestedHeight="6"
                     VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
             <ImageWidget Id="TplHandle"
                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                          SuggestedWidth="14" SuggestedHeight="18"
                          HorizontalAlignment="Left" VerticalAlignment="Center"
-                         Sprite="BlankWhiteSquare_9" Color="#E6C44CFF" />
+                         Sprite="BlankWhiteSquare_9" Color="#e6c585FF" />
           </Children>
         </SliderWidget>
 

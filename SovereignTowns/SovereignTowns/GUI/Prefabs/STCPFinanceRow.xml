@@ -11,7 +11,7 @@
         <Widget IsVisible="@IsTotal"
                 WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                 SuggestedHeight="1"
-                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.8"
+                Sprite="BlankWhiteSquare_9" Color="#c8a165FF" AlphaFactor="0.8"
                 MarginBottom="1" />
 
         <!-- Row content -->
@@ -25,23 +25,27 @@
             <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
                         SuggestedWidth="200"
                         Text="@Col1"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center" />
 
             <!-- Col2: amount (summary) or category (recent) -->
             <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
                         SuggestedWidth="120"
                         Text="@Col2"
+                        Color="#ecdfb9FF"
                         VerticalAlignment="Center" />
 
             <!-- Col3: amount (recent only; empty for summary rows) -->
             <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
                         SuggestedWidth="100"
                         Text="@Col3"
+                        Color="#f4e4bcFF"
                         VerticalAlignment="Center" />
 
             <!-- Col4: note (recent only; empty for summary rows) -->
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                         Text="@Col4"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center" />
 
           </Children>

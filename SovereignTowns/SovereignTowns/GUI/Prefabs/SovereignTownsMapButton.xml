@@ -9,22 +9,23 @@
              ButtonWidget + Command.Click 用法见 SovereignTownsControlPanel.xml:12。 -->
         <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteOpen"
                       WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                      Sprite="BlankWhiteSquare_9" Color="#1A1410FF" AlphaFactor="0.92">
+                      Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.92">
           <Children>
 
             <!-- 金色边框。BlankWhiteSquare_9 是九宫格描边底图，仅显边由内层深色挡住中心。 -->
             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                    Sprite="BlankWhiteSquare_9" Color="#C9A24BFF" IsEnabled="false">
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" IsEnabled="false">
               <Children>
                 <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                         MarginLeft="2" MarginRight="2" MarginTop="2" MarginBottom="2"
-                        Sprite="BlankWhiteSquare_9" Color="#1A1410FF" />
+                        Sprite="BlankWhiteSquare_9" Color="#15110dFF" />
               </Children>
             </Widget>
 
             <!-- 按钮文字，绑定 VM.Label（双语）。 -->
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Color="#e6c585FF"
                         Brush.FontSize="20" Text="@Label" />
 
           </Children>

@@ -16,7 +16,7 @@
                       VerticalAlignment="Center"
                       MarginRight="10"
                       Sprite="BlankWhiteSquare_9"
-                      Color="#B8960CFF"
+                      Color="#c8a165FF"
                       AlphaFactor="0.3"
                       UpdateChildrenStates="true">
           <Children>
@@ -25,7 +25,7 @@
                     SuggestedWidth="16" SuggestedHeight="16"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     Sprite="BlankWhiteSquare_9"
-                    Color="#B8960CFF"
+                    Color="#c8a165FF"
                     AlphaFactor="0.0"
                     Id="CheckMark">
             </Widget>
@@ -39,9 +39,11 @@
           <Children>
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                         Text="@Label"
+                        Color="#ecdfb9FF"
                         VerticalAlignment="Center" />
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                         Text="@Hint"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center"
                         MarginTop="2" />
           </Children>

@@ -18,9 +18,11 @@
           <Children>
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                         Text="@Label"
+                        Color="#ecdfb9FF"
                         VerticalAlignment="Center" />
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                         Text="@Hint"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center"
                         MarginTop="2" />
 
@@ -34,6 +36,7 @@
               <Children>
                 <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
                             HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Color="#cdba8cFF"
                             Text="@ResetLabel" />
               </Children>
             </ButtonWidget>
@@ -54,17 +57,17 @@
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                     SuggestedHeight="6"
                     VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#3A2E12FF" />
+                    Sprite="BlankWhiteSquare_9" Color="#1c1813FF" />
             <Widget Id="Filler" DoNotAcceptEvents="true"
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                     SuggestedHeight="6"
                     VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
             <ImageWidget Id="SliderHandle"
                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                          SuggestedWidth="14" SuggestedHeight="20"
                          HorizontalAlignment="Left" VerticalAlignment="Center"
-                         Sprite="BlankWhiteSquare_9" Color="#E6C44CFF" />
+                         Sprite="BlankWhiteSquare_9" Color="#e6c585FF" />
           </Children>
         </SliderWidget>
 
@@ -73,7 +76,7 @@
                             SuggestedWidth="72" SuggestedHeight="28"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Right"
-                            Sprite="BlankWhiteSquare_9" Color="#1A1408FF"
+                            Sprite="BlankWhiteSquare_9" Color="#15110dFF"
                             Text="@ValueText" />
 
       </Children>

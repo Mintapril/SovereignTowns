@@ -1,7 +1,7 @@
 <Prefab>
   <Window>
     <!-- 全屏遮罩 + 深色背景。Sprite/Color 用法见 Native EscapeMenu.xml:10 -->
-    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.92">
+    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Sprite="BlankWhiteSquare_9" Color="#08070aFF" AlphaFactor="0.92">
       <Children>
 
         <!-- 居中主容器：垂直 ListPanel，顶部对齐，留边距 -->
@@ -35,6 +35,7 @@
                         <!-- 日志标题 -->
                         <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                     Text="@ActivityLogLabel"
+                                    Color="#d4ad5eFF"
                                     VerticalAlignment="Top"
                                     MarginBottom="4" />
 
@@ -67,10 +68,12 @@
                                           <Children>
                                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                                         Text="@Timestamp"
+                                                        Color="#a89270FF"
                                                         VerticalAlignment="Center"
                                                         MarginRight="4" />
                                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                         Text="@Message"
+                                                        Color="#ecdfb9FF"
                                                         VerticalAlignment="Center" />
                                           </Children>
                                         </ListPanel>
@@ -97,7 +100,7 @@
                                             SuggestedWidth="10" SuggestedHeight="20"
                                             HorizontalAlignment="Center"
                                             Sprite="BlankWhiteSquare_9"
-                                            Color="#B8960CFF" />
+                                            Color="#a88547FF" />
                                   </Children>
                                 </ScrollbarWidget>
                               </Children>
@@ -113,7 +116,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab5"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -122,12 +125,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab5Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="06 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="06 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab5Label" VerticalAlignment="Center" />
+                                        Text="@Tab5Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -136,7 +139,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab4"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -145,12 +148,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab4Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="05 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="05 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab4Label" VerticalAlignment="Center" />
+                                        Text="@Tab4Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -159,7 +162,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab3"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -168,12 +171,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab3Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="04 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="04 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab3Label" VerticalAlignment="Center" />
+                                        Text="@Tab3Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -182,7 +185,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab2"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -191,12 +194,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab2Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="03 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="03 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab2Label" VerticalAlignment="Center" />
+                                        Text="@Tab2Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -205,7 +208,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab1"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -214,12 +217,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab1Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="02 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="02 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab1Label" VerticalAlignment="Center" />
+                                        Text="@Tab1Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -228,7 +231,7 @@
                     <ButtonWidget DoNotPassEventsToChildren="true"
                                   Command.Click="ExecuteSelectTab0"
                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                  SuggestedHeight="40"
+                                  SuggestedHeight="34"
                                   MarginBottom="2">
                       <Children>
                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
@@ -237,12 +240,12 @@
                           <Children>
                             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                                     SuggestedWidth="4"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                                     IsVisible="@IsTab0Active" />
                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                        Text="01 " VerticalAlignment="Center" MarginLeft="6" />
+                                        Text="01 " Color="#a89270FF" VerticalAlignment="Center" MarginLeft="6" />
                             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                        Text="@Tab0Label" VerticalAlignment="Center" />
+                                        Text="@Tab0Label" Color="#ecdfb9FF" VerticalAlignment="Center" />
                           </Children>
                         </ListPanel>
                       </Children>
@@ -309,7 +312,7 @@
                                                 SuggestedWidth="10" SuggestedHeight="20"
                                                 HorizontalAlignment="Center"
                                                 Sprite="BlankWhiteSquare_9"
-                                                Color="#B8960CFF" />
+                                                Color="#a88547FF" />
                                       </Children>
                                     </ScrollbarWidget>
                                   </Children>
@@ -321,7 +324,7 @@
                             <!-- Thin gold divider -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="6" MarginTop="4" />
 
                             <!-- Intro2 -->
@@ -411,7 +414,7 @@
                                                 SuggestedWidth="10" SuggestedHeight="20"
                                                 HorizontalAlignment="Center"
                                                 Sprite="BlankWhiteSquare_9"
-                                                Color="#B8960CFF" />
+                                                Color="#a88547FF" />
                                       </Children>
                                     </ScrollbarWidget>
                                   </Children>
@@ -476,7 +479,7 @@
                                               SuggestedHeight="30"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Right"
-                                              Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.18">
+                                              Sprite="BlankWhiteSquare_9" Color="#a88547FF" AlphaFactor="0.18">
                                   <Children>
                                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
                                                 HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -490,7 +493,7 @@
                             <!-- Thin gold divider -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="6" MarginTop="4" />
 
                             <!-- Intro2 -->
@@ -626,7 +629,7 @@
                                                         <!-- Divider -->
                                                         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                                 SuggestedHeight="1"
-                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.7"
                                                                 MarginTop="12" />
 
                                                       </Children>
@@ -707,7 +710,7 @@
                                                         <!-- Divider -->
                                                         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                                 SuggestedHeight="1"
-                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.7"
                                                                 MarginTop="12" />
 
                                                       </Children>
@@ -761,7 +764,7 @@
                                                         <!-- Divider -->
                                                         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                                 SuggestedHeight="1"
-                                                                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.4"
+                                                                Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.7"
                                                                 MarginTop="8" />
 
                                                       </Children>
@@ -820,7 +823,7 @@
                                             <!-- Divider after mode buttons -->
                                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                     SuggestedHeight="1"
-                                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                                     MarginTop="8" MarginBottom="8" />
 
                                             <!-- Mode buttons row (Exact) -->
@@ -890,7 +893,7 @@
                                                 SuggestedWidth="10" SuggestedHeight="20"
                                                 HorizontalAlignment="Center"
                                                 Sprite="BlankWhiteSquare_9"
-                                                Color="#B8960CFF" />
+                                                Color="#a88547FF" />
                                       </Children>
                                     </ScrollbarWidget>
                                   </Children>
@@ -902,7 +905,7 @@
                             <!-- Thin gold divider -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="6" MarginTop="4" />
 
                             <!-- Intro -->
@@ -975,7 +978,7 @@
                             <Widget IsVisible="@IsGenericMode"
                                     WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                     MarginBottom="6"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.12">
+                                    Sprite="BlankWhiteSquare_9" Color="#a88547FF" AlphaFactor="0.15">
                               <Children>
                                 <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                            StackLayout.LayoutMethod="HorizontalLeftToRight"
@@ -1016,7 +1019,7 @@
                             <!-- Divider -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="8" />
 
                             <!-- ── Two-column body ── -->
@@ -1027,7 +1030,7 @@
                                 <!-- LEFT: catalog card -->
                                 <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                                         MarginRight="8"
-                                        Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+                                        Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.7">
                                   <Children>
                                     <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                                                StackLayout.LayoutMethod="VerticalBottomToTop"
@@ -1053,7 +1056,7 @@
                                         <EditableTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                             SuggestedHeight="30"
                                                             MarginBottom="6"
-                                                            Sprite="BlankWhiteSquare_9" Color="#0E0B05FF"
+                                                            Sprite="BlankWhiteSquare_9" Color="#0e0c0bFF"
                                                             Text="@SearchText" />
 
                                         <!-- Culture chip row -->
@@ -1119,7 +1122,7 @@
                                                 <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                         SuggestedHeight="3"
                                                         VerticalAlignment="Bottom"
-                                                        Sprite="BlankWhiteSquare_9" Color="#E6C44CFF"
+                                                        Sprite="BlankWhiteSquare_9" Color="#d4ad5eFF"
                                                         IsVisible="@HideSelectedActive" />
                                                 <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
                                                             HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1187,7 +1190,7 @@
                                                             WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                                                             SuggestedWidth="10" SuggestedHeight="20"
                                                             HorizontalAlignment="Center"
-                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                                                            Sprite="BlankWhiteSquare_9" Color="#a88547FF" />
                                                   </Children>
                                                 </ScrollbarWidget>
                                               </Children>
@@ -1202,7 +1205,7 @@
 
                                 <!-- RIGHT: selected card -->
                                 <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                        Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+                                        Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.7">
                                   <Children>
                                     <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                                                StackLayout.LayoutMethod="VerticalBottomToTop"
@@ -1275,7 +1278,7 @@
                                                             WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                                                             SuggestedWidth="10" SuggestedHeight="20"
                                                             HorizontalAlignment="Center"
-                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                                                            Sprite="BlankWhiteSquare_9" Color="#a88547FF" />
                                                   </Children>
                                                 </ScrollbarWidget>
                                               </Children>
@@ -1364,7 +1367,7 @@
                                                 SuggestedWidth="10" SuggestedHeight="20"
                                                 HorizontalAlignment="Center"
                                                 Sprite="BlankWhiteSquare_9"
-                                                Color="#B8960CFF" />
+                                                Color="#a88547FF" />
                                       </Children>
                                     </ScrollbarWidget>
                                   </Children>
@@ -1376,7 +1379,7 @@
                             <!-- Thin gold divider -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="6" MarginTop="4" />
 
                             <!-- Intro -->
@@ -1483,7 +1486,7 @@
                                                     <!-- Thin gold divider under header -->
                                                     <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                             SuggestedHeight="1"
-                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.6"
+                                                            Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.9"
                                                             MarginBottom="2" />
 
                                                     <!-- Recent entries title -->
@@ -1508,7 +1511,7 @@
                                             <!-- Gold divider above recent section -->
                                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                     SuggestedHeight="1"
-                                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                                     MarginBottom="6" MarginTop="4" />
 
                                             <!-- Three summary tables side by side -->
@@ -1605,7 +1608,7 @@
                                                 SuggestedWidth="10" SuggestedHeight="20"
                                                 HorizontalAlignment="Center"
                                                 Sprite="BlankWhiteSquare_9"
-                                                Color="#B8960CFF" />
+                                                Color="#a88547FF" />
                                       </Children>
                                     </ScrollbarWidget>
                                   </Children>
@@ -1617,7 +1620,7 @@
                             <!-- Gold divider below title -->
                             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                     SuggestedHeight="1"
-                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    Sprite="BlankWhiteSquare_9" Color="#856836FF" AlphaFactor="0.8"
                                     MarginBottom="6" MarginTop="4" />
 
                             <!-- Intro text -->
@@ -1644,7 +1647,7 @@
             <!-- 3. 成功横幅（绿底） -->
             <Widget IsVisible="@HasSuccess"
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                    Sprite="BlankWhiteSquare_9" Color="#1A5C1AFF" AlphaFactor="0.95"
+                    Sprite="BlankWhiteSquare_9" Color="#7ea16aFF" AlphaFactor="0.25"
                     MarginBottom="4">
               <Children>
                 <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
@@ -1673,7 +1676,7 @@
             <!-- 2. 警告横幅（红底） -->
             <Widget IsVisible="@HasWarning"
                     WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                    Sprite="BlankWhiteSquare_9" Color="#5C1A1AFF" AlphaFactor="0.95"
+                    Sprite="BlankWhiteSquare_9" Color="#c34a4aFF" AlphaFactor="0.25"
                     MarginBottom="4">
               <Children>
                 <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
@@ -1702,7 +1705,7 @@
             <!-- 1b. 金色分割线 -->
             <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                     SuggestedHeight="2"
-                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="1.0"
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" AlphaFactor="1.0"
                     MarginBottom="6" />
 
             <!-- 1a. 表头（水平 ListPanel）：左侧标题 + 右侧控件 -->
@@ -1719,14 +1722,17 @@
                   <Children>
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="⚜"
+                                Color="#c8a165FF"
                                 VerticalAlignment="Center"
                                 MarginRight="8" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@TitleText"
+                                Color="#e6c585FF"
                                 VerticalAlignment="Center"
                                 MarginRight="10" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@SubtitleText"
+                                Color="#cdba8cFF"
                                 VerticalAlignment="Center" />
                   </Children>
                 </ListPanel>
@@ -1744,12 +1750,14 @@
                     <!-- 药丸1：首府名称 -->
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@CapitalName"
+                                Color="#d4ad5eFF"
                                 VerticalAlignment="Center"
                                 MarginRight="12" />
 
                     <!-- 药丸2：脏状态 -->
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
                                 Text="@DirtyLabel"
+                                Color="#a89270FF"
                                 VerticalAlignment="Center"
                                 MarginRight="12" />
 

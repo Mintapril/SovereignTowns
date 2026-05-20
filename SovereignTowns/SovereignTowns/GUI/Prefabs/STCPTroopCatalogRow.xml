@@ -8,35 +8,38 @@
                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                   SuggestedHeight="32"
                   MarginBottom="2"
-                  Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+                  Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.5">
       <Children>
         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                    StackLayout.LayoutMethod="HorizontalLeftToRight"
                    VerticalAlignment="Center">
           <Children>
 
-            <!-- Tier color dot -->
+            <!-- Tier color dot (static gold-400 placeholder; per-tier coloring needs TierColor VM property) -->
             <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                     SuggestedWidth="8" SuggestedHeight="8"
                     VerticalAlignment="Center"
                     MarginLeft="6" MarginRight="6"
-                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
 
             <!-- Tier text -->
             <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                         SuggestedWidth="34"
                         Text="@TierText"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center" />
 
             <!-- Troop name -->
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                         Text="@Name"
+                        Color="#ecdfb9FF"
                         VerticalAlignment="Center"
                         MarginRight="6" />
 
             <!-- Culture badge -->
             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
                         Text="@CultureName"
+                        Color="#cdba8cFF"
                         VerticalAlignment="Center"
                         MarginRight="6" />
 
@@ -44,6 +47,7 @@
             <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
                         SuggestedWidth="20"
                         Text="@TypeGlyph"
+                        Color="#cdba8cFF"
                         HorizontalAlignment="Center" VerticalAlignment="Center"
                         MarginRight="6" />
 
@@ -54,10 +58,11 @@
                           SuggestedWidth="72" SuggestedHeight="24"
                           VerticalAlignment="Center"
                           MarginRight="6"
-                          Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.25">
+                          Sprite="BlankWhiteSquare_9" Color="#c8a165FF" AlphaFactor="0.25">
               <Children>
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Color="#ecdfb9FF"
                             Text="@AddLabel" />
               </Children>
             </ButtonWidget>

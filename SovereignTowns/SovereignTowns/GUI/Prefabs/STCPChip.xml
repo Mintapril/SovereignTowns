@@ -12,7 +12,7 @@
                   VerticalAlignment="Center"
                   MarginRight="6" MarginBottom="4"
                   Sprite="BlankWhiteSquare_9"
-                  Color="#B8960CFF"
+                  Color="#a88547FF"
                   AlphaFactor="0.18">
       <Children>
 
@@ -20,13 +20,14 @@
         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                 SuggestedHeight="3"
                 VerticalAlignment="Bottom"
-                Sprite="BlankWhiteSquare_9" Color="#E6C44CFF"
+                Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
                 IsVisible="@IsActive" />
 
         <!-- Chip label -->
         <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
                     Text="@Label"
+                    Color="#ecdfb9FF"
                     MarginLeft="12" MarginRight="12" />
 
       </Children>
