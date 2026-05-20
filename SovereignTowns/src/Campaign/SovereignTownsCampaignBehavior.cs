@@ -21,6 +21,7 @@ using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Library;
+using TaleWorlds.Localization;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -263,13 +264,15 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 {
                     int port = SovereignTowns.WebConfig.WebConfigServer.Port;
                     InformationManager.DisplayMessage(new InformationMessage(
-                        "[主权城镇] 网页控制面板已启动。请进入任意城镇菜单点「打开网页控制面板」。", Colors.Green));
+                        new TextObject("{=ST_Msg_WebConfig_Started}[Sovereign Towns] Web control panel started. Open any town/castle menu and choose 'Open web control panel'.").ToString(),
+                        Colors.Green));
                     Logger.Info($"WebConfigServer listening on 127.0.0.1:{port} (token withheld from logs/UI)");
                 }
                 else
                 {
                     InformationManager.DisplayMessage(new InformationMessage(
-                        "[主权城镇] 网页控制面板未启动（端口冲突/沙盒拒绝），详见日志。", Colors.Yellow));
+                        new TextObject("{=ST_Msg_WebConfig_StartFailed}[Sovereign Towns] Web control panel did not start (port conflict or sandbox refusal). See the logs.").ToString(),
+                        Colors.Yellow));
                 }
             }
             catch (Exception ex) { Logger.Error("WebConfig URL announce failed (swallowed)", ex); }
@@ -314,8 +317,14 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                     int total = snap.recruited + snap.transferred + snap.patrols + snap.sallies + snap.prisoners;
                     if (total > 0)
                     {
-                        var msg = $"[主权城镇] 今日 招{snap.recruited} 调{snap.transferred} 巡逻{snap.patrols} 出击{snap.sallies} 俘虏招募{snap.prisoners}";
-                        InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green));
+                        var template = new TextObject(
+                            "{=ST_Msg_DailySummary}[Sovereign Towns] Today: recruited {RECRUITED}, transferred {TRANSFERRED}, patrols {PATROLS}, sallies {SALLIES}, prisoner-recruits {PRISONERS}.");
+                        template.SetTextVariable("RECRUITED", snap.recruited);
+                        template.SetTextVariable("TRANSFERRED", snap.transferred);
+                        template.SetTextVariable("PATROLS", snap.patrols);
+                        template.SetTextVariable("SALLIES", snap.sallies);
+                        template.SetTextVariable("PRISONERS", snap.prisoners);
+                        InformationManager.DisplayMessage(new InformationMessage(template.ToString(), Colors.Green));
                     }
                 }
                 catch (Exception sumEx) { Logger.Warn($"daily summary display failed: {sumEx.Message}"); }

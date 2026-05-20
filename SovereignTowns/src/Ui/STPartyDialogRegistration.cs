@@ -45,7 +45,7 @@ internal static class STPartyDialogRegistration
                 id: "st_party_greeting_player_close",
                 inputToken: "st_party_greeting_player_choice",
                 outputToken: "close_window",
-                text: "{=!}祝你顺利。",
+                text: "{=ST_Dialog_PlayerClose}Safe travels.",
                 conditionDelegate: null,
                 consequenceDelegate: new ConversationSentence.OnConsequenceDelegate(LeaveOurPartyEncounter),
                 priority: 100);
@@ -72,19 +72,28 @@ internal static class STPartyDialogRegistration
                 || comp is StTransferPartyComponent
                 || comp is StSallyPartyComponent)
             {
-                // 设置 NPC 文本变量（{ST_PARTY_GREETING}）
-                string kindZh = comp switch
+                // 设置 NPC 文本变量（{ST_PARTY_GREETING}）—— 把 PARTY_KIND 拆成独立 key，
+                // 各语言 XML 自行翻译；不要在 C# 里预先拼字符串。
+                var partyKind = comp switch
                 {
-                    StRecruiterPartyComponent => "征兵队",
-                    StTransferPartyComponent  => "调拨队",
-                    StSallyPartyComponent     => "出击队",
-                    _                         => "队伍"
+                    StRecruiterPartyComponent => new TextObject("{=ST_Dialog_PartyKind_Recruiter}recruiter party"),
+                    StTransferPartyComponent  => new TextObject("{=ST_Dialog_PartyKind_Transfer}transfer party"),
+                    StSallyPartyComponent     => new TextObject("{=ST_Dialog_PartyKind_Sally}sally party"),
+                    _                         => new TextObject("{=ST_Dialog_PartyKind_Generic}detachment"),
                 };
-                string homeName;
+                TextObject homeNameObj;
                 // R6 (DeepSeek audit 2026-05-18)：用组件的 OrNull 而非 mp.HomeSettlement，避免 getter 抛诊断异常。
-                try { homeName = (comp as StPartyComponent)?.HomeSettlementOrNull?.Name?.ToString() ?? "未知"; }
-                catch { homeName = "未知"; }
-                string greeting = $"我们是 {homeName} 派出的{kindZh}，向您致意。";
+                try
+                {
+                    homeNameObj = (TextObject?)(comp as StPartyComponent)?.HomeSettlementOrNull?.Name
+                        ?? new TextObject("{=ST_Common_Unknown}unknown");
+                }
+                catch { homeNameObj = new TextObject("{=ST_Common_Unknown}unknown"); }
+
+                var greeting = new TextObject(
+                    "{=ST_Dialog_Greeting_Generic}We are the {PARTY_KIND} dispatched from {SETTLEMENT}, our regards.");
+                greeting.SetTextVariable("PARTY_KIND", partyKind);
+                greeting.SetTextVariable("SETTLEMENT", homeNameObj);
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
                 catch { /* SetTextVariable 偶尔抛 */ }
                 return true;
@@ -93,10 +102,16 @@ internal static class STPartyDialogRegistration
             // R6 (DeepSeek audit 2026-05-18)：用 OrNull 避免诊断 getter 抛
             if (comp is StPatrolPartyComponent pp && pp.HomeSettlementOrNull?.OwnerClan == Clan.PlayerClan)
             {
-                string homeName;
-                try { homeName = pp.HomeSettlementOrNull?.Name?.ToString() ?? "未知"; }
-                catch { homeName = "未知"; }
-                string greeting = $"我们是 {homeName} 的巡逻队，向您致意。";
+                TextObject homeNameObj;
+                try
+                {
+                    homeNameObj = (TextObject?)pp.HomeSettlementOrNull?.Name
+                        ?? new TextObject("{=ST_Common_Unknown}unknown");
+                }
+                catch { homeNameObj = new TextObject("{=ST_Common_Unknown}unknown"); }
+                var greeting = new TextObject(
+                    "{=ST_Dialog_Greeting_Patrol}We are the patrol from {SETTLEMENT}, our regards.");
+                greeting.SetTextVariable("SETTLEMENT", homeNameObj);
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
                 catch { }
                 return true;

@@ -63,7 +63,12 @@ public static class TroopTemplateMatcher
     public static bool CanUpgradeToTarget(CharacterObject? source, CharacterObject? finalTarget)
     {
         if (source is null || finalTarget is null) return false;
-        return CanUpgradeToTarget(source, finalTarget, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var key = (source, finalTarget);
+        if (EvaluatorCache.CanUpgradeCache.TryGetValue(key, out var cached)) return cached;
+        // 递归走 Core(...) 不二次进入缓存，确保 visited 防环逻辑只在一次顶层调用上下文中生效。
+        var result = CanUpgradeToTargetCore(source, finalTarget, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        EvaluatorCache.CanUpgradeCache[key] = result;
+        return result;
     }
 
     public static Dictionary<CharacterObject, int> GetExactTemplateDeficits(
@@ -230,7 +235,7 @@ public static class TroopTemplateMatcher
         return true;
     }
 
-    private static bool CanUpgradeToTarget(
+    private static bool CanUpgradeToTargetCore(
         CharacterObject source,
         CharacterObject finalTarget,
         HashSet<string> visited)
@@ -249,7 +254,8 @@ public static class TroopTemplateMatcher
             {
                 var next = targets[i];
                 if (next is null) continue;
-                if (CanUpgradeToTarget(next, finalTarget, visited)) return true;
+                // 递归内部继续走 Core(...)，保留同一 visited HashSet 防环。
+                if (CanUpgradeToTargetCore(next, finalTarget, visited)) return true;
             }
         }
         catch

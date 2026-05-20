@@ -50,8 +50,11 @@ public sealed class StSallyPartyComponent : StPartyComponent
             if (_cachedName != null) return _cachedName;
             // B16.4a P1-7：Name 必须容忍 _homeSettlement 为 null（损坏存档 / 序列化未完成时调用），
             // 用 HomeSettlementOrNull 而非 HomeSettlement 以避免抛 InvalidOperationException。
-            var settlementName = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
-            _cachedName = new TextObject("{=ST_SallyPartyName}出击队 - " + settlementName);
+            var home = HomeSettlementOrNull;
+            var n = new TextObject("{=ST_SallyPartyName}Sally — {SETTLEMENT}");
+            n.SetTextVariable("SETTLEMENT",
+                home?.Name ?? new TextObject("{=ST_Common_Unknown}unknown"));
+            _cachedName = n;
             return _cachedName;
         }
     }
@@ -109,7 +112,8 @@ public sealed class StSallyPartyComponent : StPartyComponent
             var emptyPrisoners = TroopRoster.CreateDummyTroopRoster();
             var args = new InitializationArgs(settlement.GatePosition, 1f, ownerClan, emptyTroops, emptyPrisoners);
 
-            var nameObj = new TextObject("{=ST_SallyPartyName}出击队 - " + settlement.Name);
+            var nameObj = new TextObject("{=ST_SallyPartyName}Sally — {SETTLEMENT}");
+            nameObj.SetTextVariable("SETTLEMENT", settlement.Name);
 
             var component = new StSallyPartyComponent(
                 home: settlement, initialTarget: initialTarget,

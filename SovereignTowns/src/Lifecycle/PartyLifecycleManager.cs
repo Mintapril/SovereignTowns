@@ -43,6 +43,16 @@ public sealed class PartyLifecycleManager
     public const string KindSallyForth = "sallyforth";
 
     private readonly Dictionary<MobileParty, TrackedPartyMeta> _tracked = new Dictionary<MobileParty, TrackedPartyMeta>();
+
+    /// <summary>
+    /// 派生计数：按 (Home, Kind, OwnerClan-at-track-time) 缓存当前条目数，让 <see cref="CountActive"/>
+    /// 从 O(|_tracked|) 降到 O(1)。
+    /// 严格作为 <c>_tracked</c> 的派生量：所有写入 / 删除 / 清空 <c>_tracked</c> 的入口都必须同步维护。
+    /// **非持久化**（无 SaveableField）—— OnGameLoaded 在 RebuildFromCampaign 内重建即可，
+    /// 与 CLAUDE.md 第 3 / 7 条（LocalSaveId 永不复用）一致。
+    /// </summary>
+    private readonly Dictionary<(Settlement Home, string Kind, Clan? OwnerClan), int> _countByKey
+        = new Dictionary<(Settlement, string, Clan?), int>();
     private bool _initialized;
 
     /// <summary>OnSessionLaunched 时调用：订阅 HourlyTickPartyEvent + MobilePartyDestroyed。</summary>
@@ -98,7 +108,13 @@ public sealed class PartyLifecycleManager
                 party.TargetSettlement,
                 initialMembers,
                 SafeActualClan(party, home));
+            // 覆盖更新场景：先按旧 meta 减计数，再按新 meta 加计数（防止重复注册同一 party 时计数错位）。
+            if (_tracked.TryGetValue(party, out var oldMeta))
+            {
+                DecrementCount(oldMeta.Home, oldMeta.Kind, oldMeta.OwnerClan);
+            }
             _tracked[party] = meta;
+            IncrementCount(meta.Home, meta.Kind, meta.OwnerClan);
             Logger.Info($"RegisterTrackedParty: '{PartyNameFormatter.SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
         }
         catch (Exception ex)
@@ -129,19 +145,18 @@ public sealed class PartyLifecycleManager
     /// <summary>外露：让 PatrolDispatcher 之类查询某城镇当前 kind 的硬上限。</summary>
     public int GetCapFor(Settlement home, string kind) => GetMaxFor(home, kind);
 
-    /// <summary>查询：某城镇当前指定 kind 的 active 队伍数。</summary>
+    /// <summary>查询：某城镇当前指定 kind 的 active 队伍数。
+    /// O(1) — 走 <see cref="_countByKey"/> 派生缓存；语义与原 LINQ 全扫等价
+    /// （key 用 (Home, Kind, OwnerClan-at-track-time)，OwnerClan 用当前 <c>home.OwnerClan</c> 取桶）。
+    /// IsActive 不再显式判定：依赖 <c>MobilePartyDestroyed → UntrackParty</c> 链路保证条目实时性。</summary>
     public int CountActive(Settlement home, string kind)
     {
         try
         {
             if (home is null || string.IsNullOrEmpty(kind)) return 0;
             var ownerClan = home.OwnerClan;
-            return _tracked.Count(kv =>
-                kv.Value.Home == home &&
-                kv.Value.Kind == kind &&
-                kv.Value.OwnerClan == ownerClan &&
-                kv.Key != null &&
-                kv.Key.IsActive);
+            var key = (home, kind, (Clan?)ownerClan);
+            return _countByKey.TryGetValue(key, out var n) ? n : 0;
         }
         catch (Exception ex)
         {
@@ -163,6 +178,7 @@ public sealed class PartyLifecycleManager
         try
         {
             _tracked.Clear();
+            _countByKey.Clear();
 
             int recruiters = 0, transfers = 0, patrols = 0, sallyforths = 0, skipped = 0;
             // R7 (DeepSeek audit 2026-05-18)：在某些模组冲突场景下 OnGameLoadedEvent 可能在
@@ -201,7 +217,9 @@ public sealed class PartyLifecycleManager
                                     _ => null!,
                                 };
                                 if (kind == null!) continue;
-                                _tracked[party] = new TrackedPartyMeta(home, kind, now, party.TargetSettlement, mc, SafeActualClan(party, home));
+                                var rebuiltMeta = new TrackedPartyMeta(home, kind, now, party.TargetSettlement, mc, SafeActualClan(party, home));
+                                _tracked[party] = rebuiltMeta;
+                                IncrementCount(rebuiltMeta.Home, rebuiltMeta.Kind, rebuiltMeta.OwnerClan);
                                 switch (kind)
                                 {
                                     case KindRecruiter: recruiters++; break;
@@ -225,6 +243,7 @@ public sealed class PartyLifecycleManager
             }
 
             Logger.Info($"PartyLifecycleManager.RebuildFromCampaign: recruiters={recruiters} transfers={transfers} patrols={patrols} sallyforths={sallyforths} skipped={skipped} (total tracked={_tracked.Count})");
+            AuditCountCache("RebuildFromCampaign");
         }
         catch (Exception ex)
         {
@@ -367,8 +386,10 @@ public sealed class PartyLifecycleManager
         if (party is null) return;
         try
         {
-            if (_tracked.Remove(party))
+            // 先取出旧 meta 用于维护 _countByKey，再 Remove。
+            if (_tracked.TryGetValue(party, out var removedMeta) && _tracked.Remove(party))
             {
+                DecrementCount(removedMeta.Home, removedMeta.Kind, removedMeta.OwnerClan);
                 Logger.Info($"UntrackParty: '{PartyNameFormatter.SafeName(party)}' removed (remaining={_tracked.Count})");
             }
 
@@ -655,6 +676,68 @@ public sealed class PartyLifecycleManager
         {
             try { return home?.OwnerClan; }
             catch { return null; }
+        }
+    }
+
+    // ────────── _countByKey 维护辅助（_tracked 的派生量，非持久化） ──────────
+
+    private void IncrementCount(Settlement? home, string? kind, Clan? ownerClan)
+    {
+        if (home is null || string.IsNullOrEmpty(kind)) return;
+        var key = (home, kind!, ownerClan);
+        _countByKey[key] = (_countByKey.TryGetValue(key, out var n) ? n : 0) + 1;
+    }
+
+    private void DecrementCount(Settlement? home, string? kind, Clan? ownerClan)
+    {
+        if (home is null || string.IsNullOrEmpty(kind)) return;
+        var key = (home, kind!, ownerClan);
+        if (!_countByKey.TryGetValue(key, out var n))
+        {
+            Logger.Warn($"DecrementCount: key (home='{home.Name}', kind={kind}, clan={ownerClan?.StringId ?? "<null>"}) not present in _countByKey — cache desync");
+            return;
+        }
+        if (n <= 1) _countByKey.Remove(key);
+        else _countByKey[key] = n - 1;
+    }
+
+    /// <summary>
+    /// 一致性自检：用 LINQ 重算 <see cref="_tracked"/> 的分组计数，与 <see cref="_countByKey"/> 缓存比对。
+    /// 不一致则记 Error，便于 playtest 时发现维护漏洞。仅在低频路径（RebuildFromCampaign 末尾）调用。
+    /// </summary>
+    private void AuditCountCache(string callerTag)
+    {
+        try
+        {
+            var expected = _tracked
+                .GroupBy(kv => (kv.Value.Home, kv.Value.Kind, kv.Value.OwnerClan))
+                .ToDictionary(g => g.Key, g => g.Count());
+            int mismatches = 0;
+            foreach (var kv in expected)
+            {
+                _countByKey.TryGetValue(kv.Key, out var have);
+                if (have != kv.Value)
+                {
+                    Logger.Error($"AuditCountCache[{callerTag}]: mismatch for (home='{kv.Key.Home?.Name}', kind={kv.Key.Kind}, clan={kv.Key.OwnerClan?.StringId ?? "<null>"}): expected={kv.Value} have={have}");
+                    mismatches++;
+                }
+            }
+            foreach (var kv in _countByKey)
+            {
+                if (!expected.ContainsKey(kv.Key))
+                {
+                    Logger.Error($"AuditCountCache[{callerTag}]: stale entry (home='{kv.Key.Home?.Name}', kind={kv.Key.Kind}, clan={kv.Key.OwnerClan?.StringId ?? "<null>"})={kv.Value} (no matching tracked party)");
+                    mismatches++;
+                }
+            }
+            if (mismatches == 0)
+            {
+                Logger.Debug($"AuditCountCache[{callerTag}]: OK ({_countByKey.Count} buckets, {_tracked.Count} tracked)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("AuditCountCache failed", ex);
         }
     }
 

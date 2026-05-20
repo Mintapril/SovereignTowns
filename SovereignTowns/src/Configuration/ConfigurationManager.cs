@@ -3,6 +3,7 @@ using System.IO;
 using Newtonsoft.Json;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Localization;
 using TaleWorlds.ModuleManager;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -550,7 +551,11 @@ public static class ConfigurationManager
             // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
             if (parsed.ConfigVersion != CurrentConfigVersion)
             {
-                string msg = $"[主权城镇] global.json 版本不匹配 (file v{parsed.ConfigVersion}, expected v{CurrentConfigVersion}) — 已重置为默认，请重新在网页面板配置";
+                var template = new TextObject(
+                    "{=ST_Msg_Config_VersionMismatch}[Sovereign Towns] global.json version mismatch (file v{FILE_VERSION}, expected v{EXPECTED_VERSION}) — reset to defaults; please reconfigure via the web control panel.");
+                template.SetTextVariable("FILE_VERSION", parsed.ConfigVersion);
+                template.SetTextVariable("EXPECTED_VERSION", CurrentConfigVersion);
+                string msg = template.ToString();
                 Logger.Warn(msg);
                 // B17.4 A4：升级到 UI 黄色 — 玩家不会再"静默丢配置"
                 // 注：InformationManager / InformationMessage 实际驻 TaleWorlds.Library（与 Colors 同程序集）。

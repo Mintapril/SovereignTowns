@@ -37,9 +37,11 @@ public sealed class StTransferPartyComponent : StPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var srcName = _source?.Name?.ToString() ?? "未知";
-            var dstName = _destination?.Name?.ToString() ?? "未知";
-            _cachedName = new TextObject("{=ST_TransferPartyName}调拨队 - " + srcName + " → " + dstName);
+            var unknown = new TextObject("{=ST_Common_Unknown}unknown");
+            var n = new TextObject("{=ST_TransferPartyName}Transfer — {SOURCE} → {DESTINATION}");
+            n.SetTextVariable("SOURCE", _source?.Name ?? unknown);
+            n.SetTextVariable("DESTINATION", _destination?.Name ?? unknown);
+            _cachedName = n;
             return _cachedName;
         }
     }
@@ -81,8 +83,9 @@ public sealed class StTransferPartyComponent : StPartyComponent
             var emptyPrisoners = TroopRoster.CreateDummyTroopRoster();
             var args = new InitializationArgs(source.GatePosition, 1f, ownerClan, troops, emptyPrisoners);
 
-            var nameObj = new TextObject(
-                "{=ST_TransferPartyName}调拨队 - " + source.Name + " → " + destination.Name);
+            var nameObj = new TextObject("{=ST_TransferPartyName}Transfer — {SOURCE} → {DESTINATION}");
+            nameObj.SetTextVariable("SOURCE", source.Name);
+            nameObj.SetTextVariable("DESTINATION", destination.Name);
 
             var component = new StTransferPartyComponent(
                 source: source, destination: destination,

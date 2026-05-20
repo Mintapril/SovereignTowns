@@ -102,12 +102,17 @@ public sealed class PrisonerRecruitmentManager
             int totalRecruited = 0;
             int distinctTypesRecruited = 0;
 
+            // 通用匹配文化过滤：解析一次玩家面板的文化策略（null = 不过滤）。
+            string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, settlement.Town);
+
             foreach (var character in characters)
             {
                 try
                 {
                     if (character == null || character.IsHero) continue;
                     if (!TroopTemplateMatcher.MatchesRule(character, rule)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
+                    if (!GenericTroopMatcher.CultureFilterAllows(character, requiredCultureId)) continue;
                     if (!prisonRoster.Contains(character)) continue;
 
                     int troopCount = prisonRoster.GetTroopCount(character);

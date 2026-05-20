@@ -46,7 +46,7 @@ public sealed class STPartySpeedModel : DefaultPartySpeedCalculatingModel
             {
                 result.AddFactor(
                     SpeedBonusFactor,
-                    new TextObject("{=ST_PartySpeedBonus}主权城镇 城镇拨款队伍 移速加成"));
+                    new TextObject("{=ST_PartySpeedBonus}Sovereign Towns town-funded party speed bonus"));
             }
         }
         catch (Exception ex)

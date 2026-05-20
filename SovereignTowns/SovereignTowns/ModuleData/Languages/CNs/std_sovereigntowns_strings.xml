@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<base xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" type="string">
+  <tags>
+    <tag language="简体中文" />
+  </tags>
+  <strings>
+    <!-- 队伍显示名。{SETTLEMENT} / {SOURCE} / {DESTINATION} 由 C# 注入。 -->
+    <string id="ST_PatrolPartyName" text="巡逻队 - {SETTLEMENT}" />
+    <string id="ST_RecruiterPartyName" text="征兵队 - {SETTLEMENT}" />
+    <string id="ST_SallyPartyName" text="出击队 - {SETTLEMENT}" />
+    <string id="ST_TransferPartyName" text="调拨队 - {SOURCE} → {DESTINATION}" />
+
+    <!-- GameModel 修饰描述（出现在队伍详情 tooltip）。 -->
+    <string id="ST_PartySpeedBonus" text="主权城镇 城镇拨款队伍 移速加成" />
+    <string id="ST_PartyWageZero" text="主权城镇 城镇拨款队伍（免氏族军饷）" />
+    <string id="ST_PartySizeLimit_Recruit" text="主权城镇 征兵队容量上限" />
+    <string id="ST_PartySizeLimit_Transfer" text="主权城镇 调拨队容量上限" />
+    <string id="ST_PartySizeLimit_Sally" text="主权城镇 出击队容量上限" />
+    <string id="ST_PartySizeLimit_Patrol" text="主权城镇 巡逻队容量上限" />
+
+    <!-- 城镇/城堡菜单选项。 -->
+    <string id="ST_Menu_CapitalStatus_Active" text="主权城镇：当前首府 ★ ({CAPITAL})" />
+    <string id="ST_Menu_CapitalStatus_Other" text="主权城镇：当前首府 = {CAPITAL}" />
+    <string id="ST_Menu_SetCapital" text="主权城镇：设为首府" />
+    <string id="ST_Menu_OpenWebConfig" text="主权城镇：打开网页控制面板" />
+
+    <!-- 通用占位词（实体名缺失时回填）。 -->
+    <string id="ST_Common_Unset" text="&lt;未设&gt;" />
+    <string id="ST_Common_Unknown" text="未知" />
+    <string id="ST_Common_UnknownEntity" text="&lt;未知&gt;" />
+    <string id="ST_Common_CapitalOwner" text="首府所有者" />
+
+    <!-- 诊断菜单 / 网页面板相关玩家可见消息。 -->
+    <string id="ST_Msg_WebConfig_NotRunning" text="[主权城镇] 网页服务未启动；查看日志了解原因。" />
+    <string id="ST_Msg_WebConfig_BrowserOpened" text="[主权城镇] 已尝试启动浏览器打开网页控制面板。" />
+    <string id="ST_Msg_WebConfig_BrowserFailed" text="[主权城镇] 浏览器启动失败。请手动访问 http://127.0.0.1:{PORT}/ ，并从 Documents\Mount and Blade II Bannerlord\Configs\SovereignTowns\auth.txt 读取 token。" />
+    <string id="ST_Msg_Capital_Changed" text="[主权城镇] 首府已切换至 '{SETTLEMENT}'。" />
+    <string id="ST_Msg_Capital_ChangeFailed" text="[主权城镇] 首府切换失败 ('{SETTLEMENT}' 已是首府或不合法)。" />
+
+    <!-- Campaign 会话 / 每日消息。 -->
+    <string id="ST_Msg_WebConfig_Started" text="[主权城镇] 网页控制面板已启动。请进入任意城镇或城堡菜单点「打开网页控制面板」。" />
+    <string id="ST_Msg_WebConfig_StartFailed" text="[主权城镇] 网页控制面板未启动（端口冲突 / 沙盒拒绝），详见日志。" />
+    <string id="ST_Msg_DailySummary" text="[主权城镇] 今日 招{RECRUITED} 调{TRANSFERRED} 巡逻{PATROLS} 出击{SALLIES} 俘虏招募{PRISONERS}。" />
+
+    <!-- 配置 / 模块管理消息。 -->
+    <string id="ST_Msg_Config_VersionMismatch" text="[主权城镇] global.json 版本不匹配 (文件 v{FILE_VERSION}，期望 v{EXPECTED_VERSION}) — 已重置为默认，请重新在网页面板配置。" />
+    <string id="ST_Msg_AiOptIn" text="[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻范围。其领主已不能通过 vanilla 从村庄 / 城镇名士招兵；唯有 ST mod 渠道（首府就地招募 / 征兵队 / 俘虏转化）作为兵源。招募兵种限同文化。" />
+    <string id="ST_Msg_IncompatibleMods" text="主权城镇：检测到互斥模块（{MODS}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。" />
+
+    <!-- 战斗 / 解散 / 销毁汇报（左下角消息）。 -->
+    <string id="ST_Battle_Verdict_Heavy" text="重创" />
+    <string id="ST_Battle_Verdict_Damaged" text="受损" />
+    <string id="ST_Battle_Verdict_Won" text="完成战斗" />
+    <string id="ST_Msg_Battle_Report" text="[主权城镇] {PARTY_NAME} 战斗{VERDICT}：兵员 {CURRENT}/{INITIAL}，受伤 {WOUNDED}。" />
+    <string id="ST_Msg_Disband_Report" text="[主权城镇] {PARTY_NAME} 回 {HOME} 解散：合并 {TROOPS} 兵入驻军，变卖物资 +{SOLD}d，退还 {REFUND}d 给 {OWNER}。" />
+    <string id="ST_Msg_Destroyed_WithRefund" text="[主权城镇] {PARTY_NAME} 销毁（被 {DESTROYER}）：退还 {REFUND}d 给首府所有者。" />
+    <string id="ST_Msg_Destroyed_NoRefund" text="[主权城镇] {PARTY_NAME} 销毁（被 {DESTROYER}）。" />
+
+    <!-- 对话（玩家与本 mod 自家队伍相遇）。 -->
+    <string id="ST_Dialog_PartyKind_Recruiter" text="征兵队" />
+    <string id="ST_Dialog_PartyKind_Transfer" text="调拨队" />
+    <string id="ST_Dialog_PartyKind_Sally" text="出击队" />
+    <string id="ST_Dialog_PartyKind_Generic" text="队伍" />
+    <string id="ST_Dialog_Greeting_Generic" text="我们是 {SETTLEMENT} 派出的{PARTY_KIND}，向您致意。" />
+    <string id="ST_Dialog_Greeting_Patrol" text="我们是 {SETTLEMENT} 的巡逻队，向您致意。" />
+    <string id="ST_Dialog_PlayerClose" text="祝你顺利。" />
+  </strings>
+</base>

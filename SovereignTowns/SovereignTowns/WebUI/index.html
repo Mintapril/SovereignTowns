@@ -5,24 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sovereign Towns · 控制面板</title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600&family=Noto+Serif+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- 字体：不再依赖 Google Fonts（国内被墙 / 离线会拖慢或失败）。
+       Cinzel / Noto Serif SC 等若本机未装则回退到系统衬线 / 微软雅黑 / 宋体，面板始终可读。 -->
 
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind / Alpine 本地化（vendor/）：原先走 cdn.tailwindcss.com 与 unpkg.com，
+       在 GFW 环境或离线时会加载失败导致整页白屏。改为随 mod 部署的本地副本。
+       注意：tailwindcss.js 必须同步加载且早于下方内联 tailwind.config，否则自定义配色失效。 -->
+  <script src="vendor/tailwindcss.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
           fontFamily: {
-            display: ['Cinzel', 'Cormorant Garamond', 'Noto Serif SC', 'serif'],
-            body: ['"Noto Serif SC"', 'Cormorant Garamond', 'serif'],
+            display: ['Cinzel', 'Cormorant Garamond', 'Noto Serif SC', 'Microsoft YaHei', 'SimSun', 'serif'],
+            body: ['"Noto Serif SC"', 'Cormorant Garamond', 'Microsoft YaHei', 'SimSun', 'serif'],
             mono: ['JetBrains Mono', 'Consolas', 'monospace'],
           },
           colors: {
             ink: { 950: '#08070a', 900: '#0e0c0b', 800: '#15110d', 700: '#1c1813', 600: '#2a241c' },
-            parchment: { 50: '#f6ecd2', 100: '#ecdfb9', 200: '#d8c898', 300: '#bca97a', 400: '#8e7d5c' },
+            // parchment-300/400 承载 hint / 标签文字；400 原 #8e7d5c 在近黑底上对比度偏低，已提亮。
+            parchment: { 50: '#f6ecd2', 100: '#ecdfb9', 200: '#d8c898', 300: '#cdba8c', 400: '#a89270' },
             gold: { 50: '#fff7e0', 100: '#f4e4bc', 200: '#e6c585', 300: '#d4ad5e', 400: '#c8a165', 500: '#a88547', 600: '#856836', 700: '#5a4724' },
             danger: { 500: '#e06b6b', 600: '#c34a4a' },
             sage: { 400: '#a8c898', 500: '#7ea16a' },
@@ -32,7 +35,7 @@
     };
   </script>
 
-  <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+  <script defer src="vendor/alpinejs.min.js"></script>
 
   <style>
     :root { color-scheme: dark; }
@@ -40,7 +43,7 @@
 
     html { font-size: 16px; }
     body {
-      font-family: 'Noto Serif SC', 'Cormorant Garamond', serif;
+      font-family: 'Noto Serif SC', 'Cormorant Garamond', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 15px;
       line-height: 1.55;
       background:
@@ -58,11 +61,11 @@
       pointer-events: none;
       z-index: 100;
       mix-blend-mode: overlay;
-      opacity: 0.4;
+      opacity: 0.16;
     }
 
     .font-display {
-      font-family: 'Cinzel', 'Noto Serif SC', serif;
+      font-family: 'Cinzel', 'Noto Serif SC', 'Microsoft YaHei', 'SimSun', serif;
       letter-spacing: 0.06em;
     }
 
@@ -91,7 +94,7 @@
     input[type=range]::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.28); }
 
     input[type=number], input[type=text] {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
       font-size: 14px;
     }
     input[type=number] { -moz-appearance: textfield; }
@@ -193,7 +196,7 @@
 
     /* 兵种名录 -> 已选名单 加入 / 已加按钮 */
     .btn-add {
-      font-family: 'Cinzel', serif;
+      font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 11px;
       letter-spacing: 0.12em;
       padding: 4px 12px;
@@ -209,7 +212,7 @@
       box-shadow: 0 0 12px rgba(200, 161, 101, 0.35);
     }
     .btn-added {
-      font-family: 'Cinzel', serif;
+      font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 11px;
       letter-spacing: 0.12em;
       padding: 4px 12px;
@@ -229,7 +232,7 @@
       padding: 5px 14px;
       background: rgba(28, 24, 19, 0.6);
       border: 1px solid rgba(200, 161, 101, 0.25);
-      font-family: 'Cinzel', serif;
+      font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 12px;
       letter-spacing: 0.1em;
       color: #d8c898;
@@ -259,7 +262,7 @@
 
     .type-glyph {
       display: inline-block; width: 20px; text-align: center;
-      color: #a88547; font-family: 'Cinzel', serif; font-size: 13px;
+      color: #a88547; font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif; font-size: 13px;
     }
 
     .tab-content { animation: fadeIn 0.3s ease; }
@@ -280,7 +283,7 @@
     .toggle-row:hover { background: rgba(200, 161, 101, 0.05); }
 
     .culture-badge {
-      font-family: 'Cinzel', serif;
+      font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 10px;
       letter-spacing: 0.1em;
       text-transform: uppercase;
@@ -299,7 +302,7 @@
       border: 1px solid #5a4724;
       background: transparent;
       color: #d8c898;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'JetBrains Mono', 'Consolas', monospace;
       font-size: 13px;
       transition: all 0.15s ease;
       cursor: pointer;
@@ -317,7 +320,7 @@
       border: 1px solid #5a4724;
       background: transparent;
       color: #d8c898;
-      font-family: 'Cinzel', serif;
+      font-family: 'Cinzel', 'Microsoft YaHei', 'SimSun', serif;
       font-size: 11px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -364,23 +367,28 @@
         <div class="flex items-center gap-3 flex-1 min-w-0">
           <div class="text-4xl text-gold-200 leading-none">⚜</div>
           <div class="min-w-0">
-            <h1 class="font-display text-2xl text-gold-100" style="letter-spacing: 0.18em;">SOVEREIGN&nbsp;TOWNS</h1>
-            <div class="text-xs tracking-[0.3em] uppercase text-parchment-300 font-display mt-0.5">控 制 面 板</div>
+            <h1 class="font-display text-2xl text-gold-100" style="letter-spacing: 0.12em;">SOVEREIGN&nbsp;TOWNS</h1>
+            <div class="text-xs tracking-[0.18em] uppercase text-parchment-300 font-display mt-0.5">控制面板</div>
           </div>
         </div>
 
         <div class="hidden md:flex gap-2 items-center">
           <span class="stat-pill">SERVER <strong x-text="status ? '在线' : '失联'"></strong></span>
-          <span class="stat-pill">城堡 <strong x-text="settlements.length"></strong></span>
-          <span class="stat-pill">兵种库 <strong x-text="troops.length"></strong></span>
-          <span class="stat-pill">具体兵员 <strong x-text="Object.keys(config?.GlobalDefaults?.ExactTroopTemplate || {}).length"></strong></span>
+          <!-- 未保存状态：取代原先对玩家无意义的「兵种库 / 具体兵员」计数 pill -->
+          <span class="stat-pill" :class="dirty ? 'border-gold-300/70' : ''">
+            <strong :class="dirty ? 'text-gold-100' : 'text-sage-400'"
+                    x-text="dirty ? '● 有未保存改动' : '✓ 已保存'"></strong>
+          </span>
         </div>
 
         <div class="flex gap-2">
-          <button @click="reloadAll()" class="btn-ghost px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm">↻ 重读</button>
+          <button @click="reloadAll()" class="btn-ghost px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm"
+                  title="从磁盘重新读取 global.json —— 仅在手动编辑过配置文件后才需要">↻ 重读</button>
+          <!-- 始终可点（dirty 跟踪万一漏判也不挡保存）；clean 时降透明度做视觉区分 -->
           <button @click="save()" :disabled="saving || !config"
-                  class="btn-save px-6 py-2 text-sm font-display tracking-widest uppercase rounded-sm">
-            <span x-text="saving ? '保存中…' : '保存到游戏'"></span>
+                  :class="dirty ? '' : 'opacity-55'"
+                  class="btn-save px-6 py-2 text-sm font-display tracking-wide uppercase rounded-sm">
+            <span x-text="saving ? '保存中…' : (dirty ? '● 保存改动' : '已保存')"></span>
           </button>
         </div>
       </div>
@@ -392,6 +400,15 @@
         <span class="text-danger-500 font-display text-xl leading-none">⚠</span>
         <span class="text-parchment-100 flex-1" x-text="warning"></span>
         <button @click="warning = ''" class="text-danger-500 hover:text-danger-600 text-sm">✕</button>
+      </div>
+    </div>
+
+    <!-- 保存成功提示（绿色，6 秒后自动消失） -->
+    <div x-show="success" x-transition class="max-w-7xl mx-auto px-6 mt-4">
+      <div class="border border-sage-500/60 bg-sage-500/10 px-4 py-3 text-sm flex items-center gap-3">
+        <span class="text-sage-400 font-display text-xl leading-none">✓</span>
+        <span class="text-parchment-100 flex-1" x-text="success"></span>
+        <button @click="success = ''" class="text-sage-400 hover:text-sage-500 text-sm">✕</button>
       </div>
     </div>
 
@@ -428,14 +445,17 @@
       <!-- RIGHT CONTENT -->
       <section class="col-span-12 lg:col-span-9 xl:col-span-10">
 
-        <div x-show="!config" class="text-center text-parchment-300 py-24 font-display tracking-widest">配 置 加 载 中</div>
+        <div x-show="!config" class="text-center text-parchment-300 py-24 font-display tracking-wide">配置加载中…</div>
 
         <div x-show="config" class="ornate-frame">
 
           <!-- =========== TAB 1: 功能开关 =========== -->
           <div x-show="activeTab === 0" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">功能 开关</h2>
-            <p class="text-parchment-200 text-sm mb-6">总闸级开关，控制各子系统是否参与决策。改完点上方「保存到游戏」生效。</p>
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">功能开关</h2>
+            <p class="text-parchment-200 text-sm mb-3">总闸级开关，控制各子系统是否参与决策。所有改动在点上方「保存改动」前不会生效。</p>
+            <p class="text-parchment-300 text-[13px] mb-6">
+              提示：本面板运行在游戏外的浏览器中，调整配置需切出游戏。建议游戏使用「窗口」或「无边框窗口」模式，方便来回切换。
+            </p>
             <div class="diamond-divider mb-6"></div>
 
             <div class="space-y-1">
@@ -459,24 +479,36 @@
 
           <!-- =========== TAB 2: 策略参数 =========== -->
           <div x-show="activeTab === 1" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">策略 参数</h2>
-            <p class="text-parchment-200 text-sm mb-6">
-              合并原「数量预算」与「资源调度」。全局规则（首府）应用于所有受管首府；非首府只受「非首府驻军」标签页约束。
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">策略参数</h2>
+            <p class="text-parchment-200 text-sm mb-2">
+              驻军目标、招募、巡逻调拨、出击等各子系统的数值参数。全局规则应用于所有受管首府；非首府只受「非首府驻军」标签页约束。
+            </p>
+            <p class="text-parchment-300 text-[13px] mb-6">
+              每条参数都标注了出厂默认值；改过的项会出现「↺ 恢复默认」。开发者级旋钮（MCMF / 调度内部参数）默认折叠，普通玩家无需调整。
             </p>
             <div class="diamond-divider mb-6"></div>
 
-            <div class="flex flex-wrap gap-2 mb-7">
-              <template x-for="group in settingsGroups" :key="group.key">
+            <div class="flex flex-wrap gap-2 mb-7 items-center">
+              <template x-for="group in visibleSettingsGroups" :key="group.key">
                 <button @click="activeSettingsGroup = group.key"
                         :class="activeSettingsGroup === group.key ? 'chip-filter active' : 'chip-filter'"
                         x-text="group.label"></button>
               </template>
+              <label class="ml-auto flex items-center gap-2 cursor-pointer text-[12px] text-parchment-300 hover:text-parchment-100">
+                <input type="checkbox" class="gold-check" style="width:16px;height:16px"
+                       :checked="showAdvanced" @change="toggleAdvanced()" />
+                显示高级参数（开发者旋钮）
+              </label>
             </div>
 
-            <div class="mb-6">
-              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-1"
-                  x-text="activeSettingsGroupData?.label"></h3>
-              <p class="text-parchment-300 text-[13px]" x-text="activeSettingsGroupData?.hint"></p>
+            <div class="mb-6 flex items-end justify-between gap-4">
+              <div class="min-w-0">
+                <h3 class="font-display text-base tracking-wide uppercase text-gold-200 mb-1"
+                    x-text="activeSettingsGroupData?.label"></h3>
+                <p class="text-parchment-300 text-[13px]" x-text="activeSettingsGroupData?.hint"></p>
+              </div>
+              <button @click="resetGroup()" class="btn-ghost px-3 py-1.5 text-[12px] rounded-sm shrink-0"
+                      title="把本分组内所有参数恢复到出厂默认（未保存）">本组恢复默认</button>
             </div>
 
             <div class="space-y-5">
@@ -488,8 +520,15 @@
                              :checked="!!getConfigValue(s)"
                              @change="setConfigValue(s, $event.target.checked)" />
                       <div class="flex-1 min-w-0">
-                        <div class="text-[15px] text-parchment-50 font-medium" x-text="s.label"></div>
+                        <div class="text-[15px] text-parchment-50 font-medium">
+                          <span x-text="s.label"></span>
+                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle">高级</span>
+                        </div>
                         <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
+                        <button x-show="s.def !== undefined && !isSpecDefault(s)" @click.prevent.stop="resetSpec(s)"
+                                class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">
+                          ↺ 恢复默认（<span x-text="s.def ? '开' : '关'"></span>）
+                        </button>
                       </div>
                     </label>
                   </template>
@@ -497,8 +536,15 @@
                   <template x-if="s.type !== 'bool'">
                     <div class="grid grid-cols-12 gap-4 items-center">
                       <div class="col-span-12 md:col-span-4">
-                        <div class="text-[15px] text-parchment-50 font-medium" x-text="s.label"></div>
+                        <div class="text-[15px] text-parchment-50 font-medium">
+                          <span x-text="s.label"></span>
+                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle">高级</span>
+                        </div>
                         <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
+                        <button x-show="s.def !== undefined && !isSpecDefault(s)" @click="resetSpec(s)"
+                                class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">
+                          ↺ 恢复默认 <span x-text="s.def"></span>
+                        </button>
                       </div>
                       <div class="col-span-9 md:col-span-6">
                         <input type="range" class="w-full"
@@ -522,92 +568,137 @@
 
           <!-- =========== TAB 3: 兵种编制 =========== -->
           <div x-show="activeTab === 2" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">兵种 编制</h2>
-            <p class="text-parchment-200 text-sm mb-6">
-              <strong class="text-gold-200">通用匹配开启时</strong>：只按 4 类兵种比例（骑兵 / 骑射 / 步兵 / 远程）+ Tier 范围招募；忽略文化、阵营和具体兵员模板。<br/>
-              <strong class="text-gold-200">通用匹配关闭时</strong>：完全按「兵员模板」tab 中具体勾选的兵种 stringId 招募。
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">兵种编制</h2>
+            <p class="text-parchment-200 text-sm mb-5">
+              先选一种招募模式 —— 决定 mod 如何挑选要招募的兵。
             </p>
 
-            <!-- Mode toggle card -->
-            <div class="card p-5 mb-7">
-              <label class="flex items-start gap-4 cursor-pointer">
-                <input type="checkbox" class="gold-check shrink-0 mt-1"
-                       :checked="config.GlobalDefaults.UseGenericMatching"
-                       @change="config.GlobalDefaults.UseGenericMatching = $event.target.checked" />
-                <div class="flex-1">
-                  <div class="font-display tracking-wider uppercase text-gold-100 text-base">
-                    通用匹配模式
-                    <span class="text-[12px] text-parchment-300 normal-case ml-2 font-body"
-                          x-text="config.GlobalDefaults.UseGenericMatching ? '· 当前开启 — 下方比例 + Tier 范围生效' : '· 当前关闭 — 「兵员模板」tab 生效'"></span>
-                  </div>
-                  <div class="text-[13px] text-parchment-300 mt-1">
-                    切换会影响 mod 如何挑选要招募的兵。通用匹配只读取下方滑条和 Tier 范围，不读取具体兵员模板。
-                  </div>
+            <!-- 模式二选一：分段按钮 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-7">
+              <button @click="if (!config.GlobalDefaults.UseGenericMatching) { config.GlobalDefaults.UseGenericMatching = true; markDirty(); }"
+                      class="text-left p-4 border rounded-sm transition-all"
+                      :class="config.GlobalDefaults.UseGenericMatching ? 'border-gold-300 bg-gold-400/10' : 'border-gold-700/40 bg-ink-900/40 hover:border-gold-500'">
+                <div class="font-display tracking-wide text-base"
+                     :class="config.GlobalDefaults.UseGenericMatching ? 'text-gold-100' : 'text-parchment-200'">
+                  <span x-text="config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> 通用比例匹配
                 </div>
-              </label>
+                <div class="text-[13px] text-parchment-300 mt-1">
+                  按下方文化过滤、兵种比例和 Tier 范围招募，不读取具体兵种模板。省心，适合大多数玩家。
+                </div>
+              </button>
+              <button @click="if (config.GlobalDefaults.UseGenericMatching) { config.GlobalDefaults.UseGenericMatching = false; markDirty(); }"
+                      class="text-left p-4 border rounded-sm transition-all"
+                      :class="!config.GlobalDefaults.UseGenericMatching ? 'border-gold-300 bg-gold-400/10' : 'border-gold-700/40 bg-ink-900/40 hover:border-gold-500'">
+                <div class="font-display tracking-wide text-base"
+                     :class="!config.GlobalDefaults.UseGenericMatching ? 'text-gold-100' : 'text-parchment-200'">
+                  <span x-text="!config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> 精确兵员模板
+                </div>
+                <div class="text-[13px] text-parchment-300 mt-1">
+                  只招「兵员模板」标签页里勾选的具体兵种。精确控制驻军编成。
+                </div>
+              </button>
             </div>
             <div class="diamond-divider mb-6"></div>
 
-            <!-- Role ratios -->
-            <div class="mb-8">
-              <div class="flex items-baseline justify-between mb-5">
-                <h3 class="font-display text-base tracking-widest uppercase text-gold-200">兵 种 比 例</h3>
-                <div class="font-mono text-[13px] text-parchment-200">
-                  <span class="text-parchment-300">Σ = </span>
-                  <span :class="ratioSumOk(troopSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
-                        x-text="troopSum.toFixed(2)"></span>
-                  <span class="text-parchment-300 ml-1">（自动归一化）</span>
-                </div>
-              </div>
-              <div class="space-y-4">
-                <template x-for="s in troopRatioSpecs" :key="s.key">
-                  <div class="grid grid-cols-12 gap-4 items-center">
-                    <div class="col-span-3 text-[15px] font-display tracking-wider text-parchment-100" x-text="s.label"></div>
-                    <div class="col-span-7">
-                      <input type="range" class="w-full" min="0" max="1" step="0.01"
-                             :value="config.GlobalDefaults[s.key]"
-                             @input="adjustRatio(s.key, parseFloat($event.target.value))" />
-                    </div>
-                    <div class="col-span-2">
-                      <input type="number"
-                             class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
-                             min="0" max="1" step="0.01"
-                             :value="config.GlobalDefaults[s.key].toFixed(2)"
-                             @change="adjustRatio(s.key, parseFloat($event.target.value))" />
-                    </div>
-                  </div>
-                </template>
-              </div>
-              <div class="text-[13px] text-parchment-300 mt-3">
-                拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。
-              </div>
+            <!-- 精确模板模式：下方比例 / Tier 不生效，引导去「兵员模板」标签页 -->
+            <div x-show="!config.GlobalDefaults.UseGenericMatching"
+                 class="card p-6 text-center mb-2">
+              <div class="font-display text-base text-gold-200 tracking-wide mb-2">当前为「精确兵员模板」模式</div>
+              <p class="text-[13px] text-parchment-300 mb-4">
+                招募只读取「兵员模板」标签页里勾选的兵种。下方的兵种比例与 Tier 范围在此模式下<strong class="text-parchment-100">不生效</strong>（仅保留备用）。
+              </p>
+              <button @click="activeTab = 3" class="btn-action px-5 py-2 text-sm rounded-sm">前往「兵员模板」标签页 →</button>
             </div>
 
-            <!-- Tier band -->
-            <div>
-              <h3 class="font-display text-base tracking-widest uppercase text-gold-200 mb-4">Tier 范 围</h3>
-              <div class="grid grid-cols-12 gap-4 items-center">
-                <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200">最低 Tier</div>
-                <div class="col-span-12 md:col-span-4 flex gap-1.5">
-                  <template x-for="n in [1,2,3,4,5,6]" :key="`min-${n}`">
-                    <button @click="config.GlobalDefaults.MinTier = n; if (config.GlobalDefaults.MaxTier < n) config.GlobalDefaults.MaxTier = n;"
-                            :class="config.GlobalDefaults.MinTier === n ? 'chip active' : 'chip'"
-                            x-text="n"></button>
+            <!-- 通用比例匹配模式：文化过滤 + 兵种比例 + Tier 范围 -->
+            <div x-show="config.GlobalDefaults.UseGenericMatching">
+              <!-- Culture filter -->
+              <div class="mb-8">
+                <div class="flex items-baseline justify-between mb-3 gap-3">
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">文化过滤</h3>
+                  <button x-show="(config.GlobalDefaults.GenericCultureFilter || 'PlayerCulture') !== 'PlayerCulture'"
+                          @click="config.GlobalDefaults.GenericCultureFilter = 'PlayerCulture'; markDirty()"
+                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认（玩家文化）</button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <template x-for="opt in cultureFilterOptions" :key="opt.value">
+                    <button @click="config.GlobalDefaults.GenericCultureFilter = opt.value; markDirty()"
+                            :class="(config.GlobalDefaults.GenericCultureFilter || 'PlayerCulture') === opt.value ? 'chip-filter active' : 'chip-filter'"
+                            x-text="opt.label"></button>
                   </template>
                 </div>
-                <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200 md:text-right md:pr-2">最高 Tier</div>
-                <div class="col-span-12 md:col-span-4 flex gap-1.5">
-                  <template x-for="n in [1,2,3,4,5,6]" :key="`max-${n}`">
-                    <button @click="if (n >= config.GlobalDefaults.MinTier) config.GlobalDefaults.MaxTier = n;"
-                            :class="config.GlobalDefaults.MaxTier === n ? 'chip active' : (n < config.GlobalDefaults.MinTier ? 'chip dimmed' : 'chip')"
-                            x-text="n"></button>
+                <div class="text-[13px] text-parchment-300 mt-3" x-text="cultureFilterHint"></div>
+              </div>
+
+              <!-- Role ratios -->
+              <div class="mb-8">
+                <div class="flex items-baseline justify-between mb-5 gap-3">
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">兵种比例</h3>
+                  <div class="flex items-baseline gap-3">
+                    <button x-show="!ratiosAreDefault()" @click="resetRatios()"
+                            class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认比例</button>
+                    <div class="font-mono text-[13px] text-parchment-200">
+                      <span class="text-parchment-300">Σ = </span>
+                      <span :class="ratioSumOk(troopSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
+                            x-text="troopSum.toFixed(2)"></span>
+                      <span class="text-parchment-300 ml-1">（自动归一化）</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="space-y-4">
+                  <template x-for="s in troopRatioSpecs" :key="s.key">
+                    <div class="grid grid-cols-12 gap-4 items-center">
+                      <div class="col-span-3 text-[15px] font-display tracking-wide text-parchment-100" x-text="s.label"></div>
+                      <div class="col-span-7">
+                        <input type="range" class="w-full" min="0" max="1" step="0.01"
+                               :value="config.GlobalDefaults[s.key]"
+                               @input="adjustRatio(s.key, parseFloat($event.target.value))" />
+                      </div>
+                      <div class="col-span-2">
+                        <input type="number"
+                               class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
+                               min="0" max="1" step="0.01"
+                               :value="config.GlobalDefaults[s.key].toFixed(2)"
+                               @change="adjustRatio(s.key, parseFloat($event.target.value))" />
+                      </div>
+                    </div>
                   </template>
+                </div>
+                <div class="text-[13px] text-parchment-300 mt-3">
+                  拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。
                 </div>
               </div>
-              <div class="text-[13px] text-parchment-300 mt-3">
-                仅作为可招募 tier 的硬边界。
-                <span class="text-parchment-200">当前范围：</span>
-                <span class="font-mono text-gold-200" x-text="`T${config.GlobalDefaults.MinTier} – T${config.GlobalDefaults.MaxTier}`"></span>
+
+              <!-- Tier band -->
+              <div>
+                <div class="flex items-baseline justify-between mb-4 gap-3">
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">Tier 范围</h3>
+                  <button x-show="!tierIsDefault()" @click="resetTier()"
+                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认 T2 – T5</button>
+                </div>
+                <div class="grid grid-cols-12 gap-4 items-center">
+                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200">最低 Tier</div>
+                  <div class="col-span-12 md:col-span-4 flex gap-1.5">
+                    <template x-for="n in [1,2,3,4,5,6]" :key="`min-${n}`">
+                      <button @click="config.GlobalDefaults.MinTier = n; if (config.GlobalDefaults.MaxTier < n) config.GlobalDefaults.MaxTier = n; markDirty();"
+                              :class="config.GlobalDefaults.MinTier === n ? 'chip active' : 'chip'"
+                              x-text="n"></button>
+                    </template>
+                  </div>
+                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200 md:text-right md:pr-2">最高 Tier</div>
+                  <div class="col-span-12 md:col-span-4 flex gap-1.5">
+                    <template x-for="n in [1,2,3,4,5,6]" :key="`max-${n}`">
+                      <button @click="if (n >= config.GlobalDefaults.MinTier) { config.GlobalDefaults.MaxTier = n; markDirty(); }"
+                              :class="config.GlobalDefaults.MaxTier === n ? 'chip active' : (n < config.GlobalDefaults.MinTier ? 'chip dimmed' : 'chip')"
+                              x-text="n"></button>
+                    </template>
+                  </div>
+                </div>
+                <div class="text-[13px] text-parchment-300 mt-3">
+                  仅作为可招募 tier 的硬边界。
+                  <span class="text-parchment-200">当前范围：</span>
+                  <span class="font-mono text-gold-200" x-text="`T${config.GlobalDefaults.MinTier} – T${config.GlobalDefaults.MaxTier}`"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -615,7 +706,7 @@
           <!-- =========== TAB 4: 兵员模板（具体兵种 picker，独立 tab） =========== -->
           <div x-show="activeTab === 3" class="tab-content p-8">
             <div class="flex items-baseline justify-between mb-2">
-              <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase">兵员 模板</h2>
+              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase">兵员模板</h2>
               <div class="font-mono text-sm text-parchment-200">
                 <span class="text-parchment-300">已选 </span>
                 <span class="text-gold-100 font-semibold" x-text="Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length"></span>
@@ -628,11 +719,23 @@
                         class="ml-4 text-danger-500 hover:text-danger-600 text-xs underline">清空</button>
               </div>
             </div>
-            <p class="text-parchment-200 text-sm mb-4">
-              按 stringId 指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。
-              <span :class="!config.GlobalDefaults.UseGenericMatching ? 'text-sage-400 font-semibold' : 'text-danger-500'"
-                    x-text="config.GlobalDefaults.UseGenericMatching ? '当前通用匹配开启 — 招募只看兵种滑条和 Tier 范围，此模板仅保留备用' : '当前通用匹配关闭 — 此模板生效'"></span>
+            <p class="text-parchment-200 text-sm mb-3">
+              指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。
             </p>
+
+            <!-- 模式提示：通用匹配开启时本模板不生效，给一键切换 -->
+            <div x-show="config.GlobalDefaults.UseGenericMatching"
+                 class="border border-gold-600/50 bg-gold-400/10 px-4 py-3 mb-4 flex items-center gap-3">
+              <span class="text-gold-300 font-display text-xl leading-none">!</span>
+              <span class="text-[13px] text-parchment-100 flex-1">
+                当前为「通用比例匹配」模式 —— 下面勾选的兵种<strong class="text-gold-200">不会生效</strong>。招募只看兵种比例和 Tier 范围。
+              </span>
+              <button @click="config.GlobalDefaults.UseGenericMatching = false; markDirty();"
+                      class="btn-action px-3 py-1.5 text-[12px] rounded-sm shrink-0 whitespace-nowrap">改用精确模板模式</button>
+            </div>
+            <div x-show="!config.GlobalDefaults.UseGenericMatching" class="text-[13px] text-sage-400 mb-4">
+              ✓ 当前为「精确兵员模板」模式 —— 下面勾选的兵种即驻军招募目标。
+            </div>
             <div class="diamond-divider mb-5"></div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -640,7 +743,7 @@
               <!-- LEFT: catalog (browse + filter + add) -->
               <div class="lg:col-span-7 card p-5">
                 <div class="flex items-center justify-between mb-3">
-                  <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200">兵 种 名 录</div>
+                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200">兵种名录</div>
                   <div class="text-[11px] text-parchment-400 font-mono">点 ＋ 加入名单</div>
                 </div>
 
@@ -718,7 +821,7 @@
               <!-- RIGHT: selected template -->
               <div class="lg:col-span-5 card p-5">
                 <div class="flex items-center justify-between mb-3">
-                  <div class="font-display text-xs tracking-[0.3em] uppercase text-gold-200">已 选 名 单</div>
+                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200">已选名单</div>
                   <div class="text-[11px] text-parchment-400 font-mono">
                     Σ =
                     <span :class="ratioSumOk(troopRatioSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
@@ -762,11 +865,15 @@
 
           <!-- =========== TAB 5: 非首府驻军 =========== -->
           <div x-show="activeTab === 4" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-widest uppercase mb-2">非首府 驻军</h2>
+            <div class="flex items-baseline justify-between gap-4 mb-2">
+              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase">非首府驻军</h2>
+              <button x-show="(config.BranchDefaults?.TargetPower ?? 150) !== 150 || Math.abs((config.BranchDefaults?.LowTierMinFraction ?? 0.20) - 0.20) > 1e-6"
+                      @click="resetBranch()"
+                      class="text-[12px] text-gold-400 hover:text-gold-200 font-mono shrink-0">↺ 全部恢复默认</button>
+            </div>
             <p class="text-parchment-200 text-sm mb-6">
-              下面这两项设置仅作用于<strong class="text-gold-200">首府拥有者本人</strong>名下的非首府城镇/城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。
-              非首府是 mod 内部的黑箱，仅由「目标兵力」和「低 Tier 头数占比下限」约束。
-              AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处的 TargetPower）。
+              下面两项仅作用于<strong class="text-gold-200">首府拥有者本人</strong>名下的非首府城镇 / 城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。
+              AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。
             </p>
             <div class="diamond-divider mb-6"></div>
 
@@ -774,22 +881,25 @@
             <div class="card p-5 mb-4">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
-                  <div class="text-[15px] text-parchment-50 font-medium">TargetPower</div>
+                  <div class="text-[15px] text-parchment-50 font-medium">目标兵力</div>
                   <div class="text-[13px] text-parchment-300 mt-0.5">
-                    vanilla strength 口径，约 150 ≈ 100 个 T3 步兵。非首府城堡 / 非首府城镇通用目标兵力。
+                    每座非首府城镇 / 城堡想维持的兵力强度。约 150 ≈ 100 个 T3 步兵；城堡通常 ~80、大城镇 ~250。
                   </div>
+                  <button x-show="(config.BranchDefaults?.TargetPower ?? 150) !== 150"
+                          @click="config.BranchDefaults.TargetPower = 150; markDirty()"
+                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">↺ 恢复默认 150</button>
                 </div>
                 <div class="col-span-9 md:col-span-6">
                   <input type="range" class="w-full" min="0" max="100000" step="1"
                          :value="config.BranchDefaults?.TargetPower ?? 150"
-                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value" />
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value; markDirty()" />
                 </div>
                 <div class="col-span-3 md:col-span-2">
                   <input type="number"
                          class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
                          min="0" max="100000" step="1"
                          :value="config.BranchDefaults?.TargetPower ?? 150"
-                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value" />
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.TargetPower = +$event.target.value; markDirty()" />
                 </div>
               </div>
             </div>
@@ -798,22 +908,25 @@
             <div class="card p-5">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
-                  <div class="text-[15px] text-parchment-50 font-medium">LowTierMinFraction</div>
+                  <div class="text-[15px] text-parchment-50 font-medium">低 Tier 头数占比下限</div>
                   <div class="text-[13px] text-parchment-300 mt-0.5">
-                    T1+T2 头数 ÷ 总头数必须 ≥ 此值，防「全 T6 几个人」。
+                    T1 + T2 兵的人数 ÷ 驻军总人数必须 ≥ 此值，避免出现「几个 T6 凑满兵力」的退化驻军。
                   </div>
+                  <button x-show="Math.abs((config.BranchDefaults?.LowTierMinFraction ?? 0.20) - 0.20) > 1e-6"
+                          @click="config.BranchDefaults.LowTierMinFraction = 0.20; markDirty()"
+                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">↺ 恢复默认 0.20</button>
                 </div>
                 <div class="col-span-9 md:col-span-6">
                   <input type="range" class="w-full" min="0" max="1" step="0.01"
                          :value="config.BranchDefaults?.LowTierMinFraction ?? 0.20"
-                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value" />
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value; markDirty()" />
                 </div>
                 <div class="col-span-3 md:col-span-2">
                   <input type="number"
                          class="w-full bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 text-right focus:border-gold-300 focus:outline-none"
                          min="0" max="1" step="0.01"
                          :value="(config.BranchDefaults?.LowTierMinFraction ?? 0.20).toFixed(2)"
-                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value" />
+                         @input="config.BranchDefaults = config.BranchDefaults || {}; config.BranchDefaults.LowTierMinFraction = +$event.target.value; markDirty()" />
                 </div>
               </div>
             </div>
@@ -821,7 +934,7 @@
 
           <!-- =========== TAB 6: 财务 =========== -->
           <div x-show="activeTab === 5" class="tab-content p-8">
-            <h2 class="font-display text-xl text-gold-200 mb-4 tracking-wider">财 务 报 告</h2>
+            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase">财务报告</h2>
             <p class="text-parchment-200 text-sm mb-6">
               本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。
             </p>
@@ -833,7 +946,7 @@
             <div x-show="finance" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <!-- 今日 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">今 日</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">今日</h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.Today || {})" :key="cat">
@@ -854,7 +967,7 @@
 
               <!-- 本周 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">本 周</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">本周</h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.Week || {})" :key="cat">
@@ -875,7 +988,7 @@
 
               <!-- 全部 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">全 部</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">全部</h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.AllTime || {})" :key="cat">
@@ -897,7 +1010,7 @@
 
             <!-- 近期流水 -->
             <div x-show="finance" class="ornate-frame p-5">
-              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wider">近 期 流 水（最近 50 条）</h3>
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">近期流水（最近 50 条）</h3>
               <div x-show="(finance?.RecentEntries || []).length === 0" class="text-parchment-400 italic text-sm">尚无支出记录</div>
               <table x-show="(finance?.RecentEntries || []).length > 0" class="w-full text-sm">
                 <thead>
@@ -948,7 +1061,11 @@
         troops: [],
         settlements: [],
         warning: '',
+        success: '',          // 绿色成功提示（保存成功等），show 后定时自动清空
+        _successTimer: null,
         saving: false,
+        dirty: false,         // 有未保存改动 — 控制保存按钮状态、重读/关页拦截、header 状态
+        showAdvanced: false,  // 策略参数页是否展开开发者级旋钮（MCMF / 调度内部参数）
         logEntries: [],
         finance: null,
         financeError: '',
@@ -979,11 +1096,11 @@
         ],
 
         budgetSpecs: [
-          { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true },
-          { key: 'MinimumDefenderRatio', label: '最少防守比例', hint: '仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'BudgetLimit', label: '招募预算基准', hint: '外派征兵队单次到村招募预算；自动升级预算也按此派生', min: 0, max: 50000, discrete: true },
-          { key: 'WartimeMultiplier', label: '高威胁目标乘数', hint: '城镇威胁评估达到 High/Critical 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false },
-          { key: 'PeacetimeMultiplier', label: '常态目标乘数', hint: '城镇威胁评估低于 High 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false },
+          { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true, def: 150 },
+          { key: 'MinimumDefenderRatio', label: '最少防守比例', hint: '仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 1, discrete: false, step: 0.05, def: 0.20 },
+          { key: 'BudgetLimit', label: '招募预算基准', hint: '外派征兵队单次到村招募预算；自动升级预算也按此派生', min: 0, max: 50000, discrete: true, def: 5000 },
+          { key: 'WartimeMultiplier', label: '高威胁目标乘数', hint: '城镇威胁评估达到 High/Critical 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false, def: 1.5 },
+          { key: 'PeacetimeMultiplier', label: '常态目标乘数', hint: '城镇威胁评估低于 High 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false, def: 1.0 },
         ],
 
         troopRatioSpecs: [
@@ -994,70 +1111,79 @@
         ],
         ratioKeys: ['CavalryRatio','HorseArcherRatio','InfantryRatio','RangedRatio'],
 
+        // 通用匹配模式的文化过滤选项（对应 GlobalDefaults.GenericCultureFilter 字符串值）
+        cultureFilterOptions: [
+          { value: 'PlayerCulture',  label: '玩家文化', hint: '只招募玩家氏族文化的兵种。默认选项，最稳妥。' },
+          { value: 'CapitalCulture', label: '首府文化', hint: '只招募首府所在城镇本身文化的兵种 —— 被征服的异文化城会招当地兵，省去跨文化运兵。' },
+          { value: 'Any',            label: '不过滤',   hint: '不按文化过滤，任何文化的兵种都可进入招募候选。' },
+        ],
+
         resourceSpecs: [
-          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5 },
-          { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true },
+          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5, def: -2.0 },
+          { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true, def: 72 },
         ],
 
         // 原先散落在 PatrolDispatcher / RecruitmentDispatcher / CapitalLogisticsManager / SallyDispatcher 内的阈值。
-        // 人数阈值统一按当前实际驻军比例派生；面板调整后下次 tick 生效（无须重启）。
+        // 人数阈值统一按当前实际驻军比例派生；面板调整后下次决策时生效（无须重启）。
+        // def = 出厂默认值（与 C# 配置类一致），用于「恢复默认」；adv = 开发者级旋钮，默认折叠。
         thresholdSpecs: [
-          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: '通用：回城解散兵员比例', hint: '本mod除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散（默认 0.5）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: '通用：回城解散受伤比例', hint: '本mod除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散（默认 0.3）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: '巡逻队：创建后保留比例', hint: '创建巡逻队后首府至少保留实际驻军 × 此比例（默认 0.8）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: '巡逻队：每次抽兵比例', hint: '新建巡逻队时从首府实际驻军抽走的比例（默认 0.10）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'PatrolMinDispatchSize', root: 'Thresholds', label: '巡逻队：最少出发人数', hint: '按比例算出的 batch 低于此值时延迟创建，等驻军积攒到能一次抽够人为止。避免小驻军派出 1-3 人巡逻队送死（默认 50）；0 = 不闸（兼容老行为）', min: 0, max: 500, discrete: true },
-          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: '征兵队：护卫比例', hint: '派出征兵队时从首府驻军抽取的护卫比例（默认 0.10）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: '征兵队：招募返航人数', hint: '本趟实际招募人数（不含护卫）达到此值即返航（默认 50）', min: 1, max: 500, discrete: true },
-          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: '调拨：危急驻军比例', hint: '预计驻军低于目标驻军 × 此比例时视为危急（默认 0.24）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'TransferRatio', root: 'Thresholds', label: '调拨：源城抽取比例', hint: '从源城驻军中按此比例抽取（默认 0.30）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: '调拨：单次上限比例', hint: '单次调拨最多搬运源城实际驻军 × 此比例（默认 0.67）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: '调拨：单次下限比例', hint: '算出的调拨人数低于源城实际驻军 × 此比例则放弃（默认 0.13）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: '征兵：派遣缺口比例', hint: '剩余缺口低于首府实际驻军 × 此比例不再派征兵队（默认 0.07）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'SallyExtractionRatio', root: 'Thresholds', label: '主动出击：驻军上限比例', hint: '主动出击人数不会超过当前实际驻军 × 此比例（默认 0.60）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: '主动出击：目标兵力倍数', hint: '出击队目标人数 = 敌方目标部队人数 × 此倍数（默认 2.0）', min: 0, max: 5, discrete: false, step: 0.25 },
-          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: '主动出击：创建下限人数', hint: '计算后得到的出击队人数低于此值时不出击（默认 30）', min: 1, max: 500, discrete: true },
+          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: '通用：回城解散兵员比例', hint: '本 Mod 除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散', min: 0, max: 1, discrete: false, step: 0.05, def: 0.5 },
+          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: '通用：回城解散受伤比例', hint: '本 Mod 除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散', min: 0, max: 1, discrete: false, step: 0.05, def: 0.3 },
+          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: '巡逻队：创建后保留比例', hint: '创建巡逻队后首府至少保留实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.8 },
+          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: '巡逻队：每次抽兵比例', hint: '新建巡逻队时从首府实际驻军抽走的比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.10 },
+          { key: 'PatrolMinDispatchSize', root: 'Thresholds', label: '巡逻队：最少出发人数', hint: '按比例算出的人数低于此值时延迟创建，等驻军积攒到能一次抽够人为止。避免小驻军派出 1-3 人巡逻队送死；0 = 不限制', min: 0, max: 500, discrete: true, def: 50 },
+          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: '征兵队：护卫比例', hint: '派出征兵队时从首府驻军抽取的护卫比例', min: 0, max: 1, discrete: false, step: 0.05, def: 0.10 },
+          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: '征兵队：招募返航人数', hint: '本趟实际招募人数（不含护卫）达到此值即返航', min: 1, max: 500, discrete: true, def: 50 },
+          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: '调拨：危急驻军比例', hint: '预计驻军低于目标驻军 × 此比例时视为危急', min: 0, max: 1, discrete: false, step: 0.01, def: 0.24 },
+          { key: 'TransferRatio', root: 'Thresholds', label: '调拨：源城抽取比例', hint: '从源城驻军中按此比例抽取', min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
+          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: '调拨：单次上限比例', hint: '单次调拨最多搬运源城实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.67 },
+          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: '调拨：单次下限比例', hint: '算出的调拨人数低于源城实际驻军 × 此比例则放弃', min: 0, max: 1, discrete: false, step: 0.01, def: 0.13 },
+          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: '征兵：派遣缺口比例', hint: '剩余缺口低于首府实际驻军 × 此比例不再派征兵队', min: 0, max: 1, discrete: false, step: 0.01, def: 0.07 },
+          { key: 'SallyExtractionRatio', root: 'Thresholds', label: '主动出击：驻军上限比例', hint: '主动出击人数不会超过当前实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.05, def: 0.60 },
+          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: '主动出击：目标兵力倍数', hint: '出击队目标人数 = 敌方目标部队人数 × 此倍数', min: 0, max: 5, discrete: false, step: 0.25, def: 2.0 },
+          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: '主动出击：创建下限人数', hint: '计算后得到的出击队人数低于此值时不出击', min: 1, max: 500, discrete: true, def: 30 },
           // B17.4 新增阈值（min/max 与 ValidateThresholds 后端上下界对齐）
-          { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: '征兵队：首府最低驻军', hint: '派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭闸门，允许 0 兵裸车（默认 0）', min: 0, max: 10000, discrete: true },
-          { key: 'PartyPrisonerCap', root: 'Thresholds', label: '通用：俘虏上限', hint: '所有 ST 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每 hour 随机踢出非英雄；0 = 关闭（默认 30）', min: 0, max: 10000, discrete: true },
-          { key: 'StuckTeleportHours', root: 'Thresholds', label: '通用：卡死瞬移阈值（真实小时）', hint: '首次检测到卡死起累计真实小时，超过此值二段瞬移到 home.GatePosition；0 关闭（默认 24）', min: 0, max: 720, discrete: false, step: 1 },
-          { key: 'PatrolMaxLifetimeHours', root: 'Thresholds', label: '巡逻队：最长存活小时（兜底）', hint: '巡逻队从创建起累计此小时后强制回家解散。防御 Village.Bound 异常 / 战时 village 库存异常等极端场景；0 关闭兜底（接受终身巡逻）。默认 720 = 30 天', min: 0, max: 720, discrete: false, step: 1 },
+          { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: '征兵队：首府最低驻军', hint: '派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭限制，允许 0 兵裸车', min: 0, max: 10000, discrete: true, def: 0 },
+          { key: 'PartyPrisonerCap', root: 'Thresholds', label: '通用：俘虏上限', hint: '所有本 Mod 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每游戏内小时随机释放非英雄俘虏；0 = 关闭', min: 0, max: 10000, discrete: true, def: 30 },
+          { key: 'StuckTeleportHours', root: 'Thresholds', label: '通用：卡死瞬移阈值（真实小时）', adv: true, hint: '首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭', min: 0, max: 720, discrete: false, step: 1, def: 24 },
+          { key: 'PatrolMaxLifetimeHours', root: 'Thresholds', label: '巡逻队：最长存活小时（兜底）', adv: true, hint: '巡逻队从创建起累计此小时后强制回家解散，用于防御极端异常场景；0 关闭兜底（接受终身巡逻）。720 = 30 天', min: 0, max: 720, discrete: false, step: 1, def: 720 },
           // DeepSeek audit 2026-05-18 新增 (R1/R2/R3/R4/H7-H10)
-          { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: '生命周期：空闲遣返小时', hint: '本mod队伍空闲此时长后强制遣返回 home（默认 24，必须 ≥ 1）', min: 1, max: 720, discrete: true },
-          { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: '生命周期：空闲解散小时', hint: '本mod队伍空闲此时长后直接解散（默认 36，必须 ≥ 遣返小时）', min: 1, max: 720, discrete: true },
-          { key: 'SallyDetectionRadius', root: 'Thresholds', label: '主动出击：搜索半径', hint: 'Sally 在城周围搜索敌方目标的 Vec2 半径（默认 50）', min: 10, max: 500, discrete: false, step: 5 },
-          { key: 'SallyCooldownHours', root: 'Thresholds', label: '主动出击：冷却小时', hint: '上次出击结束（合并/销毁）后的冷却时长（默认 24）', min: 0, max: 168, discrete: false, step: 1 },
-          { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: '主动出击：连续可见 tick 数', hint: '敌方需在视野内连续 N 个 hourly tick 才触发出击，避免一进检测圈就冲（默认 3）', min: 1, max: 48, discrete: true },
-          { key: 'TransferCapacityWeight', root: 'Thresholds', label: '调拨：容量评分权重', hint: 'score -= min(capacity, maxPerTask) × 此值；调大利好高容量源（默认 0.05）', min: 0, max: 1, discrete: false, step: 0.01 },
-          { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: '调拨：branch→branch 惩罚', hint: '非首府间的调拨在评分中减去此值（值越大越避免）（默认 25）', min: 0, max: 100, discrete: false, step: 1 },
-          { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: '调拨：首府出兵惩罚', hint: '从首府向 branch 调兵时评分加上此值（值越大越保留首府兵力）（默认 10）', min: 0, max: 100, discrete: false, step: 1 },
-          { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: '升级：触发 Tier 比例', hint: 'T1+T2 兵占总兵比例 ≥ 此值时尝试升级（默认 0.30）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: '升级：单次最低预算', hint: '实际预算 = max(规则.BudgetLimit/4, 此值)（默认 500）', min: 0, max: 50000, discrete: true },
-          { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: '升级：单次最大升级数', hint: '单次升级最多升 N 个兵（默认 20）', min: 1, max: 500, discrete: true },
+          { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: '生命周期：空闲遣返小时', hint: '本 Mod 队伍空闲此时长（游戏内小时）后强制遣返回首府（必须 ≥ 1）', min: 1, max: 720, discrete: true, def: 24 },
+          { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: '生命周期：空闲解散小时', hint: '本 Mod 队伍空闲此时长（游戏内小时）后直接解散（必须 ≥ 遣返小时）', min: 1, max: 720, discrete: true, def: 36 },
+          { key: 'SallyDetectionRadius', root: 'Thresholds', label: '主动出击：搜索半径', hint: '主动出击在城周围搜索敌方目标的地图半径', min: 10, max: 500, discrete: false, step: 5, def: 50 },
+          { key: 'SallyCooldownHours', root: 'Thresholds', label: '主动出击：冷却小时', hint: '上次出击结束后的冷却时长（游戏内小时）', min: 0, max: 168, discrete: false, step: 1, def: 24 },
+          { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: '主动出击：连续可见小时数', hint: '敌方需在视野内连续存在 N 个游戏内小时才触发出击，避免一进检测圈就冲', min: 1, max: 48, discrete: true, def: 3 },
+          { key: 'TransferCapacityWeight', root: 'Thresholds', label: '调拨：容量评分权重', adv: true, hint: '调拨评分中按源城可用容量加权，调大利好高容量源', min: 0, max: 1, discrete: false, step: 0.01, def: 0.05 },
+          { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: '调拨：非首府互调惩罚', adv: true, hint: '两座非首府之间的调拨在评分中减去此值（值越大越避免）', min: 0, max: 100, discrete: false, step: 1, def: 25 },
+          { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: '调拨：首府出兵惩罚', adv: true, hint: '从首府向非首府调兵时评分加上此值（值越大越保留首府兵力）', min: 0, max: 100, discrete: false, step: 1, def: 10 },
+          { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: '升级：触发 Tier 比例', hint: 'T1+T2 兵占总兵比例 ≥ 此值时尝试升级', min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
+          { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: '升级：单次最低预算', hint: '实际预算 = max(招募预算基准 / 4, 此值)', min: 0, max: 50000, discrete: true, def: 500 },
+          { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: '升级：单次最大升级数', hint: '单次升级最多升 N 个兵', min: 1, max: 500, discrete: true, def: 20 },
           // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，不再可配置；
           // 移除 RecruiterSeedGold / SallySeedGold spec。
-          { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: '征兵：每轮候选数', hint: 'RankCandidates 每轮返回的候选村庄数（默认 8）', min: 1, max: 50, discrete: true },
-          // MCMF solver
-          { key: 'McmfHardPenalty', root: 'Thresholds', label: 'MCMF：硬不匹配罚分', hint: 'role 不符或 exact template 不在升级树上的硬罚（默认 1000）', min: 0, max: 100000, discrete: true },
-          { key: 'McmfTierPenalty', root: 'Thresholds', label: 'MCMF：Tier 差距罚分', hint: '每差 1 tier 的匹配罚分（默认 50）', min: 0, max: 100000, discrete: true },
-          { key: 'McmfLeniency', root: 'Thresholds', label: 'MCMF：缺口宽容度', hint: '缺口越大越降低匹配罚分；0=严格，1=最大宽容（默认 0.8）', min: 0, max: 1, discrete: false, step: 0.05 },
-          { key: 'McmfUnmetCost', root: 'Thresholds', label: 'MCMF：未满足成本', hint: '需求未满足 bypass 的 cost；低于极差路线时会选择暂不派遣（默认 2000）', min: 0, max: 100000, discrete: true },
-          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: 'MCMF：征兵队固定成本', hint: 'VillageNotableSource 派 recruiter 的固定成本（默认 100）', min: 0, max: 100000, discrete: true },
-          { key: 'McmfTransferOverhead', root: 'Thresholds', label: 'MCMF：调拨队固定成本', hint: 'GarrisonSurplusSource 派 transfer 的固定成本（默认 50）', min: 0, max: 100000, discrete: true },
-          // ClanPatrol scheduler (H17)
-          { key: 'EtaBufferHours', root: 'ClanPatrol', label: '巡逻调度：ETA 缓冲', hint: '预占时长 = ETA + 此值（默认 1.0）', min: 0, max: 168, discrete: false, step: 0.5 },
-          { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: '巡逻调度：卡死超时', hint: '单段路超过此时长视为卡死，强制重选下一站（默认 12）', min: 1, max: 720, discrete: false, step: 1 },
-          { key: 'MinVisitGapHours', root: 'ClanPatrol', label: '巡逻调度：回访间隔', hint: '同定居点的最小回访间隔（默认 4）', min: 0, max: 720, discrete: false, step: 1 },
+          { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: '征兵：每轮候选村庄数', adv: true, hint: '征兵规划每轮评估的候选村庄数', min: 1, max: 50, discrete: true, def: 8 },
+          // MCMF solver — 供需图调度器内部参数，全部 adv
+          { key: 'McmfHardPenalty', root: 'Thresholds', label: 'MCMF：硬不匹配罚分', adv: true, hint: '兵种 role 不符或精确模板不在升级树上的硬罚分', min: 0, max: 100000, discrete: true, def: 1000 },
+          { key: 'McmfTierPenalty', root: 'Thresholds', label: 'MCMF：Tier 差距罚分', adv: true, hint: '每差 1 个 Tier 的匹配罚分', min: 0, max: 100000, discrete: true, def: 50 },
+          { key: 'McmfLeniency', root: 'Thresholds', label: 'MCMF：缺口宽容度', adv: true, hint: '缺口越大越降低匹配罚分；0 = 严格，1 = 最大宽容', min: 0, max: 1, discrete: false, step: 0.05, def: 0.8 },
+          { key: 'McmfUnmetCost', root: 'Thresholds', label: 'MCMF：未满足成本', adv: true, hint: '需求未满足的成本；低于极差路线时会选择暂不派遣', min: 0, max: 100000, discrete: true, def: 2000 },
+          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: 'MCMF：征兵队固定成本', adv: true, hint: '派出一支征兵队的固定成本', min: 0, max: 100000, discrete: true, def: 100 },
+          { key: 'McmfTransferOverhead', root: 'Thresholds', label: 'MCMF：调拨队固定成本', adv: true, hint: '派出一支调拨队的固定成本', min: 0, max: 100000, discrete: true, def: 50 },
+          // ClanPatrol scheduler (H17) — 巡逻调度内部参数，全部 adv
+          { key: 'EtaBufferHours', root: 'ClanPatrol', label: '巡逻调度：ETA 缓冲', adv: true, hint: '站点预占时长 = 预计到达时间 + 此值', min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
+          { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: '巡逻调度：卡死超时', adv: true, hint: '单段路超过此时长视为卡死，强制重选下一站', min: 1, max: 720, discrete: false, step: 1, def: 12 },
+          { key: 'MinVisitGapHours', root: 'ClanPatrol', label: '巡逻调度：回访间隔', adv: true, hint: '同一定居点的最小回访间隔', min: 0, max: 720, discrete: false, step: 1, def: 4 },
           // ClanPatrol.AvoidRaidedVillages 是 bool，由 settingsGroups 的巡逻调拨二级菜单渲染。
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: '巡逻调度：距离评分权重', hint: 'score = -hoursSinceVisit + 此值 × Vec2 距离（默认 0.5）', min: 0, max: 100, discrete: false, step: 0.1 },
-          { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: '巡逻调度：支援 ETA 阈值', hint: '巡逻队 ETA ≤ 此值时转去支援 Sally（默认 2.0）', min: 0, max: 168, discrete: false, step: 0.5 },
-          // ClanRecruiter scheduler (H17)
-          { key: 'EtaBufferHours', root: 'ClanRecruiter', label: '征兵调度：ETA 缓冲', hint: '预占时长 = ETA + 此值（默认 1.0）', min: 0, max: 168, discrete: false, step: 0.5 },
-          { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: '征兵调度：回访间隔', hint: '同村庄的最小回访间隔（默认 4）', min: 0, max: 720, discrete: false, step: 1 },
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: '征兵调度：距离评分权重', hint: 'score = -hoursSinceVisit + 此值 × Vec2 距离（默认 0.5）', min: 0, max: 100, discrete: false, step: 0.1 },
+          { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: '巡逻调度：距离评分权重', adv: true, hint: '站点评分中距离项的权重，值越大越偏好近处', min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
+          { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: '巡逻调度：支援 ETA 阈值', adv: true, hint: '巡逻队预计到达时间 ≤ 此值时转去支援主动出击', min: 0, max: 168, discrete: false, step: 0.5, def: 2.0 },
+          // ClanRecruiter scheduler (H17) — 征兵调度内部参数，全部 adv
+          { key: 'EtaBufferHours', root: 'ClanRecruiter', label: '征兵调度：ETA 缓冲', adv: true, hint: '站点预占时长 = 预计到达时间 + 此值', min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
+          { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: '征兵调度：回访间隔', adv: true, hint: '同一村庄的最小回访间隔', min: 0, max: 720, discrete: false, step: 1, def: 4 },
+          { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: '征兵调度：距离评分权重', adv: true, hint: '站点评分中距离项的权重，值越大越偏好近处', min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
         ],
 
         // ============ computed ============
+        // 完整分组定义。每个 group 的 specs 已按 showAdvanced 过滤掉 adv 旋钮。
         get settingsGroups() {
           const budget = this.budgetSpecs.map(s => ({ root: 'GlobalDefaults', ...s }));
           const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs];
@@ -1066,8 +1192,9 @@
             const found = all.find(s => (s.root || '') === normalizedRoot && s.key === key);
             return found ? { ...found, root: normalizedRoot } : null;
           };
-          const boolSpec = (root, key, label, hint) => ({ root, key, label, hint, type: 'bool' });
-          const clean = specs => specs.filter(Boolean);
+          const boolSpec = (root, key, label, hint, def, adv) => ({ root, key, label, hint, def, adv, type: 'bool' });
+          // clean：丢掉 null，并在未开启「高级参数」时隐藏 adv 旋钮。
+          const clean = specs => specs.filter(Boolean).filter(s => this.showAdvanced || !s.adv);
 
           return [
             {
@@ -1086,7 +1213,7 @@
             {
               key: 'recruitment',
               label: '招募',
-              hint: '外派征兵队、村庄候选搜索、回访节奏和初始资金。',
+              hint: '外派征兵队、村庄候选搜索和回访节奏。',
               specs: clean([
                 spec('', 'VillageCooldownHours'),
                 spec('Thresholds', 'RecruitmentMinDemandRatio'),
@@ -1102,12 +1229,12 @@
             {
               key: 'patrol_transfer',
               label: '巡逻调拨',
-              hint: '巡逻队创建、巡逻站点选择、Sally 支援和领地间兵力调拨。',
+              hint: '巡逻队创建、巡逻站点选择、出击支援和领地间兵力调拨。',
               specs: clean([
                 spec('Thresholds', 'PatrolReserveAfterCreationRatio'),
                 spec('Thresholds', 'PatrolTroopBatchRatio'),
                 spec('Thresholds', 'PatrolMinDispatchSize'),
-                boolSpec('ClanPatrol', 'AvoidRaidedVillages', '巡逻：避开被劫掠村庄', '开启后，被劫掠中的村庄不会被选为普通巡逻访问点'),
+                boolSpec('ClanPatrol', 'AvoidRaidedVillages', '巡逻：避开被劫掠村庄', '开启后，被劫掠中的村庄不会被选为普通巡逻访问点', true, false),
                 spec('ClanPatrol', 'EtaBufferHours'),
                 spec('ClanPatrol', 'StuckTimeoutHours'),
                 spec('ClanPatrol', 'MinVisitGapHours'),
@@ -1138,7 +1265,8 @@
             {
               key: 'mcmf',
               label: 'MCMF 调度',
-              hint: '供需图调度器的匹配罚分、未满足成本和派队固定成本。',
+              adv: true,
+              hint: '供需图调度器的匹配罚分、未满足成本和派队固定成本 —— 开发者级旋钮，普通玩家无需调整。',
               specs: clean([
                 spec('Thresholds', 'McmfHardPenalty'),
                 spec('Thresholds', 'McmfTierPenalty'),
@@ -1166,13 +1294,23 @@
             },
           ];
         },
+        // 实际渲染用：丢掉空分组（如未开高级参数时 specs 全被过滤掉的 MCMF）。
+        get visibleSettingsGroups() {
+          return this.settingsGroups.filter(g => g.specs.length > 0);
+        },
         get activeSettingsGroupData() {
-          return this.settingsGroups.find(g => g.key === this.activeSettingsGroup) || this.settingsGroups[0];
+          const vis = this.visibleSettingsGroups;
+          return vis.find(g => g.key === this.activeSettingsGroup) || vis[0];
         },
         get troopSum() {
           if (!this.config) return 0;
           const g = this.config.GlobalDefaults;
           return this.ratioKeys.reduce((s, k) => s + (g[k] || 0), 0);
+        },
+        get cultureFilterHint() {
+          const v = this.config?.GlobalDefaults?.GenericCultureFilter || 'PlayerCulture';
+          const o = this.cultureFilterOptions.find(x => x.value === v);
+          return o ? o.hint : this.cultureFilterOptions[0].hint;
         },
         get cultureList() {
           // Returns sorted [stringId, displayName] pairs. stringId stays the filter key
@@ -1242,6 +1380,10 @@
           await this.fetchAll();
           this.loadFinance();
           setInterval(() => { this.loadFinance(); }, 5000);
+          // 关闭 / 刷新页面时若有未保存改动，浏览器原生拦截一次（防手滑丢配置）。
+          window.addEventListener('beforeunload', (e) => {
+            if (this.dirty) { e.preventDefault(); e.returnValue = ''; }
+          });
         },
 
         // fetchAll：仅 GET 拉取，不触发后端 reload。适用于初始化和普通刷新。
@@ -1257,6 +1399,8 @@
         // 仅在玩家主动点「↻ 重读磁盘」时调用；初始化不走此路径。
         // 后端 P0-1 修复已保证：磁盘内容与 in-memory 相同时 reload 不广播 OnConfigChanged。
         async reloadAll() {
+          // 重读会用磁盘内容整体覆盖当前面板 —— 有未保存改动时先确认，避免静默丢失。
+          if (this.dirty && !confirm('当前有未保存的改动。重读磁盘会丢弃这些改动，确定继续？')) return;
           this.warning = '';
           // 告知后端从磁盘 reload（POST /api/reload）—— 玩家手编 global.json 后才需要。
           // soft-fail：reload 失败仍继续刷新各面板，banner 提示而非 hard error。
@@ -1291,12 +1435,15 @@
           if (r.ok) {
             r.body.GlobalDefaults = r.body.GlobalDefaults || {};
             r.body.GlobalDefaults.ExactTroopTemplate = r.body.GlobalDefaults.ExactTroopTemplate || {};
+            r.body.GlobalDefaults.GenericCultureFilter = r.body.GlobalDefaults.GenericCultureFilter || 'PlayerCulture';
             r.body.BranchDefaults = r.body.BranchDefaults || { TargetPower: 150, LowTierMinFraction: 0.20 };
             r.body.EnabledFeatures = r.body.EnabledFeatures || {};
             r.body.Thresholds = r.body.Thresholds || {};
             r.body.ClanPatrol = r.body.ClanPatrol || {};
             r.body.ClanRecruiter = r.body.ClanRecruiter || {};
             this.config = r.body;
+            // 刚从后端拉到的就是当前盘上状态 —— 重置未保存标记。
+            this.dirty = false;
             this.log('配置已读取', 'ok');
           } else {
             this.log(`读取失败 ${r.status}: ${r.body?.message || '?'}`, 'err');
@@ -1329,7 +1476,9 @@
           const r = await this.http('PUT', '/api/config', this.config);
           this.saving = false;
           if (r.ok) {
-            this.log('保存成功：征兵队会重规划；其他队伍按下一次 tick、下次调度或新建队伍读取', 'ok');
+            this.dirty = false;
+            this.showSuccess('已保存到游戏。征兵队会立即按新配置重新规划；其他队伍在下一次行动决策时读取新配置。');
+            this.log('配置已保存到游戏', 'ok');
             await this.fetchStatus();
           } else {
             this.warning = `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`;
@@ -1337,10 +1486,28 @@
           }
         },
 
+        // ============ dirty / 反馈 ============
+        // 任何会改动 config 的操作都应调用 markDirty()，让保存按钮、header 状态、关页拦截同步。
+        markDirty() { this.dirty = true; },
+        showSuccess(msg) {
+          this.success = msg;
+          if (this._successTimer) clearTimeout(this._successTimer);
+          this._successTimer = setTimeout(() => { this.success = ''; }, 6000);
+        },
+        // 「显示高级参数」切换：若当前所在分组在关闭高级后不可见，回到第一个可见分组。
+        toggleAdvanced() {
+          this.showAdvanced = !this.showAdvanced;
+          const vis = this.visibleSettingsGroups;
+          if (!vis.some(g => g.key === this.activeSettingsGroup)) {
+            this.activeSettingsGroup = vis[0]?.key || 'targets';
+          }
+        },
+
         // ============ toggles ============
         getToggleValue(t) { return !!this.config?.[t.root]?.[t.key]; },
         setToggleValue(t, v) {
           this.config[t.root][t.key] = v;
+          this.markDirty();
         },
 
         // ============ ratio with proportional auto-normalize ============
@@ -1375,6 +1542,7 @@
             for (const k of others) if (g[k] > g[biggest]) biggest = k;
             g[biggest] = Math.max(0, Math.min(1, g[biggest] + drift));
           }
+          this.markDirty();
         },
 
         // ============ config value helpers (mixed root) ============
@@ -1387,14 +1555,72 @@
           if (!root) return;
           if (s.type === 'bool') {
             root[s.key] = !!raw;
-            return;
+          } else {
+            let v = s.discrete ? parseInt(raw) : parseFloat(raw);
+            if (!Number.isFinite(v)) v = s.min ?? 0;
+            root[s.key] = v;
           }
-          let v = s.discrete ? parseInt(raw) : parseFloat(raw);
-          if (!Number.isFinite(v)) v = s.min ?? 0;
-          root[s.key] = v;
+          this.markDirty();
         },
         getResourceValue(s) { return this.getConfigValue(s); },
         setResourceValue(s, raw) { this.setConfigValue(s, raw); },
+
+        // ============ 恢复默认 ============
+        // spec.def = 出厂默认值。isSpecDefault 用 epsilon 比较（浮点 spec 不能用 ===）。
+        isSpecDefault(s) {
+          if (!s || s.def === undefined) return true;
+          const cur = this.getConfigValue(s);
+          if (s.type === 'bool') return !!cur === !!s.def;
+          return Math.abs((parseFloat(cur) || 0) - s.def) < 1e-6;
+        },
+        resetSpec(s) {
+          if (!s || s.def === undefined) return;
+          const root = s.root ? this.config[s.root] : this.config;
+          if (!root) return;
+          root[s.key] = s.def;
+          this.markDirty();
+        },
+        // 把当前策略参数分组内所有可见 spec 一次性恢复默认。
+        resetGroup() {
+          const g = this.activeSettingsGroupData;
+          if (!g) return;
+          for (const s of g.specs) {
+            if (s.def === undefined) continue;
+            const root = s.root ? this.config[s.root] : this.config;
+            if (root) root[s.key] = s.def;
+          }
+          this.markDirty();
+        },
+        // 4 个兵种比例一次性赋默认 —— 直接写值，绕过 adjustRatio 的级联归一化。
+        resetRatios() {
+          const g = this.config.GlobalDefaults;
+          g.CavalryRatio = 0.20; g.HorseArcherRatio = 0.05;
+          g.InfantryRatio = 0.50; g.RangedRatio = 0.25;
+          this.markDirty();
+        },
+        ratiosAreDefault() {
+          const g = this.config?.GlobalDefaults;
+          if (!g) return true;
+          return Math.abs((g.CavalryRatio || 0) - 0.20) < 1e-6
+              && Math.abs((g.HorseArcherRatio || 0) - 0.05) < 1e-6
+              && Math.abs((g.InfantryRatio || 0) - 0.50) < 1e-6
+              && Math.abs((g.RangedRatio || 0) - 0.25) < 1e-6;
+        },
+        resetTier() {
+          this.config.GlobalDefaults.MinTier = 2;
+          this.config.GlobalDefaults.MaxTier = 5;
+          this.markDirty();
+        },
+        tierIsDefault() {
+          const g = this.config?.GlobalDefaults;
+          return !!g && g.MinTier === 2 && g.MaxTier === 5;
+        },
+        resetBranch() {
+          this.config.BranchDefaults = this.config.BranchDefaults || {};
+          this.config.BranchDefaults.TargetPower = 150;
+          this.config.BranchDefaults.LowTierMinFraction = 0.20;
+          this.markDirty();
+        },
 
         // ============ ExactTroopTemplate (B7.20: 占比模式 0..1，自动归一化) ============
         // 总和约 = 1.0；新增/删除/调整时按比例 rescale 其他条目让 Σ 保持 1.0。
@@ -1409,10 +1635,12 @@
           for (const k of ids) tmpl[k] = Math.max(0, (tmpl[k] || 0) * factor);
           tmpl[id] = newRatio;
           this._snapTroopSumTo1(id);
+          this.markDirty();
         },
         updateTroopRatio(id, raw) {
           const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
           if (!(id in tmpl)) return;
+          this.markDirty();
           let v = parseFloat(raw);
           if (!Number.isFinite(v)) v = 0;
           v = Math.max(0, Math.min(1, v));
@@ -1438,6 +1666,7 @@
         removeTroop(id) {
           const tmpl = this.config.GlobalDefaults.ExactTroopTemplate;
           if (!(id in tmpl)) return;
+          this.markDirty();
           delete tmpl[id];
           // 把空出的份额按原占比分给剩余条目
           const ids = Object.keys(tmpl);
@@ -1455,6 +1684,7 @@
         clearTroops() {
           if (!confirm('清空全部已选兵种？')) return;
           this.config.GlobalDefaults.ExactTroopTemplate = {};
+          this.markDirty();
           this.log('兵员模板已清空（未保存）', 'ok');
         },
         // 修浮点漂移：通过调整除 lockedKey 外占比最大的条目，让 Σ 精确等于 1

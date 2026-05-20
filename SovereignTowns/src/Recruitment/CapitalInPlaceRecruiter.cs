@@ -108,6 +108,9 @@ public static class CapitalInPlaceRecruiter
             if (notables == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — Notables==null"); return recruited; }
             Logger.Info($"CapitalInPlace '{capital.Name}': 开始扫描 {notables.Count} 个 notable，garrison={currentMen}/{cap}, owner.Gold={ownerHero.Gold}, role 配额 cav/ha/inf/rng={targetCav}/{targetHa}/{targetInf}/{targetRng}, reason='{reason}'");
 
+            // 通用匹配文化过滤：解析一次玩家面板的文化策略 → 必须匹配的文化 id（null = 不过滤）。
+            string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, capital.Town);
+
             foreach (var notable in notables)
             {
                 if (notable == null) continue;
@@ -120,7 +123,12 @@ public static class CapitalInPlaceRecruiter
                 int maxIdx;
                 try
                 {
-                    maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+                    // ST 自身招兵：进入 StRecruitContext 让 STVolunteerModel 放行（否则被管 AI clan 首府
+                    // 调本方法时会被自己的 model 阻断 → 自锁）。
+                    using (StRecruitContext.Enter())
+                    {
+                        maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -143,6 +151,8 @@ public static class CapitalInPlaceRecruiter
 
                     // 通用匹配：按规则过滤文化/贵族/禁用项，再看兵种桶 + Tier 范围 + 比例。
                     if (!TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
+                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
 
                     // B7.22 Fix per-role 饱和：检查该 role 是否已达模板配额。
                     var roleOfTroop = GenericTroopMatcher.GetRole(troop);

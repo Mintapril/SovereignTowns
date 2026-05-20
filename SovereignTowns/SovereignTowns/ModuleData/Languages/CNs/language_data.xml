@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sovereign Towns - 简体中文语言元数据。
+  id 必须与 vanilla Bannerlord 完全一致（"简体中文"），Bannerlord 启动时按 id 合并各 mod 的 LanguageFile。
+-->
+<LanguageData id="简体中文">
+  <LanguageFile xml_path="CNs/std_sovereigntowns_strings.xml" />
+</LanguageData>

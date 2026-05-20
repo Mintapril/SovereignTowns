@@ -214,17 +214,26 @@ public static class WebConfigServer
 
             SetCorsHeaders(ctx);
 
-            // 4) Token check (API + static both gated. ?t=xxx satisfies first-load; subsequent fetches use X-ST-Token).
-            string? token = ctx.Request.Headers["X-ST-Token"];
-            if (string.IsNullOrEmpty(token))
+            // 4) Token check — 仅 /api/* 端点强制校验 token。
+            // 静态 UI 资源（index.html、vendor/*.js、CSS 等）不再 token-gate：浏览器在解析
+            // index.html 时发出的子资源请求（<script src> / <link href>）既无法携带 X-ST-Token
+            // header，也不会继承文档 URL 的 ?t= query —— 若 gate 静态文件，本地化的 vendor 资源
+            // 会全部 401，面板白屏。静态文件不含任何机密（token 由游戏注入启动 URL，从不写入文件）；
+            // 真正读写配置的 /api/* 仍然 token-gate。127.0.0.1 绑定 + Host 校验 + Origin 白名单
+            // 对所有请求依旧生效。
+            if (path.StartsWith("/api/", StringComparison.Ordinal))
             {
-                // query string fallback for the initial document load.
-                token = ctx.Request.QueryString["t"];
-            }
-            if (!WebConfigAuth.IsAuthorized(token))
-            {
-                WriteError(ctx, 401, "unauthorized", "Missing or invalid X-ST-Token");
-                return;
+                string? token = ctx.Request.Headers["X-ST-Token"];
+                if (string.IsNullOrEmpty(token))
+                {
+                    // query string fallback for the initial document load.
+                    token = ctx.Request.QueryString["t"];
+                }
+                if (!WebConfigAuth.IsAuthorized(token))
+                {
+                    WriteError(ctx, 401, "unauthorized", "Missing or invalid X-ST-Token");
+                    return;
+                }
             }
 
             // 5) Route

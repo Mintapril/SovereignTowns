@@ -6,6 +6,7 @@ using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
+using TaleWorlds.Localization;
 using Logger = SovereignTowns.Logging.Logger;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 
@@ -23,6 +24,14 @@ namespace SovereignTowns.SettlementManagement;
 ///   - vanilla 也不再自动把 GarrisonParty 内的兵种升级。
 /// 不影响：notable 自身的 VolunteerTypes 仍正常每小时刷新（这是玩家手动招兵 + 本 Mod RecruitingParty 的供给源）、
 /// 以及 vanilla 民兵每日生成。
+///
+/// **AI lord 招兵阻断**（2026-05-19 配套）：开启 <see cref="EnabledFeatures.ApplyToAiSettlementsToo"/> 时
+/// 本类只处理 settlement 端的 garrison flag。AI lord 个人在 settlement 内通过 vanilla
+/// <c>RecruitmentCampaignBehavior.RecruitVolunteersFromNotable</c> 招兵的路径由
+/// <see cref="SovereignTowns.Models.STVolunteerModel"/> 接管阻断 — 后者基于 buyerHero 的 clan 判断，
+/// 与本类的 settlement-side flag 形成两段防线（settlement → garrison；lord → buyer-side）。
+/// 阻断后受管 AI clan 唯有 ST mod 渠道（CapitalInPlaceRecruiter / RecruitingParty /
+/// PrisonerRecruitmentManager）能补兵。
 ///
 /// 覆盖范围由 <see cref="EnabledFeatures.SuppressVanillaGarrisonRecruitment"/> 和
 /// <see cref="EnabledFeatures.ApplyToAiSettlementsToo"/> 联合决定：
@@ -93,8 +102,8 @@ public sealed class VanillaSuppressionManager
             // AI 接管范围与玩家一致：首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻。
             if (feat.ApplyToAiSettlementsToo)
             {
-                const string msg =
-                    "[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻范围；AI 招兵限同文化。";
+                string msg = new TextObject(
+                    "{=ST_Msg_AiOptIn}[Sovereign Towns] AI clans that own a capital are now managed by Sovereign Towns for capital / garrison / recruitment / transfer / sally / prisoner / patrol; AI recruitment is restricted to same-culture troops.").ToString();
                 Logger.Info(msg);
                 try { InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green)); }
                 catch { /* swallow — 启动早期 InformationManager 不一定可用 */ }

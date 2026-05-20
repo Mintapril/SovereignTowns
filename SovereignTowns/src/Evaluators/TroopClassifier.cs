@@ -20,10 +20,20 @@ public static class TroopClassifier
     /// 是否"贵族"兵：基于升级树拓扑判定——若该兵种位于其文化的 <c>EliteBasicTroop</c>
     /// 升级链上（含起点本身），则视为 noble。
     /// null / 无 culture / 无 EliteBasicTroop / 异常 → false。
+    /// 结果通过 <see cref="EvaluatorCache.IsNobleCache"/> memoize，会话级有效；递归路径走
+    /// <see cref="IsNobleCore"/> 不二次进入缓存，以保 visited 防环逻辑独立。
     /// </summary>
     public static bool IsNoble(CharacterObject? character)
     {
         if (character is null) return false;
+        if (EvaluatorCache.IsNobleCache.TryGetValue(character, out var cached)) return cached;
+        var result = IsNobleCore(character);
+        EvaluatorCache.IsNobleCache[character] = result;
+        return result;
+    }
+
+    private static bool IsNobleCore(CharacterObject character)
+    {
         try
         {
             if (character.IsHero) return false;

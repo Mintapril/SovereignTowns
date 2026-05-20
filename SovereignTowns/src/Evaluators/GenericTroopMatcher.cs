@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using SovereignTowns.Configuration;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 
 namespace SovereignTowns.Evaluators;
@@ -88,7 +89,14 @@ public static class GenericTroopMatcher
     public static GenericTroopRole GetRole(CharacterObject? troop)
     {
         if (troop == null) return GenericTroopRole.Unknown;
+        if (EvaluatorCache.RoleCache.TryGetValue(troop, out var cached)) return cached;
+        var result = GetRoleCore(troop);
+        EvaluatorCache.RoleCache[troop] = result;
+        return result;
+    }
 
+    private static GenericTroopRole GetRoleCore(CharacterObject troop)
+    {
         try
         {
             if (troop.IsHero) return GenericTroopRole.Unknown;
@@ -145,6 +153,14 @@ public static class GenericTroopMatcher
     public static int GetTierBucket(CharacterObject? troop)
     {
         if (troop == null) return 1;
+        if (EvaluatorCache.TierCache.TryGetValue(troop, out var cached)) return cached;
+        var result = GetTierBucketCore(troop);
+        EvaluatorCache.TierCache[troop] = result;
+        return result;
+    }
+
+    private static int GetTierBucketCore(CharacterObject troop)
+    {
         try
         {
             if (troop.Tier <= 1) return 1;
@@ -172,6 +188,10 @@ public static class GenericTroopMatcher
             if (tier < rule.MinTier || tier > rule.MaxTier) return false;
             // B7.10: TierRatio bucket weighting removed — MinTier/MaxTier band is the only tier filter.
 
+            // 显式 AllowedCultureIds 允许表（AI 氏族由 AiCulturePresets 写入；玩家默认空）。
+            // 注意：玩家面板的「文化过滤」(TownGarrisonRule.GenericCultureFilter) 不在此处生效 ——
+            // 它依赖玩家氏族 / 首府的运行时上下文（MatchesRule 拿不到），由各招募调用点通过
+            // ResolveRequiredCultureId + CultureFilterAllows 单独应用。两套过滤互相独立、同时生效。
             if (rule.AllowedCultureIds != null && rule.AllowedCultureIds.Count > 0)
             {
                 var cid = troop.Culture?.StringId;
@@ -266,6 +286,61 @@ public static class GenericTroopMatcher
     {
         if (ratio <= 0f || targetTotal <= 0) return 0;
         return (int)Math.Round(ratio * targetTotal);
+    }
+
+    /// <summary>
+    /// 把 <see cref="TownGarrisonRule.GenericCultureFilter"/> 策略解析成「必须匹配的文化 stringId」。
+    /// 返回 <c>null</c> 表示不按文化过滤。仅作用于玩家氏族首府的招募 —— 见字段注释。
+    /// </summary>
+    /// <param name="rule">首府规则（通常是 GlobalDefaults）。</param>
+    /// <param name="capital">招募所服务的首府 Town；用于解析 OwnerClan 与 CapitalCulture。</param>
+    public static string? ResolveRequiredCultureId(TownGarrisonRule? rule, Town? capital)
+    {
+        try
+        {
+            // 仅通用匹配模式生效；精确兵员模板模式由玩家显式选兵，不叠加文化过滤。
+            if (rule == null || !rule.UseGenericMatching) return null;
+
+            // GenericCultureFilter 是玩家网页面板的设置，只作用于玩家氏族。AI 城即便 rule 回退到
+            // GlobalDefaults（ApplyToAiSettlementsToo=false 或 preset 缺失），也不应被玩家设置左右；
+            // AI 自身文化过滤由 AiCulturePresets 写入的 AllowedCultureIds 负责。
+            if (capital == null || capital.OwnerClan != Clan.PlayerClan) return null;
+
+            switch (rule.GenericCultureFilter)
+            {
+                case "Any":
+                    return null;
+                case "CapitalCulture":
+                    return capital.Culture?.StringId;
+                case "PlayerCulture":
+                default: // 未知 / 缺失值兜底为玩家文化
+                    return Clan.PlayerClan?.Culture?.StringId;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 文化过滤判定：<paramref name="requiredCultureId"/> 为空表示不过滤（直接放行）；
+    /// 否则要求兵种文化 stringId 与之相等（大小写无关）。配合 <see cref="ResolveRequiredCultureId"/> 使用。
+    /// </summary>
+    public static bool CultureFilterAllows(CharacterObject? troop, string? requiredCultureId)
+    {
+        if (string.IsNullOrEmpty(requiredCultureId)) return true;
+        if (troop == null) return false;
+        try
+        {
+            var cid = troop.Culture?.StringId;
+            return !string.IsNullOrEmpty(cid)
+                && string.Equals(cid, requiredCultureId, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsListed(CharacterObject troop, IReadOnlyCollection<string>? ids)

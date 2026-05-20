@@ -72,7 +72,7 @@ public static class DiagnosticGameMenu
                 starter.AddGameMenuOption(
                     menuId: menu,
                     optionId: "sovereign_towns_set_capital",
-                    optionText: "主权城镇：设为首府",
+                    optionText: "{=ST_Menu_SetCapital}Sovereign Towns: set as capital",
                     condition: new GameMenuOption.OnConditionDelegate(IsSetCapitalAvailable),
                     consequence: new GameMenuOption.OnConsequenceDelegate(OnSetCapitalSelected),
                     isLeave: false,
@@ -84,7 +84,7 @@ public static class DiagnosticGameMenu
                 starter.AddGameMenuOption(
                     menuId: menu,
                     optionId: "sovereign_towns_open_web_config",
-                    optionText: "主权城镇：打开网页控制面板",
+                    optionText: "{=ST_Menu_OpenWebConfig}Sovereign Towns: open web control panel",
                     condition: new GameMenuOption.OnConditionDelegate(IsOpenWebConfigAvailable),
                     consequence: new GameMenuOption.OnConsequenceDelegate(OnOpenWebConfigSelected),
                     isLeave: false,
@@ -123,7 +123,9 @@ public static class DiagnosticGameMenu
             string url = WebConfigServer.GetBrowserUrl();
             if (string.IsNullOrEmpty(url))
             {
-                SafeDisplay("[主权城镇] 网页服务未启动；查看日志了解原因。", Colors.Yellow);
+                SafeDisplay(
+                    new TextObject("{=ST_Msg_WebConfig_NotRunning}[Sovereign Towns] Web service not running; see the logs for details.").ToString(),
+                    Colors.Yellow);
                 TryReturnToSettlementMenu();
                 return;
             }
@@ -136,7 +138,9 @@ public static class DiagnosticGameMenu
                     UseShellExecute = true,
                 });
                 // 不把含 token 的 URL 写进 chat / log，避免玩家分享截图 / ModLogs 时 token 外泄。
-                SafeDisplay("[主权城镇] 已尝试启动浏览器打开网页控制面板。", Colors.Green);
+                SafeDisplay(
+                    new TextObject("{=ST_Msg_WebConfig_BrowserOpened}[Sovereign Towns] Attempted to launch the browser for the web control panel.").ToString(),
+                    Colors.Green);
             }
             catch (Exception procEx)
             {
@@ -145,10 +149,10 @@ public static class DiagnosticGameMenu
                 // —— 玩家若截图分享 mod 配置/驻军面板会泄漏 token 给本机其他进程。
                 // 只给 host:port 提示，token 由玩家自己从 Documents 下 auth.txt 读出。
                 int port = WebConfigServer.Port;
-                SafeDisplay(
-                    $"[主权城镇] 浏览器启动失败。请手动访问 http://127.0.0.1:{port}/ ，" +
-                    $"并从 Documents\\Mount and Blade II Bannerlord\\Configs\\SovereignTowns\\auth.txt 读取 token。",
-                    Colors.Yellow);
+                var failed = new TextObject(
+                    "{=ST_Msg_WebConfig_BrowserFailed}[Sovereign Towns] Browser launch failed. Visit http://127.0.0.1:{PORT}/ manually and read the token from Documents\\Mount and Blade II Bannerlord\\Configs\\SovereignTowns\\auth.txt.");
+                failed.SetTextVariable("PORT", port);
+                SafeDisplay(failed.ToString(), Colors.Yellow);
             }
         }
         catch (Exception ex)
@@ -179,14 +183,16 @@ public static class DiagnosticGameMenu
 
             var playerMgr = PlayerCapital;
             var capital = playerMgr?.GetCapital();
-            string capitalName = capital?.Settlement?.Name?.ToString() ?? "<未设>";
+            var capitalNameObj = (TextObject?)capital?.Settlement?.Name
+                ?? new TextObject("{=ST_Common_Unset}(none)");
             bool isThisCapital = capital != null && capital == s.Town;
 
-            string text = isThisCapital
-                ? $"主权城镇：当前首府 ★ ({capitalName})"
-                : $"主权城镇：当前首府 = {capitalName}";
+            var statusTemplate = isThisCapital
+                ? new TextObject("{=ST_Menu_CapitalStatus_Active}Sovereign Towns: current capital ★ ({CAPITAL})")
+                : new TextObject("{=ST_Menu_CapitalStatus_Other}Sovereign Towns: current capital = {CAPITAL}");
+            statusTemplate.SetTextVariable("CAPITAL", capitalNameObj);
 
-            try { MBTextManager.SetTextVariable("ST_CAPITAL_STATUS", text, false); }
+            try { MBTextManager.SetTextVariable("ST_CAPITAL_STATUS", statusTemplate, false); }
             catch { /* SetTextVariable 偶尔抛 — 不致命 */ }
 
             // 让选项不可点击 — 视觉上是只读状态行
@@ -244,11 +250,15 @@ public static class DiagnosticGameMenu
                 bool ok = playerMgr.ManuallySetCapital(s.Town);
                 if (ok)
                 {
-                    SafeDisplay($"[主权城镇] 首府已切换至 '{s.Name}'", Colors.Green);
+                    var msg = new TextObject("{=ST_Msg_Capital_Changed}[Sovereign Towns] Capital switched to '{SETTLEMENT}'.");
+                    msg.SetTextVariable("SETTLEMENT", s.Name);
+                    SafeDisplay(msg.ToString(), Colors.Green);
                 }
                 else
                 {
-                    SafeDisplay($"[主权城镇] 首府切换失败 ('{s.Name}' 已是首府或不合法)", Colors.Yellow);
+                    var msg = new TextObject("{=ST_Msg_Capital_ChangeFailed}[Sovereign Towns] Capital switch failed ('{SETTLEMENT}' is already the capital or is invalid).");
+                    msg.SetTextVariable("SETTLEMENT", s.Name);
+                    SafeDisplay(msg.ToString(), Colors.Yellow);
                 }
             }
         }

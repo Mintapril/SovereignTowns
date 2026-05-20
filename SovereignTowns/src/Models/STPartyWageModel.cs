@@ -37,7 +37,7 @@ public sealed class STPartyWageModel : DefaultPartyWageModel
                 return new ExplainedNumber(
                     0f,
                     includeDescriptions,
-                    new TextObject("{=ST_PartyWageZero}主权城镇 城镇拨款队伍（免氏族军饷）"));
+                    new TextObject("{=ST_PartyWageZero}Sovereign Towns town-funded party (no clan wage)"));
             }
         }
         catch (Exception ex)

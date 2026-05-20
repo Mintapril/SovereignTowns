@@ -270,12 +270,19 @@ public abstract class StPartyComponent : CustomPartyComponent
             int casualties = Math.Max(0, initial - current);
             float lossRatio = initial > 0 ? (float)casualties / initial : 0f;
             Color color;
-            string verdict;
-            if (lossRatio >= 0.5f) { color = Colors.Red; verdict = "重创"; }
-            else if (lossRatio >= 0.2f) { color = new Color(1.0f, 0.6f, 0.2f); verdict = "受损"; }
-            else { color = Colors.Yellow; verdict = "完成战斗"; }
-            string msg = $"[主权城镇] {Name?.ToString() ?? GetType().Name} 战斗{verdict}：兵员 {current}/{initial}，受伤 {wounded}";
-            InformationManager.DisplayMessage(new InformationMessage(msg, color));
+            TextObject verdict;
+            if (lossRatio >= 0.5f) { color = Colors.Red; verdict = new TextObject("{=ST_Battle_Verdict_Heavy}took heavy losses"); }
+            else if (lossRatio >= 0.2f) { color = new Color(1.0f, 0.6f, 0.2f); verdict = new TextObject("{=ST_Battle_Verdict_Damaged}suffered damage"); }
+            else { color = Colors.Yellow; verdict = new TextObject("{=ST_Battle_Verdict_Won}completed the battle"); }
+            var partyName = (TextObject?)Name ?? new TextObject(GetType().Name);
+            var template = new TextObject(
+                "{=ST_Msg_Battle_Report}[Sovereign Towns] {PARTY_NAME} {VERDICT}: troops {CURRENT}/{INITIAL}, wounded {WOUNDED}.");
+            template.SetTextVariable("PARTY_NAME", partyName);
+            template.SetTextVariable("VERDICT", verdict);
+            template.SetTextVariable("CURRENT", current);
+            template.SetTextVariable("INITIAL", initial);
+            template.SetTextVariable("WOUNDED", wounded);
+            InformationManager.DisplayMessage(new InformationMessage(template.ToString(), color));
             Logger.Info($"OnMapEventEnded battle-report '{PartyNameFormatter.SafeName(self)}' current={current}/{initial} casualties={casualties} wounded={wounded} verdict={verdict}");
         }
         catch (Exception ex)
@@ -465,9 +472,19 @@ public abstract class StPartyComponent : CustomPartyComponent
         {
             if (!CapitalRegistry.ShouldChargeClan(self.ActualClan)) return;
             int refundAmount = TeamFunds;  // 退款数 = 当前队伍资金（即将被 TryRefundOnDestroy 退还）
-            var ownerName = home?.OwnerClan?.Leader?.Name?.ToString() ?? "首府所有者";
-            string msg = $"[主权城镇] {Name?.ToString() ?? GetType().Name} 回 {home?.Name} 解散：合并 {troopsTransferred} 兵入驻军，变卖物资 +{soldGained}d，退还 {refundAmount}d 给 {ownerName}";
-            InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Green));
+            var ownerNameObj = (TextObject?)home?.OwnerClan?.Leader?.Name
+                ?? new TextObject("{=ST_Common_CapitalOwner}the capital owner");
+            var partyNameObj = (TextObject?)Name ?? new TextObject(GetType().Name);
+            var homeNameObj = (TextObject?)home?.Name ?? new TextObject("{=ST_Common_Unknown}unknown");
+            var template = new TextObject(
+                "{=ST_Msg_Disband_Report}[Sovereign Towns] {PARTY_NAME} returned to {HOME} and disbanded: merged {TROOPS} troops into the garrison, sold goods for +{SOLD}d, refunded {REFUND}d to {OWNER}.");
+            template.SetTextVariable("PARTY_NAME", partyNameObj);
+            template.SetTextVariable("HOME", homeNameObj);
+            template.SetTextVariable("TROOPS", troopsTransferred);
+            template.SetTextVariable("SOLD", soldGained);
+            template.SetTextVariable("REFUND", refundAmount);
+            template.SetTextVariable("OWNER", ownerNameObj);
+            InformationManager.DisplayMessage(new InformationMessage(template.ToString(), Colors.Green));
         }
         catch (Exception ex)
         {
@@ -563,12 +580,25 @@ public abstract class StPartyComponent : CustomPartyComponent
         {
             if (_disbandReportShown) return;
             if (!CapitalRegistry.ShouldChargeClan(self.ActualClan)) return;
-            string destroyerName = destroyer?.Name?.ToString() ?? "<未知>";
+            var destroyerNameObj = (TextObject?)destroyer?.Name
+                ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             int refundAmount = TeamFunds;
-            string msg = refundAmount > 0
-                ? $"[主权城镇] {Name?.ToString() ?? GetType().Name} 销毁（被 {destroyerName}）：退还 {refundAmount}d 给首府所有者"
-                : $"[主权城镇] {Name?.ToString() ?? GetType().Name} 销毁（被 {destroyerName}）";
-            InformationManager.DisplayMessage(new InformationMessage(msg, Colors.Red));
+            var partyNameObj = (TextObject?)Name ?? new TextObject(GetType().Name);
+            TextObject template;
+            if (refundAmount > 0)
+            {
+                template = new TextObject(
+                    "{=ST_Msg_Destroyed_WithRefund}[Sovereign Towns] {PARTY_NAME} destroyed (by {DESTROYER}): refunded {REFUND}d to the capital owner.");
+                template.SetTextVariable("REFUND", refundAmount);
+            }
+            else
+            {
+                template = new TextObject(
+                    "{=ST_Msg_Destroyed_NoRefund}[Sovereign Towns] {PARTY_NAME} destroyed (by {DESTROYER}).");
+            }
+            template.SetTextVariable("PARTY_NAME", partyNameObj);
+            template.SetTextVariable("DESTROYER", destroyerNameObj);
+            InformationManager.DisplayMessage(new InformationMessage(template.ToString(), Colors.Red));
         }
         catch (Exception ex)
         {

@@ -33,7 +33,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     ComputeRecruiterLimit(mp),
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Recruit}主权城镇 征兵队容量上限"));
+                    new TextObject("{=ST_PartySizeLimit_Recruit}Sovereign Towns recruiter party size limit"));
             }
 
             if (comp is StTransferPartyComponent transfer)
@@ -41,7 +41,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     ComputeTransferLimit(mp, transfer),
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Transfer}主权城镇 调拨队容量上限"));
+                    new TextObject("{=ST_PartySizeLimit_Transfer}Sovereign Towns transfer party size limit"));
             }
 
             if (comp is StSallyPartyComponent sally)
@@ -49,7 +49,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     ComputeSallyLimit(mp, sally),
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Sally}主权城镇 出击队容量上限"));
+                    new TextObject("{=ST_PartySizeLimit_Sally}Sovereign Towns sally party size limit"));
             }
 
             // R7：巡逻队 size 上限 — 之前漏纳入，巡逻队走 vanilla DefaultPartySizeLimitModel
@@ -59,7 +59,7 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                 return new ExplainedNumber(
                     ComputePatrolLimit(mp, patrol),
                     includeDescriptions,
-                    new TextObject("{=ST_PartySizeLimit_Patrol}主权城镇 巡逻队容量上限"));
+                    new TextObject("{=ST_PartySizeLimit_Patrol}Sovereign Towns patrol party size limit"));
             }
 
             return base.GetPartyMemberSizeLimit(party!, includeDescriptions);

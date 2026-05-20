@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<base xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" type="string">
+  <tags>
+    <tag language="English" />
+  </tags>
+  <strings>
+    <!-- Party display names. {SETTLEMENT} / {SOURCE} / {DESTINATION} are filled in C#. -->
+    <string id="ST_PatrolPartyName" text="Patrol — {SETTLEMENT}" />
+    <string id="ST_RecruiterPartyName" text="Recruiter — {SETTLEMENT}" />
+    <string id="ST_SallyPartyName" text="Sally — {SETTLEMENT}" />
+    <string id="ST_TransferPartyName" text="Transfer — {SOURCE} → {DESTINATION}" />
+
+    <!-- GameModel modifier descriptions (shown in the party tooltip breakdown). -->
+    <string id="ST_PartySpeedBonus" text="Sovereign Towns town-funded party speed bonus" />
+    <string id="ST_PartyWageZero" text="Sovereign Towns town-funded party (no clan wage)" />
+    <string id="ST_PartySizeLimit_Recruit" text="Sovereign Towns recruiter party size limit" />
+    <string id="ST_PartySizeLimit_Transfer" text="Sovereign Towns transfer party size limit" />
+    <string id="ST_PartySizeLimit_Sally" text="Sovereign Towns sally party size limit" />
+    <string id="ST_PartySizeLimit_Patrol" text="Sovereign Towns patrol party size limit" />
+
+    <!-- Town/castle game-menu options. -->
+    <string id="ST_Menu_CapitalStatus_Active" text="Sovereign Towns: current capital ★ ({CAPITAL})" />
+    <string id="ST_Menu_CapitalStatus_Other" text="Sovereign Towns: current capital = {CAPITAL}" />
+    <string id="ST_Menu_SetCapital" text="Sovereign Towns: set as capital" />
+    <string id="ST_Menu_OpenWebConfig" text="Sovereign Towns: open web control panel" />
+
+    <!-- Shared placeholder fragments used when a referenced entity is missing or unset. -->
+    <string id="ST_Common_Unset" text="(none)" />
+    <string id="ST_Common_Unknown" text="unknown" />
+    <string id="ST_Common_UnknownEntity" text="(unknown)" />
+    <string id="ST_Common_CapitalOwner" text="the capital owner" />
+
+    <!-- Player-facing messages from the diagnostic / web-config menu. -->
+    <string id="ST_Msg_WebConfig_NotRunning" text="[Sovereign Towns] Web service not running; see the logs for details." />
+    <string id="ST_Msg_WebConfig_BrowserOpened" text="[Sovereign Towns] Attempted to launch the browser for the web control panel." />
+    <string id="ST_Msg_WebConfig_BrowserFailed" text="[Sovereign Towns] Browser launch failed. Visit http://127.0.0.1:{PORT}/ manually and read the token from Documents\Mount and Blade II Bannerlord\Configs\SovereignTowns\auth.txt." />
+    <string id="ST_Msg_Capital_Changed" text="[Sovereign Towns] Capital switched to '{SETTLEMENT}'." />
+    <string id="ST_Msg_Capital_ChangeFailed" text="[Sovereign Towns] Capital switch failed ('{SETTLEMENT}' is already the capital or is invalid)." />
+
+    <!-- Campaign-behavior session/daily messages. -->
+    <string id="ST_Msg_WebConfig_Started" text="[Sovereign Towns] Web control panel started. Open any town/castle menu and choose 'Open web control panel'." />
+    <string id="ST_Msg_WebConfig_StartFailed" text="[Sovereign Towns] Web control panel did not start (port conflict or sandbox refusal). See the logs." />
+    <string id="ST_Msg_DailySummary" text="[Sovereign Towns] Today: recruited {RECRUITED}, transferred {TRANSFERRED}, patrols {PATROLS}, sallies {SALLIES}, prisoner-recruits {PRISONERS}." />
+
+    <!-- Configuration / module-management messages. -->
+    <string id="ST_Msg_Config_VersionMismatch" text="[Sovereign Towns] global.json version mismatch (file v{FILE_VERSION}, expected v{EXPECTED_VERSION}) — reset to defaults; please reconfigure via the web control panel." />
+    <string id="ST_Msg_AiOptIn" text="[Sovereign Towns] AI clans that own a capital are now managed by Sovereign Towns for capital / garrison / recruitment / transfer / sally / prisoner / patrol. Their lords can no longer recruit volunteers via vanilla; ST mod channels (capital in-place / recruiter parties / prisoner recruitment) are the only troop source. Recruitment is restricted to same-culture troops." />
+    <string id="ST_Msg_IncompatibleMods" text="Sovereign Towns: incompatible modules detected ({MODS}). The mod is inactive. Disable the conflicting modules in the launcher and restart." />
+
+    <!-- Battle / disband / destroyed reports (shown in the bottom-left feed). -->
+    <string id="ST_Battle_Verdict_Heavy" text="took heavy losses" />
+    <string id="ST_Battle_Verdict_Damaged" text="suffered damage" />
+    <string id="ST_Battle_Verdict_Won" text="completed the battle" />
+    <string id="ST_Msg_Battle_Report" text="[Sovereign Towns] {PARTY_NAME} {VERDICT}: troops {CURRENT}/{INITIAL}, wounded {WOUNDED}." />
+    <string id="ST_Msg_Disband_Report" text="[Sovereign Towns] {PARTY_NAME} returned to {HOME} and disbanded: merged {TROOPS} troops into the garrison, sold goods for +{SOLD}d, refunded {REFUND}d to {OWNER}." />
+    <string id="ST_Msg_Destroyed_WithRefund" text="[Sovereign Towns] {PARTY_NAME} destroyed (by {DESTROYER}): refunded {REFUND}d to the capital owner." />
+    <string id="ST_Msg_Destroyed_NoRefund" text="[Sovereign Towns] {PARTY_NAME} destroyed (by {DESTROYER})." />
+
+    <!-- Dialog (encounter between the player and one of our own parties). -->
+    <string id="ST_Dialog_PartyKind_Recruiter" text="recruiter party" />
+    <string id="ST_Dialog_PartyKind_Transfer" text="transfer party" />
+    <string id="ST_Dialog_PartyKind_Sally" text="sally party" />
+    <string id="ST_Dialog_PartyKind_Generic" text="detachment" />
+    <string id="ST_Dialog_Greeting_Generic" text="We are the {PARTY_KIND} dispatched from {SETTLEMENT}, our regards." />
+    <string id="ST_Dialog_Greeting_Patrol" text="We are the patrol from {SETTLEMENT}, our regards." />
+    <string id="ST_Dialog_PlayerClose" text="Safe travels." />
+  </strings>
+</base>

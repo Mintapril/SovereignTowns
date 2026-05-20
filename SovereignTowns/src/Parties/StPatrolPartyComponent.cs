@@ -53,8 +53,11 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         get
         {
             if (_cachedName != null) return _cachedName;
-            var s = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
-            _cachedName = new TextObject("{=ST_PatrolPartyName}巡逻队 - " + s);
+            var home = HomeSettlementOrNull;
+            var n = new TextObject("{=ST_PatrolPartyName}Patrol — {SETTLEMENT}");
+            n.SetTextVariable("SETTLEMENT",
+                home?.Name ?? new TextObject("{=ST_Common_Unknown}unknown"));
+            _cachedName = n;
             return _cachedName;
         }
     }
@@ -99,7 +102,8 @@ public sealed class StPatrolPartyComponent : StPartyComponent
             var emptyPrisoners = TroopRoster.CreateDummyTroopRoster();
             var args = new InitializationArgs(home.GatePosition, 1f, ownerClan, startingTroops, emptyPrisoners);
 
-            var nameObj = new TextObject("{=ST_PatrolPartyName}巡逻队 - " + home.Name);
+            var nameObj = new TextObject("{=ST_PatrolPartyName}Patrol — {SETTLEMENT}");
+            nameObj.SetTextVariable("SETTLEMENT", home.Name);
 
             var component = new StPatrolPartyComponent(
                 home: home, name: nameObj, owner: ownerLeader,

@@ -36,6 +36,20 @@ public sealed class TownGarrisonRule
     /// <summary>远程兵种占比。包含默认编队为 Ranged 的弓手、弩手及其他远程兵。</summary>
     public float RangedRatio { get; set; } = 0.25f;
 
+    /// <summary>
+    /// 通用匹配模式下的文化过滤策略。仅作用于<b>玩家氏族</b>首府的招募 —— AI 氏族沿用
+    /// <see cref="AllowedCultureIds"/>（由 AiCulturePresets 写入），不受此字段影响。取值：
+    /// <list type="bullet">
+    ///   <item><c>"PlayerCulture"</c>（默认）：只招玩家氏族文化的兵种。</item>
+    ///   <item><c>"CapitalCulture"</c>：只招首府所在定居点本身文化的兵种（被征服的异文化城可招当地兵）。</item>
+    ///   <item><c>"Any"</c>：不按文化过滤，任何文化都可招。</item>
+    /// </list>
+    /// 用字符串而非 enum：规避 Newtonsoft / System.Text.Json 对 enum 序列化口径不一致的坑；
+    /// 未知值由 <see cref="Evaluators.GenericTroopMatcher.ResolveRequiredCultureId"/> 按 PlayerCulture 兜底。
+    /// 仅在 <see cref="UseGenericMatching"/> 为 true 时生效。
+    /// </summary>
+    public string GenericCultureFilter { get; set; } = "PlayerCulture";
+
     /// <summary>允许招募的最低 Tier（含）。通用匹配模式下作为硬边界，与 MaxTier 一起圈定可招募范围。</summary>
     /// <remarks>B7.10: 之前还有 Tier1..6Ratio 用于按 tier 分桶；用户决策简化为只看 role 比例，
     /// tier 维度仅保留 MinTier/MaxTier 硬边界。</remarks>
@@ -100,6 +114,7 @@ public sealed class TownGarrisonRule
         HorseArcherRatio = this.HorseArcherRatio,
         InfantryRatio = this.InfantryRatio,
         RangedRatio = this.RangedRatio,
+        GenericCultureFilter = this.GenericCultureFilter,
         MinTier = this.MinTier,
         MaxTier = this.MaxTier,
         AllowedCultureIds = new List<string>(this.AllowedCultureIds ?? new List<string>()),

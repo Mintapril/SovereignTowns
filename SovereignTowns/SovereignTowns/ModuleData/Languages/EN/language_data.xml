@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sovereign Towns - English language metadata.
+  The "id" must match the vanilla Bannerlord language id exactly ("English"). When the player
+  selects this language, Bannerlord merges every <LanguageFile> from every module that declares
+  the same id, so we only need to list our own strings file here.
+-->
+<LanguageData id="English">
+  <LanguageFile xml_path="EN/std_sovereigntowns_strings.xml" />
+</LanguageData>

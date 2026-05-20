@@ -90,8 +90,11 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             if (_cachedName != null) return _cachedName;
             // B16.4a P1-7：Name 必须容忍 _homeSettlement 为 null（损坏存档 / 序列化未完成时调用），
             // 用 HomeSettlementOrNull 而非 HomeSettlement 以避免抛 InvalidOperationException。
-            var s = HomeSettlementOrNull?.Name?.ToString() ?? "未知";
-            _cachedName = new TextObject("{=ST_RecruiterPartyName}征兵队 - " + s);
+            var home = HomeSettlementOrNull;
+            var n = new TextObject("{=ST_RecruiterPartyName}Recruiter — {SETTLEMENT}");
+            n.SetTextVariable("SETTLEMENT",
+                home?.Name ?? new TextObject("{=ST_Common_Unknown}unknown"));
+            _cachedName = n;
             return _cachedName;
         }
     }
@@ -145,7 +148,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             var emptyPrisoners = TroopRoster.CreateDummyTroopRoster();
             var args = new InitializationArgs(settlement.GatePosition, 1f, ownerClan, startingTroops, emptyPrisoners);
 
-            var nameObj = new TextObject("{=ST_RecruiterPartyName}征兵队 - " + settlement.Name);
+            var nameObj = new TextObject("{=ST_RecruiterPartyName}Recruiter — {SETTLEMENT}");
+            nameObj.SetTextVariable("SETTLEMENT", settlement.Name);
 
             var component = new StRecruiterPartyComponent(
                 home: settlement, name: nameObj, owner: ownerLeader,
@@ -517,6 +521,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             int rTargetRng = (int)Math.Round((rule?.RangedRatio ?? 0f) * targetTotal);
             int rGainCav = 0, rGainHa = 0, rGainInf = 0, rGainRng = 0;
 
+            // 通用匹配文化过滤：home 即征兵队所属首府，解析一次玩家面板的文化策略（null = 不过滤）。
+            string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, home.Town);
+
             foreach (var notable in village.Notables)
             {
                 if (notable == null) continue;
@@ -528,7 +535,12 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 int maxIdx;
                 try
                 {
-                    maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+                    // ST 自身招兵：进入 StRecruitContext 让 STVolunteerModel 放行 — 否则被管 AI clan
+                    // 派出的 RecruitingParty 调本方法时会被自己的 model 阻断 → 永远招不到。
+                    using (StRecruitContext.Enter())
+                    {
+                        maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -549,6 +561,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
                     candidatesScanned++;
                     if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
+                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
                     float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
                     if (float.IsNegativeInfinity(score)) continue;
                     scoredCandidates.Add((troop, volunteerTypes, i, score));
