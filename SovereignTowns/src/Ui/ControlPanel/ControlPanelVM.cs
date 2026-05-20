@@ -23,6 +23,7 @@ public sealed class ControlPanelVM : ViewModel
     // ── Tab VMs ──
     private FeaturesTabVM _featuresTab;
     private StrategyTabVM _strategyTab;
+    private BranchesTabVM _branchesTab;
 
     [DataSourceProperty]
     public FeaturesTabVM FeaturesTab
@@ -36,6 +37,13 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _strategyTab;
         private set { _strategyTab = value; OnPropertyChanged(nameof(StrategyTab)); }
+    }
+
+    [DataSourceProperty]
+    public BranchesTabVM BranchesTab
+    {
+        get => _branchesTab;
+        private set { _branchesTab = value; OnPropertyChanged(nameof(BranchesTab)); }
     }
 
     // ── 表头状态 ──
@@ -224,6 +232,7 @@ public sealed class ControlPanelVM : ViewModel
         {
             FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
             StrategyTab = new StrategyTabVM(_config, MarkDirty);
+            BranchesTab = new BranchesTabVM(_config, MarkDirty);
         }
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
@@ -326,6 +335,7 @@ public sealed class ControlPanelVM : ViewModel
         {
             FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
             StrategyTab = new StrategyTabVM(_config, MarkDirty);
+            BranchesTab = new BranchesTabVM(_config, MarkDirty);
         }
     }
 
