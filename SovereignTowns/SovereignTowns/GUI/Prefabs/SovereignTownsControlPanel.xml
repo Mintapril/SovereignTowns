@@ -1,0 +1,21 @@
+<Prefab>
+  <Window>
+    <!-- 全屏遮罩 + 深色背景。Sprite/Color 用法见 Native EscapeMenu.xml:10 -->
+    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.92">
+      <Children>
+
+        <!-- 居中标题。RichTextWidget 用法见 Native EscapeMenu.xml:48 -->
+        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" HorizontalAlignment="Center" VerticalAlignment="Center" Text="SOVEREIGN TOWNS" />
+
+        <!-- 右上角关闭按钮，Command.Click 绑定 VM 的 ExecuteClose。
+             ButtonWidget + Command.Click 用法见 Native EscapeMenu.xml:49 / ButtonCancel.xml:2 -->
+        <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteClose" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="48" SuggestedHeight="48" HorizontalAlignment="Right" VerticalAlignment="Top" MarginTop="20" MarginRight="20">
+          <Children>
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" HorizontalAlignment="Center" VerticalAlignment="Center" Text="X" />
+          </Children>
+        </ButtonWidget>
+
+      </Children>
+    </Widget>
+  </Window>
+</Prefab>
