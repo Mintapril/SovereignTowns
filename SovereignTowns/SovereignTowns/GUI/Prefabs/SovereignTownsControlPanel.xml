@@ -1418,9 +1418,220 @@
                     <Widget IsVisible="@IsTab5Active"
                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                       <Children>
-                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                    Text="@Tab5Label"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                                   DataSource="{FinanceTab}">
+                          <Children>
+
+                            <!-- Scrollable finance content -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                              <Children>
+
+                                <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                 InnerPanel="FinClipRect\FinInnerPanel"
+                                                 ClipRect="FinClipRect"
+                                                 VerticalScrollbar="..\FinScrollbarHolder\FinScrollbar"
+                                                 AutoHideScrollBars="true">
+                                  <Children>
+                                    <Widget Id="FinClipRect"
+                                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                            ClipContents="true">
+                                      <Children>
+                                        <ListPanel Id="FinInnerPanel"
+                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   VerticalAlignment="Top"
+                                                   StackLayout.LayoutMethod="VerticalBottomToTop">
+                                          <Children>
+
+                                            <!-- Recent transactions section -->
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    MarginTop="8">
+                                              <Children>
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                  <Children>
+
+                                                    <!-- Empty state -->
+                                                    <TextWidget IsVisible="@!HasRecent"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@EmptyRecentText"
+                                                                MarginTop="4" />
+
+                                                    <!-- Header row -->
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                               MarginBottom="2">
+                                                      <Children>
+                                                        <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                                    SuggestedWidth="200"
+                                                                    Text="@RecentColTime"
+                                                                    VerticalAlignment="Center" />
+                                                        <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                                    SuggestedWidth="120"
+                                                                    Text="@RecentColCategory"
+                                                                    VerticalAlignment="Center" />
+                                                        <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                                    SuggestedWidth="100"
+                                                                    Text="@RecentColAmount"
+                                                                    VerticalAlignment="Center" />
+                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                    Text="@RecentColNote"
+                                                                    VerticalAlignment="Center" />
+                                                      </Children>
+                                                    </ListPanel>
+
+                                                    <!-- Thin gold divider under header -->
+                                                    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                            SuggestedHeight="1"
+                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.6"
+                                                            MarginBottom="2" />
+
+                                                    <!-- Recent entries title -->
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@RecentTitle"
+                                                                MarginBottom="4" />
+
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+
+                                            <!-- Recent transaction rows (scrollable inner list) -->
+                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       DataSource="{RecentEntries}"
+                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
+                                              <ItemTemplate>
+                                                <STCPFinanceRow />
+                                              </ItemTemplate>
+                                            </ListPanel>
+
+                                            <!-- Gold divider above recent section -->
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                    SuggestedHeight="1"
+                                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                                    MarginBottom="6" MarginTop="4" />
+
+                                            <!-- Three summary tables side by side -->
+                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                       MarginBottom="8">
+                                              <Children>
+
+                                                <!-- Today table -->
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                           DataSource="{TodayTable}"
+                                                           MarginRight="12">
+                                                  <Children>
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               DataSource="{Rows}"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@Title"
+                                                                MarginBottom="4" />
+                                                  </Children>
+                                                </ListPanel>
+
+                                                <!-- Week table -->
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                           DataSource="{WeekTable}"
+                                                           MarginRight="12">
+                                                  <Children>
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               DataSource="{Rows}"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@Title"
+                                                                MarginBottom="4" />
+                                                  </Children>
+                                                </ListPanel>
+
+                                                <!-- AllTime table -->
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                                                           DataSource="{AllTimeTable}">
+                                                  <Children>
+                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               DataSource="{Rows}"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Text="@Title"
+                                                                MarginBottom="4" />
+                                                  </Children>
+                                                </ListPanel>
+
+                                              </Children>
+                                            </ListPanel>
+
+                                            <!-- Error banner -->
+                                            <TextWidget IsVisible="@HasError"
+                                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        Text="@ErrorText"
+                                                        MarginBottom="4" />
+
+                                          </Children>
+                                        </ListPanel>
+                                      </Children>
+                                    </Widget>
+                                  </Children>
+                                </ScrollablePanel>
+
+                                <Widget Id="FinScrollbarHolder"
+                                        WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                        HorizontalAlignment="Right">
+                                  <Children>
+                                    <ScrollbarWidget Id="FinScrollbar"
+                                                     WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                     SuggestedWidth="10"
+                                                     AlignmentAxis="Vertical"
+                                                     Handle="FinScrollbarHandle"
+                                                     MinValue="0" MaxValue="100">
+                                      <Children>
+                                        <Widget Id="FinScrollbarHandle"
+                                                WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                SuggestedWidth="10" SuggestedHeight="20"
+                                                HorizontalAlignment="Center"
+                                                Sprite="BlankWhiteSquare_9"
+                                                Color="#B8960CFF" />
+                                      </Children>
+                                    </ScrollbarWidget>
+                                  </Children>
+                                </Widget>
+
+                              </Children>
+                            </Widget>
+
+                            <!-- Gold divider below title -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                    SuggestedHeight="1"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    MarginBottom="6" MarginTop="4" />
+
+                            <!-- Intro text -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro"
+                                        MarginBottom="4" />
+
+                            <!-- Title -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Title"
+                                        MarginBottom="4" />
+
+                          </Children>
+                        </ListPanel>
                       </Children>
                     </Widget>
 

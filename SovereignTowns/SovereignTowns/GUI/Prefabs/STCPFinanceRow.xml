@@ -1,0 +1,53 @@
+<Prefab>
+  <Window>
+    <!-- Finance table row: 4 columns (Col1–Col4). Used for both summary tables (Col3/Col4 empty)
+         and the recent-transactions table. When IsTotal is true, a gold bottom-border accent
+         is shown to visually separate the total row. Bound to FinanceRowVM. -->
+    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+               StackLayout.LayoutMethod="VerticalBottomToTop">
+      <Children>
+
+        <!-- Gold total-row accent line (visible only when IsTotal) -->
+        <Widget IsVisible="@IsTotal"
+                WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                SuggestedHeight="1"
+                Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.8"
+                MarginBottom="1" />
+
+        <!-- Row content -->
+        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                   VerticalAlignment="Center"
+                   MarginTop="2" MarginBottom="2">
+          <Children>
+
+            <!-- Col1: category or time -->
+            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                        SuggestedWidth="200"
+                        Text="@Col1"
+                        VerticalAlignment="Center" />
+
+            <!-- Col2: amount (summary) or category (recent) -->
+            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                        SuggestedWidth="120"
+                        Text="@Col2"
+                        VerticalAlignment="Center" />
+
+            <!-- Col3: amount (recent only; empty for summary rows) -->
+            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                        SuggestedWidth="100"
+                        Text="@Col3"
+                        VerticalAlignment="Center" />
+
+            <!-- Col4: note (recent only; empty for summary rows) -->
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                        Text="@Col4"
+                        VerticalAlignment="Center" />
+
+          </Children>
+        </ListPanel>
+
+      </Children>
+    </ListPanel>
+  </Window>
+</Prefab>

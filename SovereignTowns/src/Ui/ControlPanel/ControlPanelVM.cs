@@ -26,6 +26,7 @@ public sealed class ControlPanelVM : ViewModel
     private CompositionTabVM _compositionTab;
     private TemplatesTabVM _templatesTab;
     private BranchesTabVM _branchesTab;
+    private FinanceTabVM _financeTab;
 
     [DataSourceProperty]
     public FeaturesTabVM FeaturesTab
@@ -60,6 +61,13 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _branchesTab;
         private set { _branchesTab = value; OnPropertyChanged(nameof(BranchesTab)); }
+    }
+
+    [DataSourceProperty]
+    public FinanceTabVM FinanceTab
+    {
+        get => _financeTab;
+        private set { _financeTab = value; OnPropertyChanged(nameof(FinanceTab)); }
     }
 
     // ── 表头状态 ──
@@ -174,6 +182,7 @@ public sealed class ControlPanelVM : ViewModel
                 _activeTab = value;
                 OnPropertyChanged(nameof(ActiveTab));
                 RefreshTabVisibility();
+                if (value == 5) FinanceTab?.Refresh();
             }
         }
     }
@@ -252,6 +261,7 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
+        FinanceTab = new FinanceTabVM();
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
@@ -357,6 +367,7 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
+        FinanceTab = new FinanceTabVM();
     }
 
     /// <summary>关闭警告横幅。</summary>
