@@ -368,27 +368,28 @@
           <div class="text-4xl text-gold-200 leading-none">⚜</div>
           <div class="min-w-0">
             <h1 class="font-display text-2xl text-gold-100" style="letter-spacing: 0.12em;">SOVEREIGN&nbsp;TOWNS</h1>
-            <div class="text-xs tracking-[0.18em] uppercase text-parchment-300 font-display mt-0.5">控制面板</div>
+            <div class="text-xs tracking-[0.18em] uppercase text-parchment-300 font-display mt-0.5" x-text="tr('控制面板', 'Control Panel')"></div>
           </div>
         </div>
 
         <div class="hidden md:flex gap-2 items-center">
-          <span class="stat-pill">SERVER <strong x-text="status ? '在线' : '失联'"></strong></span>
+          <span class="stat-pill">SERVER <strong x-text="status ? tr('在线', 'Online') : tr('失联', 'Offline')"></strong></span>
           <!-- 未保存状态：取代原先对玩家无意义的「兵种库 / 具体兵员」计数 pill -->
           <span class="stat-pill" :class="dirty ? 'border-gold-300/70' : ''">
             <strong :class="dirty ? 'text-gold-100' : 'text-sage-400'"
-                    x-text="dirty ? '● 有未保存改动' : '✓ 已保存'"></strong>
+                    x-text="dirty ? tr('● 有未保存改动', '● Unsaved changes') : tr('✓ 已保存', '✓ Saved')"></strong>
           </span>
         </div>
 
         <div class="flex gap-2">
           <button @click="reloadAll()" class="btn-ghost px-4 py-2 text-xs font-mono uppercase tracking-wider rounded-sm"
-                  title="从磁盘重新读取 global.json —— 仅在手动编辑过配置文件后才需要">↻ 重读</button>
+                  :title="tr('从磁盘重新读取 global.json —— 仅在手动编辑过配置文件后才需要', 'Re-read global.json from disk — only needed after manually editing the config file')"
+                  x-text="tr('↻ 重读', '↻ Reload')"></button>
           <!-- 始终可点（dirty 跟踪万一漏判也不挡保存）；clean 时降透明度做视觉区分 -->
           <button @click="save()" :disabled="saving || !config"
                   :class="dirty ? '' : 'opacity-55'"
                   class="btn-save px-6 py-2 text-sm font-display tracking-wide uppercase rounded-sm">
-            <span x-text="saving ? '保存中…' : (dirty ? '● 保存改动' : '已保存')"></span>
+            <span x-text="saving ? tr('保存中…', 'Saving…') : (dirty ? tr('● 保存改动', '● Save changes') : tr('已保存', 'Saved'))"></span>
           </button>
         </div>
       </div>
@@ -429,7 +430,7 @@
         </nav>
 
         <div class="ornate-frame mt-4 p-3">
-          <div class="font-display text-xs tracking-[0.25em] uppercase text-gold-300 mb-2">活动日志</div>
+          <div class="font-display text-xs tracking-[0.25em] uppercase text-gold-300 mb-2" x-text="tr('活动日志', 'Activity log')"></div>
           <div class="space-y-1 max-h-64 overflow-y-auto font-mono text-[12px] leading-relaxed">
             <template x-for="(entry, idx) in logEntries" :key="idx">
               <div :class="entry.cls">
@@ -437,7 +438,7 @@
                 <span x-text="entry.msg"></span>
               </div>
             </template>
-            <div x-show="logEntries.length === 0" class="text-parchment-400 italic text-xs">尚无活动</div>
+            <div x-show="logEntries.length === 0" class="text-parchment-400 italic text-xs" x-text="tr('尚无活动', 'No activity yet')"></div>
           </div>
         </div>
       </aside>
@@ -445,17 +446,15 @@
       <!-- RIGHT CONTENT -->
       <section class="col-span-12 lg:col-span-9 xl:col-span-10">
 
-        <div x-show="!config" class="text-center text-parchment-300 py-24 font-display tracking-wide">配置加载中…</div>
+        <div x-show="!config" class="text-center text-parchment-300 py-24 font-display tracking-wide" x-text="tr('配置加载中…', 'Loading configuration…')"></div>
 
         <div x-show="config" class="ornate-frame">
 
           <!-- =========== TAB 1: 功能开关 =========== -->
           <div x-show="activeTab === 0" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">功能开关</h2>
-            <p class="text-parchment-200 text-sm mb-3">总闸级开关，控制各子系统是否参与决策。所有改动在点上方「保存改动」前不会生效。</p>
-            <p class="text-parchment-300 text-[13px] mb-6">
-              提示：本面板运行在游戏外的浏览器中，调整配置需切出游戏。建议游戏使用「窗口」或「无边框窗口」模式，方便来回切换。
-            </p>
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2" x-text="tr('功能开关', 'Feature switches')"></h2>
+            <p class="text-parchment-200 text-sm mb-3" x-text="tr('总闸级开关，控制各子系统是否参与决策。所有改动在点上方「保存改动」前不会生效。', 'Master switches controlling whether each subsystem takes part in decisions. No change takes effect until you click “Save changes” above.')"></p>
+            <p class="text-parchment-300 text-[13px] mb-6" x-text="tr('提示：本面板运行在游戏外的浏览器中，调整配置需切出游戏。建议游戏使用「窗口」或「无边框窗口」模式，方便来回切换。', 'Tip: this panel runs in a browser outside the game, so adjusting config means alt-tabbing out. Running the game in “Windowed” or “Borderless Window” mode makes switching back and forth easier.')"></p>
             <div class="diamond-divider mb-6"></div>
 
             <div class="space-y-1">
@@ -479,13 +478,9 @@
 
           <!-- =========== TAB 2: 策略参数 =========== -->
           <div x-show="activeTab === 1" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">策略参数</h2>
-            <p class="text-parchment-200 text-sm mb-2">
-              驻军目标、招募、巡逻调拨、出击等各子系统的数值参数。全局规则应用于所有受管首府；非首府只受「非首府驻军」标签页约束。
-            </p>
-            <p class="text-parchment-300 text-[13px] mb-6">
-              每条参数都标注了出厂默认值；改过的项会出现「↺ 恢复默认」。开发者级旋钮（MCMF / 调度内部参数）默认折叠，普通玩家无需调整。
-            </p>
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2" x-text="tr('策略参数', 'Strategy parameters')"></h2>
+            <p class="text-parchment-200 text-sm mb-2" x-text="tr('驻军目标、招募、巡逻调拨、出击等各子系统的数值参数。全局规则应用于所有受管首府；非首府只受「非首府驻军」标签页约束。', 'Numeric parameters for the garrison-target, recruitment, patrol/transfer, sally and other subsystems. Global rules apply to all managed capitals; branches are governed only by the “Branches” tab.')"></p>
+            <p class="text-parchment-300 text-[13px] mb-6" x-text="tr('每条参数都标注了出厂默认值；改过的项会出现「↺ 恢复默认」。开发者级旋钮（MCMF / 调度内部参数）默认折叠，普通玩家无需调整。', 'Each parameter shows its factory default; a changed item gets a “↺ Reset” link. Developer-level knobs (MCMF / scheduler internals) are collapsed by default and ordinary players need not touch them.')"></p>
             <div class="diamond-divider mb-6"></div>
 
             <div class="flex flex-wrap gap-2 mb-7 items-center">
@@ -497,7 +492,7 @@
               <label class="ml-auto flex items-center gap-2 cursor-pointer text-[12px] text-parchment-300 hover:text-parchment-100">
                 <input type="checkbox" class="gold-check" style="width:16px;height:16px"
                        :checked="showAdvanced" @change="toggleAdvanced()" />
-                显示高级参数（开发者旋钮）
+                <span x-text="tr('显示高级参数（开发者旋钮）', 'Show advanced parameters (developer knobs)')"></span>
               </label>
             </div>
 
@@ -508,7 +503,8 @@
                 <p class="text-parchment-300 text-[13px]" x-text="activeSettingsGroupData?.hint"></p>
               </div>
               <button @click="resetGroup()" class="btn-ghost px-3 py-1.5 text-[12px] rounded-sm shrink-0"
-                      title="把本分组内所有参数恢复到出厂默认（未保存）">本组恢复默认</button>
+                      :title="tr('把本分组内所有参数恢复到出厂默认（未保存）', 'Reset every parameter in this group to its factory default (unsaved)')"
+                      x-text="tr('本组恢复默认', 'Reset this group')"></button>
             </div>
 
             <div class="space-y-5">
@@ -522,12 +518,12 @@
                       <div class="flex-1 min-w-0">
                         <div class="text-[15px] text-parchment-50 font-medium">
                           <span x-text="s.label"></span>
-                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle">高级</span>
+                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle" x-text="tr('高级', 'Adv')"></span>
                         </div>
                         <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
                         <button x-show="s.def !== undefined && !isSpecDefault(s)" @click.prevent.stop="resetSpec(s)"
                                 class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">
-                          ↺ 恢复默认（<span x-text="s.def ? '开' : '关'"></span>）
+                          <span x-text="tr('↺ 恢复默认（', '↺ Reset (')"></span><span x-text="s.def ? tr('开', 'on') : tr('关', 'off')"></span><span x-text="tr('）', ')')"></span>
                         </button>
                       </div>
                     </label>
@@ -538,12 +534,12 @@
                       <div class="col-span-12 md:col-span-4">
                         <div class="text-[15px] text-parchment-50 font-medium">
                           <span x-text="s.label"></span>
-                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle">高级</span>
+                          <span x-show="s.adv" class="text-[10px] text-gold-400 border border-gold-600/50 px-1 ml-1 align-middle" x-text="tr('高级', 'Adv')"></span>
                         </div>
                         <div class="text-[13px] text-parchment-300 mt-0.5" x-text="s.hint"></div>
                         <button x-show="s.def !== undefined && !isSpecDefault(s)" @click="resetSpec(s)"
                                 class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">
-                          ↺ 恢复默认 <span x-text="s.def"></span>
+                          <span x-text="tr('↺ 恢复默认 ', '↺ Reset ')"></span><span x-text="s.def"></span>
                         </button>
                       </div>
                       <div class="col-span-9 md:col-span-6">
@@ -568,10 +564,8 @@
 
           <!-- =========== TAB 3: 兵种编制 =========== -->
           <div x-show="activeTab === 2" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2">兵种编制</h2>
-            <p class="text-parchment-200 text-sm mb-5">
-              先选一种招募模式 —— 决定 mod 如何挑选要招募的兵。
-            </p>
+            <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase mb-2" x-text="tr('兵种编制', 'Troop composition')"></h2>
+            <p class="text-parchment-200 text-sm mb-5" x-text="tr('先选一种招募模式 —— 决定 mod 如何挑选要招募的兵。', 'First choose a recruitment mode — it decides how the mod picks which troops to recruit.')"></p>
 
             <!-- 模式二选一：分段按钮 -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-7">
@@ -580,22 +574,18 @@
                       :class="config.GlobalDefaults.UseGenericMatching ? 'border-gold-300 bg-gold-400/10' : 'border-gold-700/40 bg-ink-900/40 hover:border-gold-500'">
                 <div class="font-display tracking-wide text-base"
                      :class="config.GlobalDefaults.UseGenericMatching ? 'text-gold-100' : 'text-parchment-200'">
-                  <span x-text="config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> 通用比例匹配
+                  <span x-text="config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> <span x-text="tr('通用比例匹配', 'Generic ratio matching')"></span>
                 </div>
-                <div class="text-[13px] text-parchment-300 mt-1">
-                  按下方文化过滤、兵种比例和 Tier 范围招募，不读取具体兵种模板。省心，适合大多数玩家。
-                </div>
+                <div class="text-[13px] text-parchment-300 mt-1" x-text="tr('按下方文化过滤、兵种比例和 Tier 范围招募，不读取具体兵种模板。省心，适合大多数玩家。', 'Recruit by the culture filter, troop ratios and tier range below, without reading a specific troop template. Low-effort, suits most players.')"></div>
               </button>
               <button @click="if (config.GlobalDefaults.UseGenericMatching) { config.GlobalDefaults.UseGenericMatching = false; markDirty(); }"
                       class="text-left p-4 border rounded-sm transition-all"
                       :class="!config.GlobalDefaults.UseGenericMatching ? 'border-gold-300 bg-gold-400/10' : 'border-gold-700/40 bg-ink-900/40 hover:border-gold-500'">
                 <div class="font-display tracking-wide text-base"
                      :class="!config.GlobalDefaults.UseGenericMatching ? 'text-gold-100' : 'text-parchment-200'">
-                  <span x-text="!config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> 精确兵员模板
+                  <span x-text="!config.GlobalDefaults.UseGenericMatching ? '◆' : '◇'"></span> <span x-text="tr('精确兵员模板', 'Exact troop template')"></span>
                 </div>
-                <div class="text-[13px] text-parchment-300 mt-1">
-                  只招「兵员模板」标签页里勾选的具体兵种。精确控制驻军编成。
-                </div>
+                <div class="text-[13px] text-parchment-300 mt-1" x-text="tr('只招「兵员模板」标签页里勾选的具体兵种。精确控制驻军编成。', 'Recruit only the specific troops ticked on the “Templates” tab. Precise control of garrison composition.')"></div>
               </button>
             </div>
             <div class="diamond-divider mb-6"></div>
@@ -603,11 +593,11 @@
             <!-- 精确模板模式：下方比例 / Tier 不生效，引导去「兵员模板」标签页 -->
             <div x-show="!config.GlobalDefaults.UseGenericMatching"
                  class="card p-6 text-center mb-2">
-              <div class="font-display text-base text-gold-200 tracking-wide mb-2">当前为「精确兵员模板」模式</div>
+              <div class="font-display text-base text-gold-200 tracking-wide mb-2" x-text="tr('当前为「精确兵员模板」模式', 'Currently in “Exact troop template” mode')"></div>
               <p class="text-[13px] text-parchment-300 mb-4">
-                招募只读取「兵员模板」标签页里勾选的兵种。下方的兵种比例与 Tier 范围在此模式下<strong class="text-parchment-100">不生效</strong>（仅保留备用）。
+                <span x-text="tr('招募只读取「兵员模板」标签页里勾选的兵种。下方的兵种比例与 Tier 范围在此模式下', 'Recruitment reads only the troops ticked on the “Templates” tab. The troop ratios and tier range below ')"></span><strong class="text-parchment-100" x-text="tr('不生效', 'have no effect')"></strong><span x-text="tr('（仅保留备用）。', ' in this mode (kept only as a fallback).')"></span>
               </p>
-              <button @click="activeTab = 3" class="btn-action px-5 py-2 text-sm rounded-sm">前往「兵员模板」标签页 →</button>
+              <button @click="activeTab = 3" class="btn-action px-5 py-2 text-sm rounded-sm" x-text="tr('前往「兵员模板」标签页 →', 'Go to the “Templates” tab →')"></button>
             </div>
 
             <!-- 通用比例匹配模式：文化过滤 + 兵种比例 + Tier 范围 -->
@@ -615,10 +605,10 @@
               <!-- Culture filter -->
               <div class="mb-8">
                 <div class="flex items-baseline justify-between mb-3 gap-3">
-                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">文化过滤</h3>
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200" x-text="tr('文化过滤', 'Culture filter')"></h3>
                   <button x-show="(config.GlobalDefaults.GenericCultureFilter || 'PlayerCulture') !== 'PlayerCulture'"
                           @click="config.GlobalDefaults.GenericCultureFilter = 'PlayerCulture'; markDirty()"
-                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认（玩家文化）</button>
+                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono" x-text="tr('↺ 恢复默认（玩家文化）', '↺ Reset to default (player culture)')"></button>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <template x-for="opt in cultureFilterOptions" :key="opt.value">
@@ -633,15 +623,15 @@
               <!-- Role ratios -->
               <div class="mb-8">
                 <div class="flex items-baseline justify-between mb-5 gap-3">
-                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">兵种比例</h3>
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200" x-text="tr('兵种比例', 'Troop ratios')"></h3>
                   <div class="flex items-baseline gap-3">
                     <button x-show="!ratiosAreDefault()" @click="resetRatios()"
-                            class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认比例</button>
+                            class="text-[12px] text-gold-400 hover:text-gold-200 font-mono" x-text="tr('↺ 恢复默认比例', '↺ Reset ratios')"></button>
                     <div class="font-mono text-[13px] text-parchment-200">
                       <span class="text-parchment-300">Σ = </span>
                       <span :class="ratioSumOk(troopSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
                             x-text="troopSum.toFixed(2)"></span>
-                      <span class="text-parchment-300 ml-1">（自动归一化）</span>
+                      <span class="text-parchment-300 ml-1" x-text="tr('（自动归一化）', '(auto-normalized)')"></span>
                     </div>
                   </div>
                 </div>
@@ -664,20 +654,18 @@
                     </div>
                   </template>
                 </div>
-                <div class="text-[13px] text-parchment-300 mt-3">
-                  拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。
-                </div>
+                <div class="text-[13px] text-parchment-300 mt-3" x-text="tr('拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。', 'Drag any ratio and the others rescale proportionally so Σ stays at 1.00.')"></div>
               </div>
 
               <!-- Tier band -->
               <div>
                 <div class="flex items-baseline justify-between mb-4 gap-3">
-                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200">Tier 范围</h3>
+                  <h3 class="font-display text-base tracking-wide uppercase text-gold-200" x-text="tr('Tier 范围', 'Tier range')"></h3>
                   <button x-show="!tierIsDefault()" @click="resetTier()"
-                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono">↺ 恢复默认 T2 – T5</button>
+                          class="text-[12px] text-gold-400 hover:text-gold-200 font-mono" x-text="tr('↺ 恢复默认 T2 – T5', '↺ Reset to default T2 – T5')"></button>
                 </div>
                 <div class="grid grid-cols-12 gap-4 items-center">
-                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200">最低 Tier</div>
+                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200" x-text="tr('最低 Tier', 'Min tier')"></div>
                   <div class="col-span-12 md:col-span-4 flex gap-1.5">
                     <template x-for="n in [1,2,3,4,5,6]" :key="`min-${n}`">
                       <button @click="config.GlobalDefaults.MinTier = n; if (config.GlobalDefaults.MaxTier < n) config.GlobalDefaults.MaxTier = n; markDirty();"
@@ -685,7 +673,7 @@
                               x-text="n"></button>
                     </template>
                   </div>
-                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200 md:text-right md:pr-2">最高 Tier</div>
+                  <div class="col-span-12 md:col-span-2 text-[14px] text-parchment-200 md:text-right md:pr-2" x-text="tr('最高 Tier', 'Max tier')"></div>
                   <div class="col-span-12 md:col-span-4 flex gap-1.5">
                     <template x-for="n in [1,2,3,4,5,6]" :key="`max-${n}`">
                       <button @click="if (n >= config.GlobalDefaults.MinTier) { config.GlobalDefaults.MaxTier = n; markDirty(); }"
@@ -695,8 +683,8 @@
                   </div>
                 </div>
                 <div class="text-[13px] text-parchment-300 mt-3">
-                  仅作为可招募 tier 的硬边界。
-                  <span class="text-parchment-200">当前范围：</span>
+                  <span x-text="tr('仅作为可招募 tier 的硬边界。', 'A hard boundary on recruitable tiers only.')"></span>
+                  <span class="text-parchment-200" x-text="tr('当前范围：', 'Current range:')"></span>
                   <span class="font-mono text-gold-200" x-text="`T${config.GlobalDefaults.MinTier} – T${config.GlobalDefaults.MaxTier}`"></span>
                 </div>
               </div>
@@ -706,36 +694,32 @@
           <!-- =========== TAB 4: 兵员模板（具体兵种 picker，独立 tab） =========== -->
           <div x-show="activeTab === 3" class="tab-content p-8">
             <div class="flex items-baseline justify-between mb-2">
-              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase">兵员模板</h2>
+              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase" x-text="tr('兵员模板', 'Troop template')"></h2>
               <div class="font-mono text-sm text-parchment-200">
-                <span class="text-parchment-300">已选 </span>
+                <span class="text-parchment-300" x-text="tr('已选 ', 'Selected ')"></span>
                 <span class="text-gold-100 font-semibold" x-text="Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length"></span>
-                <span class="text-parchment-300"> 兵种 · 估算 </span>
+                <span class="text-parchment-300" x-text="tr(' 兵种 · 估算 ', ' types · est. ')"></span>
                 <span class="text-gold-100 font-semibold" x-text="exactTroopTotal"></span>
-                <span class="text-parchment-300"> 人 (按目标驻军 </span>
+                <span class="text-parchment-300" x-text="tr(' 人 (按目标驻军 ', ' men (target garrison ')"></span>
                 <span class="text-gold-100 font-semibold" x-text="config.GlobalDefaults?.TargetTotalCount || 0"></span>
                 <span class="text-parchment-300">)</span>
                 <button @click="clearTroops()" x-show="Object.keys(config.GlobalDefaults.ExactTroopTemplate || {}).length > 0"
-                        class="ml-4 text-danger-500 hover:text-danger-600 text-xs underline">清空</button>
+                        class="ml-4 text-danger-500 hover:text-danger-600 text-xs underline" x-text="tr('清空', 'Clear')"></button>
               </div>
             </div>
-            <p class="text-parchment-200 text-sm mb-3">
-              指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。
-            </p>
+            <p class="text-parchment-200 text-sm mb-3" x-text="tr('指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。', 'Set the share of each troop type (auto-normalized to 100%); actual count = share × target garrison size.')"></p>
 
             <!-- 模式提示：通用匹配开启时本模板不生效，给一键切换 -->
             <div x-show="config.GlobalDefaults.UseGenericMatching"
                  class="border border-gold-600/50 bg-gold-400/10 px-4 py-3 mb-4 flex items-center gap-3">
               <span class="text-gold-300 font-display text-xl leading-none">!</span>
               <span class="text-[13px] text-parchment-100 flex-1">
-                当前为「通用比例匹配」模式 —— 下面勾选的兵种<strong class="text-gold-200">不会生效</strong>。招募只看兵种比例和 Tier 范围。
+                <span x-text="tr('当前为「通用比例匹配」模式 —— 下面勾选的兵种', 'Currently in “Generic ratio matching” mode — the troops ticked below ')"></span><strong class="text-gold-200" x-text="tr('不会生效', 'have no effect')"></strong><span x-text="tr('。招募只看兵种比例和 Tier 范围。', '. Recruitment looks only at troop ratios and tier range.')"></span>
               </span>
               <button @click="config.GlobalDefaults.UseGenericMatching = false; markDirty();"
-                      class="btn-action px-3 py-1.5 text-[12px] rounded-sm shrink-0 whitespace-nowrap">改用精确模板模式</button>
+                      class="btn-action px-3 py-1.5 text-[12px] rounded-sm shrink-0 whitespace-nowrap" x-text="tr('改用精确模板模式', 'Switch to exact template mode')"></button>
             </div>
-            <div x-show="!config.GlobalDefaults.UseGenericMatching" class="text-[13px] text-sage-400 mb-4">
-              ✓ 当前为「精确兵员模板」模式 —— 下面勾选的兵种即驻军招募目标。
-            </div>
+            <div x-show="!config.GlobalDefaults.UseGenericMatching" class="text-[13px] text-sage-400 mb-4" x-text="tr('✓ 当前为「精确兵员模板」模式 —— 下面勾选的兵种即驻军招募目标。', '✓ Currently in “Exact troop template” mode — the troops ticked below are the garrison recruitment targets.')"></div>
             <div class="diamond-divider mb-5"></div>
 
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -743,20 +727,20 @@
               <!-- LEFT: catalog (browse + filter + add) -->
               <div class="lg:col-span-7 card p-5">
                 <div class="flex items-center justify-between mb-3">
-                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200">兵种名录</div>
-                  <div class="text-[11px] text-parchment-400 font-mono">点 ＋ 加入名单</div>
+                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200" x-text="tr('兵种名录', 'Troop catalog')"></div>
+                  <div class="text-[11px] text-parchment-400 font-mono" x-text="tr('点 ＋ 加入名单', 'Click + to add to the list')"></div>
                 </div>
 
-                <input type="text" placeholder="搜索兵种（中文 / 英文 id 都支持）"
+                <input type="text" :placeholder="tr('搜索兵种（中文 / 英文 id 都支持）', 'Search troops (by name or English id)')"
                        class="w-full bg-ink-900 border border-gold-600/40 text-parchment-50 px-3 py-2.5 focus:border-gold-300 focus:outline-none mb-3"
                        x-model="troopSearch" />
 
                 <!-- Filter rows -->
                 <div class="space-y-2 mb-3">
                   <div class="flex flex-wrap gap-1.5 items-center">
-                    <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12">文化</span>
+                    <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12" x-text="tr('文化', 'Culture')"></span>
                     <button @click="troopCultureFilter = ''"
-                            :class="troopCultureFilter === '' ? 'chip-filter active' : 'chip-filter'">全部</button>
+                            :class="troopCultureFilter === '' ? 'chip-filter active' : 'chip-filter'" x-text="tr('全部', 'All')"></button>
                     <template x-for="[cid, cname] in cultureList" :key="cid">
                       <button @click="troopCultureFilter = (troopCultureFilter === cid ? '' : cid)"
                               :class="troopCultureFilter === cid ? 'chip-filter active' : 'chip-filter'"
@@ -765,20 +749,20 @@
                   </div>
 
                   <div class="flex flex-wrap gap-1.5 items-center">
-                    <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12">兵种</span>
+                    <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12" x-text="tr('兵种', 'Type')"></span>
                     <button @click="troopTypeFilter = ''"
-                            :class="troopTypeFilter === '' ? 'chip-filter active' : 'chip-filter'">全部</button>
-                    <template x-for="t in [['cavalry','骑兵'],['horsearcher','骑射'],['infantry','步兵'],['ranged','远程']]" :key="t[0]">
+                            :class="troopTypeFilter === '' ? 'chip-filter active' : 'chip-filter'" x-text="tr('全部', 'All')"></button>
+                    <template x-for="t in [['cavalry'],['horsearcher'],['infantry'],['ranged']]" :key="t[0]">
                       <button @click="troopTypeFilter = (troopTypeFilter === t[0] ? '' : t[0])"
                               :class="troopTypeFilter === t[0] ? 'chip-filter active' : 'chip-filter'"
-                              x-text="t[1]"></button>
+                              x-text="typeLabel(t[0])"></button>
                     </template>
                   </div>
 
                   <div class="flex flex-wrap gap-1.5 items-center">
                     <span class="font-display text-[11px] text-parchment-300 uppercase tracking-wider w-12">Tier</span>
                     <button @click="troopTierFilter = 0"
-                            :class="troopTierFilter === 0 ? 'chip-filter active' : 'chip-filter'">全部</button>
+                            :class="troopTierFilter === 0 ? 'chip-filter active' : 'chip-filter'" x-text="tr('全部', 'All')"></button>
                     <template x-for="n in [1,2,3,4,5,6]" :key="`tf-${n}`">
                       <button @click="troopTierFilter = (troopTierFilter === n ? 0 : n)"
                               :class="troopTierFilter === n ? 'chip-filter active' : 'chip-filter'"
@@ -786,47 +770,45 @@
                     </template>
                     <button @click="hideSelected = !hideSelected"
                             :class="hideSelected ? 'chip-filter active' : 'chip-filter'"
-                            class="ml-auto">隐藏已选</button>
+                            class="ml-auto" x-text="tr('隐藏已选', 'Hide selected')"></button>
                   </div>
                 </div>
 
                 <div class="text-[12px] text-parchment-300 mb-2 font-mono">
-                  匹配 <span class="text-gold-200" x-text="filteredTroops.length"></span> / <span x-text="troops.length"></span>
-                  <span x-show="filteredTroops.length > 200" class="text-parchment-400 ml-2">· 仅显示前 200 条，继续输入收缩</span>
+                  <span x-text="tr('匹配 ', 'Matched ')"></span><span class="text-gold-200" x-text="filteredTroops.length"></span> / <span x-text="troops.length"></span>
+                  <span x-show="filteredTroops.length > 200" class="text-parchment-400 ml-2" x-text="tr('· 仅显示前 200 条，继续输入收缩', '· showing first 200 only, keep typing to narrow')"></span>
                 </div>
 
                 <div class="space-y-0.5 max-h-[36rem] overflow-y-auto pr-1">
-                  <template x-for="tr in filteredTroops.slice(0, 200)" :key="tr.id">
-                    <div @click="addTroop(tr.id)"
+                  <template x-for="troop in filteredTroops.slice(0, 200)" :key="troop.id">
+                    <div @click="addTroop(troop.id)"
                          class="card-clickable flex items-center gap-3 px-2 py-2 border-b border-ink-700/40 transition-colors">
-                      <span class="tier-dot shrink-0" :class="`tier-${tr.tier}`"></span>
-                      <span class="font-mono text-[12px] text-parchment-300 shrink-0" x-text="`T${tr.tier}`"></span>
-                      <span class="flex-1 truncate text-[14px] text-parchment-50" x-html="highlight(tr.name, troopSearch)"></span>
-                      <span class="culture-badge" x-text="tr.cultureName || tr.culture"></span>
-                      <span class="type-glyph shrink-0" :title="typeLabel(tr.type)" x-text="typeGlyph(tr.type)"></span>
-                      <button x-show="!(tr.id in (config.GlobalDefaults.ExactTroopTemplate || {}))"
-                              @click.stop="addTroop(tr.id)"
-                              class="btn-add shrink-0">＋ 加入</button>
-                      <button x-show="tr.id in (config.GlobalDefaults.ExactTroopTemplate || {})"
-                              @click.stop="removeTroop(tr.id)"
-                              class="btn-added shrink-0" title="已加入，点击移除">✓ 已加</button>
+                      <span class="tier-dot shrink-0" :class="`tier-${troop.tier}`"></span>
+                      <span class="font-mono text-[12px] text-parchment-300 shrink-0" x-text="`T${troop.tier}`"></span>
+                      <span class="flex-1 truncate text-[14px] text-parchment-50" x-html="highlight(troop.name, troopSearch)"></span>
+                      <span class="culture-badge" x-text="troop.cultureName || troop.culture"></span>
+                      <span class="type-glyph shrink-0" :title="typeLabel(troop.type)" x-text="typeGlyph(troop.type)"></span>
+                      <button x-show="!(troop.id in (config.GlobalDefaults.ExactTroopTemplate || {}))"
+                              @click.stop="addTroop(troop.id)"
+                              class="btn-add shrink-0" x-text="tr('＋ 加入', '+ Add')"></button>
+                      <button x-show="troop.id in (config.GlobalDefaults.ExactTroopTemplate || {})"
+                              @click.stop="removeTroop(troop.id)"
+                              class="btn-added shrink-0" :title="tr('已加入，点击移除', 'Added — click to remove')" x-text="tr('✓ 已加', '✓ Added')"></button>
                     </div>
                   </template>
-                  <div x-show="filteredTroops.length === 0" class="text-[13px] text-parchment-300 italic py-10 text-center">
-                    无匹配兵种
-                  </div>
+                  <div x-show="filteredTroops.length === 0" class="text-[13px] text-parchment-300 italic py-10 text-center" x-text="tr('无匹配兵种', 'No matching troops')"></div>
                 </div>
               </div>
 
               <!-- RIGHT: selected template -->
               <div class="lg:col-span-5 card p-5">
                 <div class="flex items-center justify-between mb-3">
-                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200">已选名单</div>
+                  <div class="font-display text-xs tracking-[0.12em] uppercase text-gold-200" x-text="tr('已选名单', 'Selected list')"></div>
                   <div class="text-[11px] text-parchment-400 font-mono">
                     Σ =
                     <span :class="ratioSumOk(troopRatioSum) ? 'text-sage-400 font-semibold' : 'text-danger-500 font-semibold'"
                           x-text="(troopRatioSum * 100).toFixed(0) + '%'"></span>
-                    （自动归一化）
+                    <span x-text="tr('（自动归一化）', '(auto-normalized)')"></span>
                   </div>
                 </div>
                 <div class="space-y-1 max-h-[44rem] overflow-y-auto pr-1">
@@ -844,7 +826,7 @@
                         </div>
                         <div class="text-[11px] font-mono shrink-0 text-right">
                           <div class="text-gold-100" x-text="(ratio * 100).toFixed(0) + '%'"></div>
-                          <div class="text-parchment-300" x-text="`≈ ${estimatedTroopCount(ratio)} 人`"></div>
+                          <div class="text-parchment-300" x-text="tr(`≈ ${estimatedTroopCount(ratio)} 人`, `≈ ${estimatedTroopCount(ratio)} men`)"></div>
                         </div>
                         <button @click="removeTroop(id)" class="text-danger-500 hover:text-danger-600 text-base leading-none px-1 shrink-0">✕</button>
                       </div>
@@ -855,9 +837,8 @@
                     </div>
                   </template>
                   <div x-show="!config.GlobalDefaults.ExactTroopTemplate || Object.keys(config.GlobalDefaults.ExactTroopTemplate).length === 0"
-                       class="text-[13px] text-parchment-300 italic py-10 text-center">
-                    名单为空。从左侧「兵种名录」点 ＋ 加入。
-                  </div>
+                       class="text-[13px] text-parchment-300 italic py-10 text-center"
+                       x-text="tr('名单为空。从左侧「兵种名录」点 ＋ 加入。', 'The list is empty. Add troops with + from the “Troop catalog” on the left.')"></div>
                 </div>
               </div>
             </div>
@@ -866,14 +847,13 @@
           <!-- =========== TAB 5: 非首府驻军 =========== -->
           <div x-show="activeTab === 4" class="tab-content p-8">
             <div class="flex items-baseline justify-between gap-4 mb-2">
-              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase">非首府驻军</h2>
+              <h2 class="font-display text-2xl text-gold-100 tracking-wide uppercase" x-text="tr('非首府驻军', 'Branch garrison')"></h2>
               <button x-show="(config.BranchDefaults?.TargetPower ?? 150) !== 150 || Math.abs((config.BranchDefaults?.LowTierMinFraction ?? 0.20) - 0.20) > 1e-6"
                       @click="resetBranch()"
-                      class="text-[12px] text-gold-400 hover:text-gold-200 font-mono shrink-0">↺ 全部恢复默认</button>
+                      class="text-[12px] text-gold-400 hover:text-gold-200 font-mono shrink-0" x-text="tr('↺ 全部恢复默认', '↺ Reset all')"></button>
             </div>
             <p class="text-parchment-200 text-sm mb-6">
-              下面两项仅作用于<strong class="text-gold-200">首府拥有者本人</strong>名下的非首府城镇 / 城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。
-              AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。
+              <span x-text="tr('下面两项仅作用于', 'The two settings below apply only to ')"></span><strong class="text-gold-200" x-text="tr('首府拥有者本人', 'the capital owner in person')"></strong><span x-text="tr('名下的非首府城镇 / 城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。', '’s non-capital towns / castles. Branches held by other lords of the same clan reinforce by vanilla behaviour (not bound by these two), though their garrisons can still be drawn elsewhere by transfer parties. An AI clan’s target strength is computed dynamically by the vanilla formula (this setting is ignored for it).')"></span>
             </p>
             <div class="diamond-divider mb-6"></div>
 
@@ -881,13 +861,11 @@
             <div class="card p-5 mb-4">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
-                  <div class="text-[15px] text-parchment-50 font-medium">目标兵力</div>
-                  <div class="text-[13px] text-parchment-300 mt-0.5">
-                    每座非首府城镇 / 城堡想维持的兵力强度。约 150 ≈ 100 个 T3 步兵；城堡通常 ~80、大城镇 ~250。
-                  </div>
+                  <div class="text-[15px] text-parchment-50 font-medium" x-text="tr('目标兵力', 'Target strength')"></div>
+                  <div class="text-[13px] text-parchment-300 mt-0.5" x-text="tr('每座非首府城镇 / 城堡想维持的兵力强度。约 150 ≈ 100 个 T3 步兵；城堡通常 ~80、大城镇 ~250。', 'The military strength each non-capital town / castle should maintain. About 150 ≈ 100 T3 infantry; a castle is usually ~80, a large town ~250.')"></div>
                   <button x-show="(config.BranchDefaults?.TargetPower ?? 150) !== 150"
                           @click="config.BranchDefaults.TargetPower = 150; markDirty()"
-                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">↺ 恢复默认 150</button>
+                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono" x-text="tr('↺ 恢复默认 150', '↺ Reset to default 150')"></button>
                 </div>
                 <div class="col-span-9 md:col-span-6">
                   <input type="range" class="w-full" min="0" max="100000" step="1"
@@ -908,13 +886,11 @@
             <div class="card p-5">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
-                  <div class="text-[15px] text-parchment-50 font-medium">低 Tier 头数占比下限</div>
-                  <div class="text-[13px] text-parchment-300 mt-0.5">
-                    T1 + T2 兵的人数 ÷ 驻军总人数必须 ≥ 此值，避免出现「几个 T6 凑满兵力」的退化驻军。
-                  </div>
+                  <div class="text-[15px] text-parchment-50 font-medium" x-text="tr('低 Tier 头数占比下限', 'Low-tier headcount floor')"></div>
+                  <div class="text-[13px] text-parchment-300 mt-0.5" x-text="tr('T1 + T2 兵的人数 ÷ 驻军总人数必须 ≥ 此值，避免出现「几个 T6 凑满兵力」的退化驻军。', 'The headcount of T1+T2 troops ÷ total garrison headcount must be ≥ this value, preventing a degenerate garrison of “a few T6 troops filling the strength quota”.')"></div>
                   <button x-show="Math.abs((config.BranchDefaults?.LowTierMinFraction ?? 0.20) - 0.20) > 1e-6"
                           @click="config.BranchDefaults.LowTierMinFraction = 0.20; markDirty()"
-                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono">↺ 恢复默认 0.20</button>
+                          class="text-[12px] text-gold-400 hover:text-gold-200 mt-1 font-mono" x-text="tr('↺ 恢复默认 0.20', '↺ Reset to default 0.20')"></button>
                 </div>
                 <div class="col-span-9 md:col-span-6">
                   <input type="range" class="w-full" min="0" max="1" step="0.01"
@@ -934,19 +910,17 @@
 
           <!-- =========== TAB 6: 财务 =========== -->
           <div x-show="activeTab === 5" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase">财务报告</h2>
-            <p class="text-parchment-200 text-sm mb-6">
-              本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。
-            </p>
+            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase" x-text="tr('财务报告', 'Finance report')"></h2>
+            <p class="text-parchment-200 text-sm mb-6" x-text="tr('本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。', 'Gold spending caused by this mod (recruitment, upgrades, sally seed funds, etc.). All spending is deducted from your personal gold; this table refreshes live (every 5 seconds).')"></p>
 
             <div x-show="financeError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="financeError"></div>
 
-            <div x-show="!finance && !financeError" class="text-parchment-400 italic text-sm">加载中…</div>
+            <div x-show="!finance && !financeError" class="text-parchment-400 italic text-sm" x-text="tr('加载中…', 'Loading…')"></div>
 
             <div x-show="finance" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <!-- 今日 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">今日</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('今日', 'Today')"></h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.Today || {})" :key="cat">
@@ -958,7 +932,7 @@
                   </tbody>
                   <tfoot>
                     <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
                       <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.TodayTotal || 0) + 'd'"></td>
                     </tr>
                   </tfoot>
@@ -967,7 +941,7 @@
 
               <!-- 本周 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">本周</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('本周', 'This week')"></h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.Week || {})" :key="cat">
@@ -979,7 +953,7 @@
                   </tbody>
                   <tfoot>
                     <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
                       <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.WeekTotal || 0) + 'd'"></td>
                     </tr>
                   </tfoot>
@@ -988,7 +962,7 @@
 
               <!-- 全部 -->
               <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">全部</h3>
+                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('全部', 'All time')"></h3>
                 <table class="w-full text-sm">
                   <tbody>
                     <template x-for="(amt, cat) in (finance?.AllTime || {})" :key="cat">
@@ -1000,7 +974,7 @@
                   </tbody>
                   <tfoot>
                     <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100">总</td>
+                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
                       <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.AllTimeTotal || 0) + 'd'"></td>
                     </tr>
                   </tfoot>
@@ -1010,21 +984,21 @@
 
             <!-- 近期流水 -->
             <div x-show="finance" class="ornate-frame p-5">
-              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide">近期流水（最近 50 条）</h3>
-              <div x-show="(finance?.RecentEntries || []).length === 0" class="text-parchment-400 italic text-sm">尚无支出记录</div>
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('近期流水（最近 50 条）', 'Recent transactions (last 50)')"></h3>
+              <div x-show="(finance?.RecentEntries || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('尚无支出记录', 'No spending records yet')"></div>
               <table x-show="(finance?.RecentEntries || []).length > 0" class="w-full text-sm">
                 <thead>
                   <tr class="border-b-2 border-gold-700 text-parchment-200">
-                    <th class="py-2 text-left">时间</th>
-                    <th class="py-2 text-left">类别</th>
-                    <th class="py-2 text-right">金额</th>
-                    <th class="py-2 text-left">备注</th>
+                    <th class="py-2 text-left" x-text="tr('时间', 'Time')"></th>
+                    <th class="py-2 text-left" x-text="tr('类别', 'Category')"></th>
+                    <th class="py-2 text-right" x-text="tr('金额', 'Amount')"></th>
+                    <th class="py-2 text-left" x-text="tr('备注', 'Note')"></th>
                   </tr>
                 </thead>
                 <tbody>
                   <template x-for="(e, idx) in (finance?.RecentEntries || [])" :key="idx">
                     <tr class="border-b border-ink-700 last:border-0">
-                      <td class="py-1.5 text-parchment-300 font-mono text-xs" x-text="new Date(e.TimestampMs).toLocaleString('zh-CN')"></td>
+                      <td class="py-1.5 text-parchment-300 font-mono text-xs" x-text="new Date(e.TimestampMs).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')"></td>
                       <td class="py-1.5 text-parchment-100" x-text="e.Category"></td>
                       <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + e.Amount + 'd'"></td>
                       <td class="py-1.5 text-parchment-300 text-xs" x-text="e.Note || ''"></td>
@@ -1046,16 +1020,20 @@
     function configApp() {
       return {
         token: '',
+        // 'zh' | 'en' — 初始按浏览器语言猜测,fetchStatus 拿到后端 uiLang 后以游戏语言为准。
+        lang: (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en',
         activeTab: 0,
         activeSettingsGroup: 'targets',
-        tabs: [
-          { label: '功能开关' },
-          { label: '策略参数' },
-          { label: '兵种编制' },
-          { label: '兵员模板' },
-          { label: '非首府驻军' },
-          { label: '财务' },
-        ],
+        get tabs() {
+          return [
+            { label: this.tr('功能开关', 'Features') },
+            { label: this.tr('策略参数', 'Strategy') },
+            { label: this.tr('兵种编制', 'Composition') },
+            { label: this.tr('兵员模板', 'Templates') },
+            { label: this.tr('非首府驻军', 'Branches') },
+            { label: this.tr('财务', 'Finance') },
+          ];
+        },
         config: null,
         status: null,
         troops: [],
@@ -1082,109 +1060,128 @@
         // that supplies its own L10N. cultureLabel() does an stringId → localized lookup
         // off the dumped troop list.
 
-        toggleSpecs: [
-          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: '自动招募', hint: '首府原地招募、外派征兵、俘虏转化和驻军训练，用来补充驻军兵源' },
-          { key: 'AutoPatrol', root: 'EnabledFeatures', label: '自动巡逻', hint: '自动派出巡逻队保护领地' },
-          { key: 'TroopTransfers', root: 'EnabledFeatures', label: '兵力调拨', hint: '由首府统一协调自有城镇与城堡之间的补兵' },
-          { key: 'SallyForth', root: 'EnabledFeatures', label: '主动出击', hint: '附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击' },
+        get toggleSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'AutoRecruitment', root: 'EnabledFeatures', label: t('自动招募', 'Auto-recruitment'), hint: t('首府原地招募、外派征兵、俘虏转化和驻军训练，用来补充驻军兵源', 'Capital in-place recruitment, recruiter parties, prisoner conversion and garrison training — the sources that replenish garrison troops.') },
+          { key: 'AutoPatrol', root: 'EnabledFeatures', label: t('自动巡逻', 'Auto-patrol'), hint: t('自动派出巡逻队保护领地', 'Automatically dispatch patrol parties to protect your territory.') },
+          { key: 'TroopTransfers', root: 'EnabledFeatures', label: t('兵力调拨', 'Troop transfers'), hint: t('由首府统一协调自有城镇与城堡之间的补兵', 'The capital coordinates reinforcement between your own towns and castles.') },
+          { key: 'SallyForth', root: 'EnabledFeatures', label: t('主动出击', 'Sally forth'), hint: t('附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击', 'Attack out of the settlement when a hostile force is nearby and the garrison, cooldown and sustained-visibility conditions are met.') },
           // T2 (doc §20 #2)：3 个战利品集中处理 toggle 已删除；所有 ST 队伍走基类自资金路径
-          { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: '抑制 vanilla 自动招募', hint: '自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源' },
+          { key: 'SuppressVanillaGarrisonRecruitment', root: 'EnabledFeatures', label: t('抑制 vanilla 自动招募', 'Suppress vanilla auto-recruitment'), hint: t('自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源', 'While auto-recruitment is on, disable vanilla garrison auto-growth in managed towns/castles so this mod\'s recruiter parties become the main troop source.') },
           // ApplyToAiSettlementsToo toggle 已从 UI 移除 — backend flag 保留默认 false（永远关闭）。
-          { key: 'PauseSpendingWhenBroke', root: 'EnabledFeatures', label: '金币不足时暂停支出', hint: '玩家金币不足时拒绝扣款 / 派遣 / 升级，防止"派出去又因没钱半截失败"' },
-          { key: 'ShowDailySummary', root: 'EnabledFeatures', label: '每日活动汇总弹窗', hint: '每日 InformationManager 弹窗显示今日招/调/巡逻/出击/俘虏人数' },
-          { key: 'VerboseLogging', root: 'EnabledFeatures', label: '详细诊断日志', hint: '开启后 Logger 等级降到 Debug：落盘所有 [DIAG] 行（hourly tick 状态、状态机迁移、食物维护跳过原因、scheduler 决策等）。日志文件会很大，调试用后请关闭。修改即时生效，无需重启。' },
-        ],
+          { key: 'PauseSpendingWhenBroke', root: 'EnabledFeatures', label: t('金币不足时暂停支出', 'Pause spending when broke'), hint: t('玩家金币不足时拒绝扣款 / 派遣 / 升级，防止"派出去又因没钱半截失败"', 'When you are short on gold, refuse charges / dispatches / upgrades, so a party is not sent out only to fail halfway for lack of funds.') },
+          { key: 'ShowDailySummary', root: 'EnabledFeatures', label: t('每日活动汇总弹窗', 'Daily activity summary popup'), hint: t('每日 InformationManager 弹窗显示今日招/调/巡逻/出击/俘虏人数', 'A daily in-game popup showing today\'s recruited / transferred / patrol / sally / prisoner counts.') },
+          { key: 'VerboseLogging', root: 'EnabledFeatures', label: t('详细诊断日志', 'Verbose diagnostic logging'), hint: t('开启后 Logger 等级降到 Debug：落盘所有 [DIAG] 行（hourly tick 状态、状态机迁移、食物维护跳过原因、scheduler 决策等）。日志文件会很大，调试用后请关闭。修改即时生效，无需重启。', 'Lowers the logger to Debug level and writes every [DIAG] line (hourly tick state, state-machine transitions, food-maintenance skip reasons, scheduler decisions, etc.). The log file gets large — turn this off after debugging. Takes effect immediately, no restart needed.') },
+          ];
+        },
 
-        budgetSpecs: [
-          { key: 'TargetTotalCount', label: '目标驻军总数', hint: '驻军应维持的兵员数', min: 50, max: 500, discrete: true, def: 150 },
-          { key: 'MinimumDefenderRatio', label: '最少防守比例', hint: '仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', min: 0, max: 1, discrete: false, step: 0.05, def: 0.20 },
-          { key: 'BudgetLimit', label: '招募预算基准', hint: '外派征兵队单次到村招募预算；自动升级预算也按此派生', min: 0, max: 50000, discrete: true, def: 5000 },
-          { key: 'WartimeMultiplier', label: '高威胁目标乘数', hint: '城镇威胁评估达到 High/Critical 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false, def: 1.5 },
-          { key: 'PeacetimeMultiplier', label: '常态目标乘数', hint: '城镇威胁评估低于 High 时的目标人数倍数', min: 0.5, max: 2.0, discrete: false, def: 1.0 },
-        ],
+        get budgetSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'TargetTotalCount', label: t('目标驻军总数', 'Target garrison size'), hint: t('驻军应维持的兵员数', 'The number of troops a garrison should maintain.'), min: 50, max: 500, discrete: true, def: 150 },
+          { key: 'MinimumDefenderRatio', label: t('最少防守比例', 'Minimum defender ratio'), hint: t('仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', 'Constrains sally-forth only: a sally party will not pull the actual garrison below this fraction. Recruiter parties, cross-town transfers and recruitment pacing are not bound by it.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.20 },
+          { key: 'BudgetLimit', label: t('招募预算基准', 'Recruitment budget baseline'), hint: t('外派征兵队单次到村招募预算；自动升级预算也按此派生', 'Per-trip village recruitment budget for a dispatched recruiter party; the auto-upgrade budget is derived from it too.'), min: 0, max: 50000, discrete: true, def: 5000 },
+          { key: 'WartimeMultiplier', label: t('高威胁目标乘数', 'High-threat target multiplier'), hint: t('城镇威胁评估达到 High/Critical 时的目标人数倍数', 'Target headcount multiplier when the town threat assessment reaches High/Critical.'), min: 0.5, max: 2.0, discrete: false, def: 1.5 },
+          { key: 'PeacetimeMultiplier', label: t('常态目标乘数', 'Normal target multiplier'), hint: t('城镇威胁评估低于 High 时的目标人数倍数', 'Target headcount multiplier when the town threat assessment is below High.'), min: 0.5, max: 2.0, discrete: false, def: 1.0 },
+          ];
+        },
 
-        troopRatioSpecs: [
-          { key: 'CavalryRatio', label: '骑兵' },
-          { key: 'HorseArcherRatio', label: '骑射' },
-          { key: 'InfantryRatio', label: '步兵' },
-          { key: 'RangedRatio', label: '远程' },
-        ],
+        get troopRatioSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'CavalryRatio', label: t('骑兵', 'Cavalry') },
+          { key: 'HorseArcherRatio', label: t('骑射', 'Horse archer') },
+          { key: 'InfantryRatio', label: t('步兵', 'Infantry') },
+          { key: 'RangedRatio', label: t('远程', 'Ranged') },
+          ];
+        },
         ratioKeys: ['CavalryRatio','HorseArcherRatio','InfantryRatio','RangedRatio'],
 
         // 通用匹配模式的文化过滤选项（对应 GlobalDefaults.GenericCultureFilter 字符串值）
-        cultureFilterOptions: [
-          { value: 'PlayerCulture',  label: '玩家文化', hint: '只招募玩家氏族文化的兵种。默认选项，最稳妥。' },
-          { value: 'CapitalCulture', label: '首府文化', hint: '只招募首府所在城镇本身文化的兵种 —— 被征服的异文化城会招当地兵，省去跨文化运兵。' },
-          { value: 'Any',            label: '不过滤',   hint: '不按文化过滤，任何文化的兵种都可进入招募候选。' },
-        ],
+        get cultureFilterOptions() {
+          const t = this.tr.bind(this);
+          return [
+          { value: 'PlayerCulture',  label: t('玩家文化', 'Player culture'), hint: t('只招募玩家氏族文化的兵种。默认选项，最稳妥。', 'Recruit only troops of your clan\'s culture. The default, safest option.') },
+          { value: 'CapitalCulture', label: t('首府文化', 'Capital culture'), hint: t('只招募首府所在城镇本身文化的兵种 —— 被征服的异文化城会招当地兵，省去跨文化运兵。', 'Recruit only troops of the capital town\'s own culture — a conquered foreign town recruits local troops, avoiding cross-culture troop hauling.') },
+          { value: 'Any',            label: t('不过滤', 'No filter'),   hint: t('不按文化过滤，任何文化的兵种都可进入招募候选。', 'No culture filter; troops of any culture are eligible for recruitment.') },
+          ];
+        },
 
-        resourceSpecs: [
-          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: '食物安全阈值', hint: 'Town.FoodChange 低于此值暂停招募', min: -50, max: 50, discrete: false, step: 0.5, def: -2.0 },
-          { key: 'VillageCooldownHours', root: '', label: '村庄招募冷却', hint: '同一村庄被招过后多少小时不再候选 (12–240)', min: 12, max: 240, discrete: true, def: 72 },
-        ],
+        get resourceSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: t('食物安全阈值', 'Food safety threshold'), hint: t('Town.FoodChange 低于此值暂停招募', 'Pause recruitment when Town.FoodChange drops below this value.'), min: -50, max: 50, discrete: false, step: 0.5, def: -2.0 },
+          { key: 'VillageCooldownHours', root: '', label: t('村庄招募冷却', 'Village recruitment cooldown'), hint: t('同一村庄被招过后多少小时不再候选 (12–240)', 'How many hours a village stays out of the candidate pool after being recruited from (12–240).'), min: 12, max: 240, discrete: true, def: 72 },
+          ];
+        },
 
         // 原先散落在 PatrolDispatcher / RecruitmentDispatcher / CapitalLogisticsManager / SallyDispatcher 内的阈值。
         // 人数阈值统一按当前实际驻军比例派生；面板调整后下次决策时生效（无须重启）。
         // def = 出厂默认值（与 C# 配置类一致），用于「恢复默认」；adv = 开发者级旋钮，默认折叠。
-        thresholdSpecs: [
-          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: '通用：回城解散兵员比例', hint: '本 Mod 除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散', min: 0, max: 1, discrete: false, step: 0.05, def: 0.5 },
-          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: '通用：回城解散受伤比例', hint: '本 Mod 除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散', min: 0, max: 1, discrete: false, step: 0.05, def: 0.3 },
-          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: '巡逻队：创建后保留比例', hint: '创建巡逻队后首府至少保留实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.8 },
-          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: '巡逻队：每次抽兵比例', hint: '新建巡逻队时从首府实际驻军抽走的比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.10 },
-          { key: 'PatrolMinDispatchSize', root: 'Thresholds', label: '巡逻队：最少出发人数', hint: '按比例算出的人数低于此值时延迟创建，等驻军积攒到能一次抽够人为止。避免小驻军派出 1-3 人巡逻队送死；0 = 不限制', min: 0, max: 500, discrete: true, def: 50 },
-          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: '征兵队：护卫比例', hint: '派出征兵队时从首府驻军抽取的护卫比例', min: 0, max: 1, discrete: false, step: 0.05, def: 0.10 },
-          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: '征兵队：招募返航人数', hint: '本趟实际招募人数（不含护卫）达到此值即返航', min: 1, max: 500, discrete: true, def: 50 },
-          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: '调拨：危急驻军比例', hint: '预计驻军低于目标驻军 × 此比例时视为危急', min: 0, max: 1, discrete: false, step: 0.01, def: 0.24 },
-          { key: 'TransferRatio', root: 'Thresholds', label: '调拨：源城抽取比例', hint: '从源城驻军中按此比例抽取', min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
-          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: '调拨：单次上限比例', hint: '单次调拨最多搬运源城实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.01, def: 0.67 },
-          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: '调拨：单次下限比例', hint: '算出的调拨人数低于源城实际驻军 × 此比例则放弃', min: 0, max: 1, discrete: false, step: 0.01, def: 0.13 },
-          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: '征兵：派遣缺口比例', hint: '剩余缺口低于首府实际驻军 × 此比例不再派征兵队', min: 0, max: 1, discrete: false, step: 0.01, def: 0.07 },
-          { key: 'SallyExtractionRatio', root: 'Thresholds', label: '主动出击：驻军上限比例', hint: '主动出击人数不会超过当前实际驻军 × 此比例', min: 0, max: 1, discrete: false, step: 0.05, def: 0.60 },
-          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: '主动出击：目标兵力倍数', hint: '出击队目标人数 = 敌方目标部队人数 × 此倍数', min: 0, max: 5, discrete: false, step: 0.25, def: 2.0 },
-          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: '主动出击：创建下限人数', hint: '计算后得到的出击队人数低于此值时不出击', min: 1, max: 500, discrete: true, def: 30 },
+        get thresholdSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: t('通用：回城解散兵员比例', 'General: return-and-disband size ratio'), hint: t('本 Mod 除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散', 'A mod party (other than transfer parties) returns to the capital and disbands when its current headcount / starting headcount falls below this value.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.5 },
+          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: t('通用：回城解散受伤比例', 'General: return-and-disband wounded ratio'), hint: t('本 Mod 除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散', 'A mod party (other than transfer parties) returns to the capital and disbands when its wounded / total headcount rises above this value.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.3 },
+          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: t('巡逻队：创建后保留比例', 'Patrol: garrison reserve after creation'), hint: t('创建巡逻队后首府至少保留实际驻军 × 此比例', 'After creating a patrol party, the capital keeps at least actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.8 },
+          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: t('巡逻队：每次抽兵比例', 'Patrol: troops drawn per batch'), hint: t('新建巡逻队时从首府实际驻军抽走的比例', 'Fraction of the capital actual garrison drawn when creating a new patrol party.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.10 },
+          { key: 'PatrolMinDispatchSize', root: 'Thresholds', label: t('巡逻队：最少出发人数', 'Patrol: minimum dispatch size'), hint: t('按比例算出的人数低于此值时延迟创建，等驻军积攒到能一次抽够人为止。避免小驻军派出 1-3 人巡逻队送死；0 = 不限制', 'If the ratio-derived headcount is below this value, creation is delayed until the garrison has grown enough to draw a full batch at once. Prevents a small garrison from sending a 1-3-man patrol to its death; 0 = no limit.'), min: 0, max: 500, discrete: true, def: 50 },
+          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: t('征兵队：护卫比例', 'Recruiter: escort ratio'), hint: t('派出征兵队时从首府驻军抽取的护卫比例', 'Fraction of the capital garrison taken as escort when dispatching a recruiter party.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.10 },
+          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: t('征兵队：招募返航人数', 'Recruiter: recruited count to return'), hint: t('本趟实际招募人数（不含护卫）达到此值即返航', 'The recruiter party returns once it has actually recruited this many troops this trip (escort not counted).'), min: 1, max: 500, discrete: true, def: 50 },
+          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: t('调拨：危急驻军比例', 'Transfer: critical garrison ratio'), hint: t('预计驻军低于目标驻军 × 此比例时视为危急', 'A settlement is treated as critical when its projected garrison falls below target garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.24 },
+          { key: 'TransferRatio', root: 'Thresholds', label: t('调拨：源城抽取比例', 'Transfer: source extraction ratio'), hint: t('从源城驻军中按此比例抽取', 'Fraction drawn from the source settlement garrison.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
+          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: t('调拨：单次上限比例', 'Transfer: per-task cap ratio'), hint: t('单次调拨最多搬运源城实际驻军 × 此比例', 'A single transfer moves at most source actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.67 },
+          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: t('调拨：单次下限比例', 'Transfer: per-task floor ratio'), hint: t('算出的调拨人数低于源城实际驻军 × 此比例则放弃', 'The transfer is abandoned if the computed headcount is below source actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.13 },
+          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: t('征兵：派遣缺口比例', 'Recruitment: dispatch demand ratio'), hint: t('剩余缺口低于首府实际驻军 × 此比例不再派征兵队', 'No more recruiter parties are dispatched once the remaining shortfall is below capital actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.07 },
+          { key: 'SallyExtractionRatio', root: 'Thresholds', label: t('主动出击：驻军上限比例', 'Sally: garrison cap ratio'), hint: t('主动出击人数不会超过当前实际驻军 × 此比例', 'A sally never takes more than current actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.60 },
+          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: t('主动出击：目标兵力倍数', 'Sally: target strength multiplier'), hint: t('出击队目标人数 = 敌方目标部队人数 × 此倍数', 'Sally party target headcount = enemy target party headcount × this multiplier.'), min: 0, max: 5, discrete: false, step: 0.25, def: 2.0 },
+          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: t('主动出击：创建下限人数', 'Sally: minimum creation size'), hint: t('计算后得到的出击队人数低于此值时不出击', 'No sally is launched if the computed sally party headcount is below this value.'), min: 1, max: 500, discrete: true, def: 30 },
           // B17.4 新增阈值（min/max 与 ValidateThresholds 后端上下界对齐）
-          { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: '征兵队：首府最低驻军', hint: '派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭限制，允许 0 兵裸车', min: 0, max: 10000, discrete: true, def: 0 },
-          { key: 'PartyPrisonerCap', root: 'Thresholds', label: '通用：俘虏上限', hint: '所有本 Mod 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每游戏内小时随机释放非英雄俘虏；0 = 关闭', min: 0, max: 10000, discrete: true, def: 30 },
-          { key: 'StuckTeleportHours', root: 'Thresholds', label: '通用：卡死瞬移阈值（真实小时）', adv: true, hint: '首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭', min: 0, max: 720, discrete: false, step: 1, def: 24 },
-          { key: 'PatrolMaxLifetimeHours', root: 'Thresholds', label: '巡逻队：最长存活小时（兜底）', adv: true, hint: '巡逻队从创建起累计此小时后强制回家解散，用于防御极端异常场景；0 关闭兜底（接受终身巡逻）。720 = 30 天', min: 0, max: 720, discrete: false, step: 1, def: 720 },
+          { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: t('征兵队：首府最低驻军', 'Recruiter: minimum home garrison'), hint: t('派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭限制，允许 0 兵裸车', 'Before a recruiter party is dispatched, the capital actual garrison must be >= this value; 0 = no limit, allowing a bare 0-troop dispatch.'), min: 0, max: 10000, discrete: true, def: 0 },
+          { key: 'PartyPrisonerCap', root: 'Thresholds', label: t('通用：俘虏上限', 'General: prisoner cap'), hint: t('所有本 Mod 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每游戏内小时随机释放非英雄俘虏；0 = 关闭', 'Prisoner cap for all mod parties (recruiter/transfer/patrol/sally); above it, non-hero prisoners are released at random each in-game hour; 0 = off.'), min: 0, max: 10000, discrete: true, def: 30 },
+          { key: 'StuckTeleportHours', root: 'Thresholds', label: t('通用：卡死瞬移阈值（真实小时）', 'General: stuck-teleport threshold (real hours)'), adv: true, hint: t('首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭', 'Real hours accumulated since a stuck state was first detected; past this value the party is teleported to the capital gate; 0 = off.'), min: 0, max: 720, discrete: false, step: 1, def: 24 },
+          { key: 'PatrolMaxLifetimeHours', root: 'Thresholds', label: t('巡逻队：最长存活小时（兜底）', 'Patrol: maximum lifetime hours (failsafe)'), adv: true, hint: t('巡逻队从创建起累计此小时后强制回家解散，用于防御极端异常场景；0 关闭兜底（接受终身巡逻）。720 = 30 天', 'A patrol party is forced home and disbanded after this many hours since creation, as a failsafe against extreme edge cases; 0 disables the failsafe (accepting lifelong patrols). 720 = 30 days.'), min: 0, max: 720, discrete: false, step: 1, def: 720 },
           // DeepSeek audit 2026-05-18 新增 (R1/R2/R3/R4/H7-H10)
-          { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: '生命周期：空闲遣返小时', hint: '本 Mod 队伍空闲此时长（游戏内小时）后强制遣返回首府（必须 ≥ 1）', min: 1, max: 720, discrete: true, def: 24 },
-          { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: '生命周期：空闲解散小时', hint: '本 Mod 队伍空闲此时长（游戏内小时）后直接解散（必须 ≥ 遣返小时）', min: 1, max: 720, discrete: true, def: 36 },
-          { key: 'SallyDetectionRadius', root: 'Thresholds', label: '主动出击：搜索半径', hint: '主动出击在城周围搜索敌方目标的地图半径', min: 10, max: 500, discrete: false, step: 5, def: 50 },
-          { key: 'SallyCooldownHours', root: 'Thresholds', label: '主动出击：冷却小时', hint: '上次出击结束后的冷却时长（游戏内小时）', min: 0, max: 168, discrete: false, step: 1, def: 24 },
-          { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: '主动出击：连续可见小时数', hint: '敌方需在视野内连续存在 N 个游戏内小时才触发出击，避免一进检测圈就冲', min: 1, max: 48, discrete: true, def: 3 },
-          { key: 'TransferCapacityWeight', root: 'Thresholds', label: '调拨：容量评分权重', adv: true, hint: '调拨评分中按源城可用容量加权，调大利好高容量源', min: 0, max: 1, discrete: false, step: 0.01, def: 0.05 },
-          { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: '调拨：非首府互调惩罚', adv: true, hint: '两座非首府之间的调拨在评分中减去此值（值越大越避免）', min: 0, max: 100, discrete: false, step: 1, def: 25 },
-          { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: '调拨：首府出兵惩罚', adv: true, hint: '从首府向非首府调兵时评分加上此值（值越大越保留首府兵力）', min: 0, max: 100, discrete: false, step: 1, def: 10 },
-          { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: '升级：触发 Tier 比例', hint: 'T1+T2 兵占总兵比例 ≥ 此值时尝试升级', min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
-          { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: '升级：单次最低预算', hint: '实际预算 = max(招募预算基准 / 4, 此值)', min: 0, max: 50000, discrete: true, def: 500 },
-          { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: '升级：单次最大升级数', hint: '单次升级最多升 N 个兵', min: 1, max: 500, discrete: true, def: 20 },
+          { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: t('生命周期：空闲遣返小时', 'Lifecycle: idle hours before forced return'), hint: t('本 Mod 队伍空闲此时长（游戏内小时）后强制遣返回首府（必须 ≥ 1）', 'A mod party idle for this long (in-game hours) is forced to return to the capital (must be >= 1).'), min: 1, max: 720, discrete: true, def: 24 },
+          { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: t('生命周期：空闲解散小时', 'Lifecycle: idle hours before disband'), hint: t('本 Mod 队伍空闲此时长（游戏内小时）后直接解散（必须 ≥ 遣返小时）', 'A mod party idle for this long (in-game hours) is disbanded outright (must be >= the forced-return hours).'), min: 1, max: 720, discrete: true, def: 36 },
+          { key: 'SallyDetectionRadius', root: 'Thresholds', label: t('主动出击：搜索半径', 'Sally: detection radius'), hint: t('主动出击在城周围搜索敌方目标的地图半径', 'Map radius within which a sally searches for enemy targets around the settlement.'), min: 10, max: 500, discrete: false, step: 5, def: 50 },
+          { key: 'SallyCooldownHours', root: 'Thresholds', label: t('主动出击：冷却小时', 'Sally: cooldown hours'), hint: t('上次出击结束后的冷却时长（游戏内小时）', 'Cooldown after the previous sally ends (in-game hours).'), min: 0, max: 168, discrete: false, step: 1, def: 24 },
+          { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: t('主动出击：连续可见小时数', 'Sally: sustained-visibility hours'), hint: t('敌方需在视野内连续存在 N 个游戏内小时才触发出击，避免一进检测圈就冲', 'The enemy must stay continuously visible for N in-game hours before a sally triggers, so a sally is not launched the instant a target enters the detection ring.'), min: 1, max: 48, discrete: true, def: 3 },
+          { key: 'TransferCapacityWeight', root: 'Thresholds', label: t('调拨：容量评分权重', 'Transfer: capacity scoring weight'), adv: true, hint: t('调拨评分中按源城可用容量加权，调大利好高容量源', 'Weight given to the source settlement available capacity in transfer scoring; higher favours high-capacity sources.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.05 },
+          { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: t('调拨：非首府互调惩罚', 'Transfer: branch-to-branch penalty'), adv: true, hint: t('两座非首府之间的调拨在评分中减去此值（值越大越避免）', 'This value is subtracted in scoring for a transfer between two branch settlements (higher = more strongly avoided).'), min: 0, max: 100, discrete: false, step: 1, def: 25 },
+          { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: t('调拨：首府出兵惩罚', 'Transfer: capital-as-source penalty'), adv: true, hint: t('从首府向非首府调兵时评分加上此值（值越大越保留首府兵力）', 'This value is added in scoring when transferring from the capital to a branch (higher = more strongly preserves capital strength).'), min: 0, max: 100, discrete: false, step: 1, def: 10 },
+          { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: t('升级：触发 Tier 比例', 'Upgrade: trigger low-tier ratio'), hint: t('T1+T2 兵占总兵比例 ≥ 此值时尝试升级', 'An upgrade is attempted when T1+T2 troops make up at least this fraction of the total.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
+          { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: t('升级：单次最低预算', 'Upgrade: minimum budget per call'), hint: t('实际预算 = max(招募预算基准 / 4, 此值)', 'Effective budget = max(recruitment budget baseline / 4, this value).'), min: 0, max: 50000, discrete: true, def: 500 },
+          { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: t('升级：单次最大升级数', 'Upgrade: max upgrades per call'), hint: t('单次升级最多升 N 个兵', 'At most N troops are upgraded per call.'), min: 1, max: 500, discrete: true, def: 20 },
           // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，不再可配置；
           // 移除 RecruiterSeedGold / SallySeedGold spec。
-          { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: '征兵：每轮候选村庄数', adv: true, hint: '征兵规划每轮评估的候选村庄数', min: 1, max: 50, discrete: true, def: 8 },
+          { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: t('征兵：每轮候选村庄数', 'Recruitment: candidate villages per round'), adv: true, hint: t('征兵规划每轮评估的候选村庄数', 'Number of candidate villages evaluated per recruitment-planning round.'), min: 1, max: 50, discrete: true, def: 8 },
           // MCMF solver — 供需图调度器内部参数，全部 adv
-          { key: 'McmfHardPenalty', root: 'Thresholds', label: 'MCMF：硬不匹配罚分', adv: true, hint: '兵种 role 不符或精确模板不在升级树上的硬罚分', min: 0, max: 100000, discrete: true, def: 1000 },
-          { key: 'McmfTierPenalty', root: 'Thresholds', label: 'MCMF：Tier 差距罚分', adv: true, hint: '每差 1 个 Tier 的匹配罚分', min: 0, max: 100000, discrete: true, def: 50 },
-          { key: 'McmfLeniency', root: 'Thresholds', label: 'MCMF：缺口宽容度', adv: true, hint: '缺口越大越降低匹配罚分；0 = 严格，1 = 最大宽容', min: 0, max: 1, discrete: false, step: 0.05, def: 0.8 },
-          { key: 'McmfUnmetCost', root: 'Thresholds', label: 'MCMF：未满足成本', adv: true, hint: '需求未满足的成本；低于极差路线时会选择暂不派遣', min: 0, max: 100000, discrete: true, def: 2000 },
-          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: 'MCMF：征兵队固定成本', adv: true, hint: '派出一支征兵队的固定成本', min: 0, max: 100000, discrete: true, def: 100 },
-          { key: 'McmfTransferOverhead', root: 'Thresholds', label: 'MCMF：调拨队固定成本', adv: true, hint: '派出一支调拨队的固定成本', min: 0, max: 100000, discrete: true, def: 50 },
+          { key: 'McmfHardPenalty', root: 'Thresholds', label: t('MCMF：硬不匹配罚分', 'MCMF: hard-mismatch penalty'), adv: true, hint: t('兵种 role 不符或精确模板不在升级树上的硬罚分', 'Hard penalty when a troop role mismatches or an exact-template troop is not on the upgrade tree.'), min: 0, max: 100000, discrete: true, def: 1000 },
+          { key: 'McmfTierPenalty', root: 'Thresholds', label: t('MCMF：Tier 差距罚分', 'MCMF: tier-gap penalty'), adv: true, hint: t('每差 1 个 Tier 的匹配罚分', 'Matching penalty per tier of difference.'), min: 0, max: 100000, discrete: true, def: 50 },
+          { key: 'McmfLeniency', root: 'Thresholds', label: t('MCMF：缺口宽容度', 'MCMF: shortfall leniency'), adv: true, hint: t('缺口越大越降低匹配罚分；0 = 严格，1 = 最大宽容', 'A larger shortfall lowers the matching penalty; 0 = strict, 1 = maximum leniency.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.8 },
+          { key: 'McmfUnmetCost', root: 'Thresholds', label: t('MCMF：未满足成本', 'MCMF: unmet-demand cost'), adv: true, hint: t('需求未满足的成本；低于极差路线时会选择暂不派遣', 'Cost of leaving demand unmet; when this is below a very poor route, the solver chooses not to dispatch for now.'), min: 0, max: 100000, discrete: true, def: 2000 },
+          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: t('MCMF：征兵队固定成本', 'MCMF: recruiter party overhead'), adv: true, hint: t('派出一支征兵队的固定成本', 'Fixed cost of dispatching one recruiter party.'), min: 0, max: 100000, discrete: true, def: 100 },
+          { key: 'McmfTransferOverhead', root: 'Thresholds', label: t('MCMF：调拨队固定成本', 'MCMF: transfer party overhead'), adv: true, hint: t('派出一支调拨队的固定成本', 'Fixed cost of dispatching one transfer party.'), min: 0, max: 100000, discrete: true, def: 50 },
           // ClanPatrol scheduler (H17) — 巡逻调度内部参数，全部 adv
-          { key: 'EtaBufferHours', root: 'ClanPatrol', label: '巡逻调度：ETA 缓冲', adv: true, hint: '站点预占时长 = 预计到达时间 + 此值', min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
-          { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: '巡逻调度：卡死超时', adv: true, hint: '单段路超过此时长视为卡死，强制重选下一站', min: 1, max: 720, discrete: false, step: 1, def: 12 },
-          { key: 'MinVisitGapHours', root: 'ClanPatrol', label: '巡逻调度：回访间隔', adv: true, hint: '同一定居点的最小回访间隔', min: 0, max: 720, discrete: false, step: 1, def: 4 },
+          { key: 'EtaBufferHours', root: 'ClanPatrol', label: t('巡逻调度：ETA 缓冲', 'Patrol scheduling: ETA buffer'), adv: true, hint: t('站点预占时长 = 预计到达时间 + 此值', 'Stop reservation duration = estimated time of arrival + this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
+          { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: t('巡逻调度：卡死超时', 'Patrol scheduling: stuck timeout'), adv: true, hint: t('单段路超过此时长视为卡死，强制重选下一站', 'A single leg exceeding this duration is treated as stuck, forcing reselection of the next stop.'), min: 1, max: 720, discrete: false, step: 1, def: 12 },
+          { key: 'MinVisitGapHours', root: 'ClanPatrol', label: t('巡逻调度：回访间隔', 'Patrol scheduling: revisit gap'), adv: true, hint: t('同一定居点的最小回访间隔', 'Minimum gap before revisiting the same settlement.'), min: 0, max: 720, discrete: false, step: 1, def: 4 },
           // ClanPatrol.AvoidRaidedVillages 是 bool，由 settingsGroups 的巡逻调拨二级菜单渲染。
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: '巡逻调度：距离评分权重', adv: true, hint: '站点评分中距离项的权重，值越大越偏好近处', min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
-          { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: '巡逻调度：支援 ETA 阈值', adv: true, hint: '巡逻队预计到达时间 ≤ 此值时转去支援主动出击', min: 0, max: 168, discrete: false, step: 0.5, def: 2.0 },
+          { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: t('巡逻调度：距离评分权重', 'Patrol scheduling: distance scoring weight'), adv: true, hint: t('站点评分中距离项的权重，值越大越偏好近处', 'Weight of the distance term in stop scoring; higher favours nearer stops.'), min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
+          { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: t('巡逻调度：支援 ETA 阈值', 'Patrol scheduling: support ETA threshold'), adv: true, hint: t('巡逻队预计到达时间 ≤ 此值时转去支援主动出击', 'A patrol party diverts to support a sally when its ETA is <= this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 2.0 },
           // ClanRecruiter scheduler (H17) — 征兵调度内部参数，全部 adv
-          { key: 'EtaBufferHours', root: 'ClanRecruiter', label: '征兵调度：ETA 缓冲', adv: true, hint: '站点预占时长 = 预计到达时间 + 此值', min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
-          { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: '征兵调度：回访间隔', adv: true, hint: '同一村庄的最小回访间隔', min: 0, max: 720, discrete: false, step: 1, def: 4 },
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: '征兵调度：距离评分权重', adv: true, hint: '站点评分中距离项的权重，值越大越偏好近处', min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
-        ],
+          { key: 'EtaBufferHours', root: 'ClanRecruiter', label: t('征兵调度：ETA 缓冲', 'Recruiter scheduling: ETA buffer'), adv: true, hint: t('站点预占时长 = 预计到达时间 + 此值', 'Stop reservation duration = estimated time of arrival + this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
+          { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: t('征兵调度：回访间隔', 'Recruiter scheduling: revisit gap'), adv: true, hint: t('同一村庄的最小回访间隔', 'Minimum gap before revisiting the same village.'), min: 0, max: 720, discrete: false, step: 1, def: 4 },
+          { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: t('征兵调度：距离评分权重', 'Recruiter scheduling: distance scoring weight'), adv: true, hint: t('站点评分中距离项的权重，值越大越偏好近处', 'Weight of the distance term in stop scoring; higher favours nearer stops.'), min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
+          ];
+        },
 
         // ============ computed ============
         // 完整分组定义。每个 group 的 specs 已按 showAdvanced 过滤掉 adv 旋钮。
         get settingsGroups() {
+          const t = this.tr.bind(this);
           const budget = this.budgetSpecs.map(s => ({ root: 'GlobalDefaults', ...s }));
           const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs];
           const spec = (root, key) => {
@@ -1199,8 +1196,8 @@
           return [
             {
               key: 'targets',
-              label: '目标预算',
-              hint: '驻军目标、预算和安全阈值；这些值决定每个领地想维持多少兵以及什么时候暂停招募。',
+              label: t('目标预算', 'Targets & budget'),
+              hint: t('驻军目标、预算和安全阈值；这些值决定每个领地想维持多少兵以及什么时候暂停招募。', 'Garrison targets, budgets and safety thresholds; these decide how many troops each holding should maintain and when to pause recruitment.'),
               specs: clean([
                 spec('GlobalDefaults', 'TargetTotalCount'),
                 spec('GlobalDefaults', 'MinimumDefenderRatio'),
@@ -1212,8 +1209,8 @@
             },
             {
               key: 'recruitment',
-              label: '招募',
-              hint: '外派征兵队、村庄候选搜索和回访节奏。',
+              label: t('招募', 'Recruitment'),
+              hint: t('外派征兵队、村庄候选搜索和回访节奏。', 'Dispatched recruiter parties, village candidate search and revisit pacing.'),
               specs: clean([
                 spec('', 'VillageCooldownHours'),
                 spec('Thresholds', 'RecruitmentMinDemandRatio'),
@@ -1228,13 +1225,13 @@
             },
             {
               key: 'patrol_transfer',
-              label: '巡逻调拨',
-              hint: '巡逻队创建、巡逻站点选择、出击支援和领地间兵力调拨。',
+              label: t('巡逻调拨', 'Patrol & transfer'),
+              hint: t('巡逻队创建、巡逻站点选择、出击支援和领地间兵力调拨。', 'Patrol party creation, patrol stop selection, sally support and inter-holding troop transfers.'),
               specs: clean([
                 spec('Thresholds', 'PatrolReserveAfterCreationRatio'),
                 spec('Thresholds', 'PatrolTroopBatchRatio'),
                 spec('Thresholds', 'PatrolMinDispatchSize'),
-                boolSpec('ClanPatrol', 'AvoidRaidedVillages', '巡逻：避开被劫掠村庄', '开启后，被劫掠中的村庄不会被选为普通巡逻访问点', true, false),
+                boolSpec('ClanPatrol', 'AvoidRaidedVillages', t('巡逻：避开被劫掠村庄', 'Patrol: avoid raided villages'), t('开启后，被劫掠中的村庄不会被选为普通巡逻访问点', 'When on, a village under raid is not chosen as a normal patrol visit stop.'), true, false),
                 spec('ClanPatrol', 'EtaBufferHours'),
                 spec('ClanPatrol', 'StuckTimeoutHours'),
                 spec('ClanPatrol', 'MinVisitGapHours'),
@@ -1251,8 +1248,8 @@
             },
             {
               key: 'sally',
-              label: '主动出击',
-              hint: '敌军搜索、出击规模、冷却和持续可见判定。',
+              label: t('主动出击', 'Sally forth'),
+              hint: t('敌军搜索、出击规模、冷却和持续可见判定。', 'Enemy search, sally size, cooldown and sustained-visibility checks.'),
               specs: clean([
                 spec('Thresholds', 'SallyDetectionRadius'),
                 spec('Thresholds', 'SallyCooldownHours'),
@@ -1264,9 +1261,9 @@
             },
             {
               key: 'mcmf',
-              label: 'MCMF 调度',
+              label: t('MCMF 调度', 'MCMF scheduling'),
               adv: true,
-              hint: '供需图调度器的匹配罚分、未满足成本和派队固定成本 —— 开发者级旋钮，普通玩家无需调整。',
+              hint: t('供需图调度器的匹配罚分、未满足成本和派队固定成本 —— 开发者级旋钮，普通玩家无需调整。', 'Supply-demand graph solver matching penalties, unmet-demand cost and per-party overhead — developer-level knobs, ordinary players need not adjust.'),
               specs: clean([
                 spec('Thresholds', 'McmfHardPenalty'),
                 spec('Thresholds', 'McmfTierPenalty'),
@@ -1278,8 +1275,8 @@
             },
             {
               key: 'lifecycle',
-              label: '生命周期升级',
-              hint: '队伍返航、俘虏上限、卡死保护、空闲解散和驻军升级。',
+              label: t('生命周期升级', 'Lifecycle & upgrade'),
+              hint: t('队伍返航、俘虏上限、卡死保护、空闲解散和驻军升级。', 'Party return, prisoner cap, stuck protection, idle disband and garrison upgrades.'),
               specs: clean([
                 spec('Thresholds', 'PartyReturnSizeRatio'),
                 spec('Thresholds', 'PartyReturnWoundedRatio'),
@@ -1323,7 +1320,7 @@
             }
           }
           return Array.from(map.entries())
-            .sort((a, b) => a[1].localeCompare(b[1], 'zh-Hans-CN'));
+            .sort((a, b) => a[1].localeCompare(b[1], this.lang === 'zh' ? 'zh-Hans-CN' : 'en'));
         },
         get troopById() {
           const map = {};
@@ -1371,7 +1368,7 @@
             this.token = sessionStorage.getItem('st-token') || '';
           }
           if (!this.token) {
-            this.log('缺少 token。请从游戏内「打开网页控制面板」入口启动。', 'err');
+            this.log(this.tr('缺少 token。请从游戏内「打开网页控制面板」入口启动。', 'Missing token. Launch the panel from the in-game "Open web control panel" menu entry.'), 'err');
             return;
           }
           // P0-1 修复：初始化只做 GET 拉取，不触发 POST /api/reload。
@@ -1400,13 +1397,15 @@
         // 后端 P0-1 修复已保证：磁盘内容与 in-memory 相同时 reload 不广播 OnConfigChanged。
         async reloadAll() {
           // 重读会用磁盘内容整体覆盖当前面板 —— 有未保存改动时先确认，避免静默丢失。
-          if (this.dirty && !confirm('当前有未保存的改动。重读磁盘会丢弃这些改动，确定继续？')) return;
+          if (this.dirty && !confirm(this.tr('当前有未保存的改动。重读磁盘会丢弃这些改动，确定继续？', 'You have unsaved changes. Reloading from disk will discard them. Continue?'))) return;
           this.warning = '';
           // 告知后端从磁盘 reload（POST /api/reload）—— 玩家手编 global.json 后才需要。
           // soft-fail：reload 失败仍继续刷新各面板，banner 提示而非 hard error。
           const r = await this.http('POST', '/api/reload');
           if (!r.ok) {
-            this.warning = `后端 reload 失败 HTTP ${r.status}: ${r.body?.message || '?'}（继续刷新面板）`;
+            this.warning = this.tr(
+              `后端 reload 失败 HTTP ${r.status}: ${r.body?.message || '?'}（继续刷新面板）`,
+              `Backend reload failed, HTTP ${r.status}: ${r.body?.message || '?'} (panel refresh continues).`);
           }
           await Promise.all([
             this.fetchConfig(), this.fetchStatus(), this.fetchTroops(),
@@ -1444,12 +1443,14 @@
             this.config = r.body;
             // 刚从后端拉到的就是当前盘上状态 —— 重置未保存标记。
             this.dirty = false;
-            this.log('配置已读取', 'ok');
+            this.log(this.tr('配置已读取', 'Configuration loaded.'), 'ok');
           } else {
-            this.log(`读取失败 ${r.status}: ${r.body?.message || '?'}`, 'err');
+            this.log(this.tr(
+              `读取失败 ${r.status}: ${r.body?.message || '?'}`,
+              `Load failed ${r.status}: ${r.body?.message || '?'}`), 'err');
           }
         },
-        async fetchStatus()      { const r = await this.http('GET', '/api/status');             this.status = r.ok ? r.body : null; },
+        async fetchStatus()      { const r = await this.http('GET', '/api/status');             this.status = r.ok ? r.body : null; this.applyLang(); },
         async fetchTroops()      { const r = await this.http('GET', '/api/troops');             this.troops = r.ok ? (r.body.troops || []) : []; },
         async fetchSettlements() { const r = await this.http('GET', '/api/settlements');        this.settlements = r.ok ? (r.body.settlements || []) : []; },
 
@@ -1462,10 +1463,12 @@
               this.finance = r.body;
               this.financeError = '';
             } else {
-              this.financeError = `加载失败 HTTP ${r.status}: ${r.body?.message || '?'}`;
+              this.financeError = this.tr(
+                `加载失败 HTTP ${r.status}: ${r.body?.message || '?'}`,
+                `Load failed, HTTP ${r.status}: ${r.body?.message || '?'}`);
             }
           } catch (e) {
-            this.financeError = '加载失败：' + (e?.message || String(e));
+            this.financeError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
           }
         },
 
@@ -1477,11 +1480,15 @@
           this.saving = false;
           if (r.ok) {
             this.dirty = false;
-            this.showSuccess('已保存到游戏。征兵队会立即按新配置重新规划；其他队伍在下一次行动决策时读取新配置。');
-            this.log('配置已保存到游戏', 'ok');
+            this.showSuccess(this.tr(
+              '已保存到游戏。征兵队会立即按新配置重新规划；其他队伍在下一次行动决策时读取新配置。',
+              'Saved to the game. Recruiter parties replan immediately under the new config; other parties pick it up at their next action decision.'));
+            this.log(this.tr('配置已保存到游戏', 'Configuration saved to the game.'), 'ok');
             await this.fetchStatus();
           } else {
-            this.warning = `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`;
+            this.warning = this.tr(
+              `保存失败 ${r.status}: ${r.body?.message || '(no message)'}`,
+              `Save failed ${r.status}: ${r.body?.message || '(no message)'}`);
             this.log(this.warning, 'err');
           }
         },
@@ -1682,10 +1689,10 @@
           }
         },
         clearTroops() {
-          if (!confirm('清空全部已选兵种？')) return;
+          if (!confirm(this.tr('清空全部已选兵种？', 'Clear all selected troops?'))) return;
           this.config.GlobalDefaults.ExactTroopTemplate = {};
           this.markDirty();
-          this.log('兵员模板已清空（未保存）', 'ok');
+          this.log(this.tr('兵员模板已清空（未保存）', 'Troop template cleared (unsaved).'), 'ok');
         },
         // 修浮点漂移：通过调整除 lockedKey 外占比最大的条目，让 Σ 精确等于 1
         _snapTroopSumTo1(lockedKey) {
@@ -1707,12 +1714,21 @@
         },
 
         // ============ helpers ============
+        // i18n: 双语字符串就地切换。zh = 简体中文,en = English。
+        tr(zh, en) { return this.lang === 'zh' ? zh : en; },
+        // 从 /api/status 的 uiLang 确定面板语言(以游戏语言为准),并刷新 <title> / <html lang>。
+        applyLang() {
+          const ul = this.status && this.status.uiLang;
+          if (ul === 'zh' || ul === 'en') this.lang = ul;
+          document.documentElement.lang = this.lang === 'zh' ? 'zh-CN' : 'en';
+          document.title = this.tr('Sovereign Towns · 控制面板', 'Sovereign Towns · Control Panel');
+        },
         ratioSumOk(sum) { return sum >= 0.9 && sum <= 1.1; },
         typeGlyph(type) {
           return ({ cavalry: '♞', horsearcher: '↝', infantry: '⚔', ranged: '⤧' })[type] || '·';
         },
         typeLabel(type) {
-          return ({ cavalry: '骑兵', horsearcher: '骑射', infantry: '步兵', ranged: '远程' })[type] || type || '';
+          return ({ cavalry: this.tr('骑兵', 'Cavalry'), horsearcher: this.tr('骑射', 'Horse archer'), infantry: this.tr('步兵', 'Infantry'), ranged: this.tr('远程', 'Ranged') })[type] || type || '';
         },
         cultureLabel(stringId) {
           // Look up the localized name from any dumped troop with that culture id;

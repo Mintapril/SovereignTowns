@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Templates;
+using TaleWorlds.Localization;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -261,6 +262,7 @@ internal static class WebConfigEndpoints
                 features = cfg.EnabledFeatures,
                 branchTargetPower = cfg.BranchDefaults?.TargetPower ?? 0,
                 exactTroopTemplateCount = cfg.GlobalDefaults?.ExactTroopTemplate?.Count ?? 0,
+                uiLang = GetUiLang(),
             };
             WebConfigServer.WriteJson(ctx, 200, status);
         }
@@ -287,6 +289,21 @@ internal static class WebConfigEndpoints
     }
 
     // ---------------- helpers ----------------
+
+    private static string? _uiLang;
+
+    /// <summary>
+    /// 当前游戏 UI 语言探针,供 WebUI 决定渲染语言。借 mod 自己的 {=key} 本地化系统判定:
+    /// 游戏语言为简体中文时 CNs 表把 ST_WebUiLang 解析为 "zh",其他语言回退到键内默认值 "en"。
+    /// 不依赖任何 vanilla 语言 API。语言一局内不变,解析一次后缓存。
+    /// </summary>
+    private static string GetUiLang()
+    {
+        if (_uiLang != null) return _uiLang;
+        try { _uiLang = new TextObject("{=ST_WebUiLang}en").ToString(); }
+        catch { _uiLang = "en"; }
+        return _uiLang;
+    }
 
     private static string ReadBody(HttpListenerRequest req)
     {

@@ -4,6 +4,9 @@
     <tag language="简体中文" />
   </tags>
   <strings>
+    <!-- WebUI 语言探针。由 /api/status 解析,使网页面板按游戏语言渲染:简体中文返回 "zh"。 -->
+    <string id="ST_WebUiLang" text="zh" />
+
     <!-- 队伍显示名。{SETTLEMENT} / {SOURCE} / {DESTINATION} 由 C# 注入。 -->
     <string id="ST_PatrolPartyName" text="巡逻队 - {SETTLEMENT}" />
     <string id="ST_RecruiterPartyName" text="征兵队 - {SETTLEMENT}" />

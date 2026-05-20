@@ -4,6 +4,10 @@
     <tag language="English" />
   </tags>
   <strings>
+    <!-- WebUI language probe. Resolved by /api/status so the web panel renders in the
+         game's language: this English copy returns "en"; the CNs copy returns "zh". -->
+    <string id="ST_WebUiLang" text="en" />
+
     <!-- Party display names. {SETTLEMENT} / {SOURCE} / {DESTINATION} are filled in C#. -->
     <string id="ST_PatrolPartyName" text="Patrol — {SETTLEMENT}" />
     <string id="ST_RecruiterPartyName" text="Recruiter — {SETTLEMENT}" />
