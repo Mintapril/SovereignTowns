@@ -4,16 +4,181 @@
     <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.92">
       <Children>
 
-        <!-- 居中标题。RichTextWidget 用法见 Native EscapeMenu.xml:48 -->
-        <RichTextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren" HorizontalAlignment="Center" VerticalAlignment="Center" Text="SOVEREIGN TOWNS" />
-
-        <!-- 右上角关闭按钮，Command.Click 绑定 VM 的 ExecuteClose。
-             ButtonWidget + Command.Click 用法见 Native EscapeMenu.xml:49 / ButtonCancel.xml:2 -->
-        <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteClose" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="48" SuggestedHeight="48" HorizontalAlignment="Right" VerticalAlignment="Top" MarginTop="20" MarginRight="20">
+        <!-- 居中主容器：垂直 ListPanel，顶部对齐，留边距 -->
+        <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                   SuggestedWidth="1100"
+                   HorizontalAlignment="Center" VerticalAlignment="Top"
+                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                   MarginTop="30" MarginBottom="30">
           <Children>
-            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" HorizontalAlignment="Center" VerticalAlignment="Center" Text="X" />
+
+            <!-- 4. 正文占位（Task 7 会在此插入 Tab 面板） -->
+            <Widget Id="BodyPlaceholder"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" />
+
+            <!-- 3. 成功横幅（绿底） -->
+            <Widget IsVisible="@HasSuccess"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                    Sprite="BlankWhiteSquare_9" Color="#1A5C1AFF" AlphaFactor="0.95"
+                    MarginBottom="4">
+              <Children>
+                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                           VerticalAlignment="Center">
+                  <Children>
+                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                Text="@Success"
+                                MarginLeft="10" MarginTop="6" MarginBottom="6" />
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteDismissSuccess"
+                                  WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                  SuggestedWidth="32" SuggestedHeight="32"
+                                  VerticalAlignment="Center" MarginRight="6">
+                      <Children>
+                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Text="X" />
+                      </Children>
+                    </ButtonWidget>
+                  </Children>
+                </ListPanel>
+              </Children>
+            </Widget>
+
+            <!-- 2. 警告横幅（红底） -->
+            <Widget IsVisible="@HasWarning"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                    Sprite="BlankWhiteSquare_9" Color="#5C1A1AFF" AlphaFactor="0.95"
+                    MarginBottom="4">
+              <Children>
+                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                           VerticalAlignment="Center">
+                  <Children>
+                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                Text="@Warning"
+                                MarginLeft="10" MarginTop="6" MarginBottom="6" />
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteDismissWarning"
+                                  WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                  SuggestedWidth="32" SuggestedHeight="32"
+                                  VerticalAlignment="Center" MarginRight="6">
+                      <Children>
+                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Text="X" />
+                      </Children>
+                    </ButtonWidget>
+                  </Children>
+                </ListPanel>
+              </Children>
+            </Widget>
+
+            <!-- 1b. 金色分割线 -->
+            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="2"
+                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="1.0"
+                    MarginBottom="6" />
+
+            <!-- 1a. 表头（水平 ListPanel）：左侧标题 + 右侧控件 -->
+            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                       StackLayout.LayoutMethod="HorizontalLeftToRight"
+                       VerticalAlignment="Center"
+                       MarginTop="10" MarginBottom="6">
+              <Children>
+
+                <!-- 左侧：⚜ 图标 + 主标题 + 副标题 -->
+                <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                           VerticalAlignment="Center">
+                  <Children>
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="⚜"
+                                VerticalAlignment="Center"
+                                MarginRight="8" />
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@TitleText"
+                                VerticalAlignment="Center"
+                                MarginRight="10" />
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@SubtitleText"
+                                VerticalAlignment="Center" />
+                  </Children>
+                </ListPanel>
+
+                <!-- 间隔填充：把右侧控件推到右边 -->
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                        SuggestedHeight="1" />
+
+                <!-- 右侧：首府药丸 + 脏状态药丸 + 重读按钮 + 保存按钮 + 关闭按钮 -->
+                <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                           VerticalAlignment="Center">
+                  <Children>
+
+                    <!-- 药丸1：首府名称 -->
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@CapitalName"
+                                VerticalAlignment="Center"
+                                MarginRight="12" />
+
+                    <!-- 药丸2：脏状态 -->
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@DirtyLabel"
+                                VerticalAlignment="Center"
+                                MarginRight="12" />
+
+                    <!-- 重读按钮 -->
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteReload"
+                                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="36"
+                                  VerticalAlignment="Center"
+                                  MarginRight="8">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Text="@ReloadLabel"
+                                    MarginLeft="12" MarginRight="12" />
+                      </Children>
+                    </ButtonWidget>
+
+                    <!-- 保存按钮 -->
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSave"
+                                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="36"
+                                  VerticalAlignment="Center"
+                                  MarginRight="8">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Text="@SaveLabel"
+                                    MarginLeft="12" MarginRight="12" />
+                      </Children>
+                    </ButtonWidget>
+
+                    <!-- 关闭按钮（右上角 X）-->
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteClose"
+                                  WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                  SuggestedWidth="36" SuggestedHeight="36"
+                                  VerticalAlignment="Center">
+                      <Children>
+                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Text="X" />
+                      </Children>
+                    </ButtonWidget>
+
+                  </Children>
+                </ListPanel>
+
+              </Children>
+            </ListPanel>
+
           </Children>
-        </ButtonWidget>
+        </ListPanel>
 
       </Children>
     </Widget>
