@@ -1231,7 +1231,7 @@
                                         <!-- Empty-list hint -->
                                         <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                     Text="@EmptyListText"
-                                                    IsVisible="@IsExactMode"
+                                                    IsVisible="@IsEmpty"
                                                     MarginTop="4" MarginBottom="4" />
 
                                         <!-- Selected troop list (scrollable) -->

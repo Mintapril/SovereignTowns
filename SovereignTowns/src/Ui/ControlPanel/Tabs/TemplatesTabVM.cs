@@ -128,11 +128,13 @@ public sealed class TemplatesTabVM : ViewModel
                 _selectedCount = value;
                 OnPropertyChanged(nameof(SelectedCount));
                 OnPropertyChanged(nameof(HasSelection));
+                OnPropertyChanged(nameof(IsEmpty));
             }
         }
     }
 
     [DataSourceProperty] public bool HasSelection => _selectedCount > 0;
+    [DataSourceProperty] public bool IsEmpty => _selectedCount == 0;
 
     private string _exactTroopTotalText = "0";
     [DataSourceProperty]
