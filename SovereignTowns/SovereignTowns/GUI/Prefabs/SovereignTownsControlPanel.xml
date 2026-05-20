@@ -348,9 +348,168 @@
                     <Widget IsVisible="@IsTab1Active"
                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                       <Children>
-                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                    Text="@Tab1Label"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                                   DataSource="{StrategyTab}">
+                          <Children>
+
+                            <!-- Scrollable rows region (occupies remaining space) -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                              <Children>
+
+                                <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                 InnerPanel="StratClipRect\StratInnerPanel"
+                                                 ClipRect="StratClipRect"
+                                                 VerticalScrollbar="..\StratScrollbarHolder\StratScrollbar"
+                                                 AutoHideScrollBars="true">
+                                  <Children>
+                                    <Widget Id="StratClipRect"
+                                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                            ClipContents="true">
+                                      <Children>
+                                        <ListPanel Id="StratInnerPanel"
+                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   VerticalAlignment="Top"
+                                                   StackLayout.LayoutMethod="VerticalBottomToTop">
+                                          <Children>
+                                            <!-- Toggle rows for the active group -->
+                                            <ListPanel DataSource="{ActiveToggles}"
+                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
+                                              <ItemTemplate>
+                                                <STCPToggleRow />
+                                              </ItemTemplate>
+                                            </ListPanel>
+                                            <!-- Slider rows for the active group -->
+                                            <ListPanel DataSource="{ActiveSliders}"
+                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
+                                              <ItemTemplate>
+                                                <STCPSliderRow />
+                                              </ItemTemplate>
+                                            </ListPanel>
+                                          </Children>
+                                        </ListPanel>
+                                      </Children>
+                                    </Widget>
+                                  </Children>
+                                </ScrollablePanel>
+
+                                <Widget Id="StratScrollbarHolder"
+                                        WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                        HorizontalAlignment="Right">
+                                  <Children>
+                                    <ScrollbarWidget Id="StratScrollbar"
+                                                     WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                     SuggestedWidth="10"
+                                                     AlignmentAxis="Vertical"
+                                                     Handle="StratScrollbarHandle"
+                                                     MinValue="0" MaxValue="100">
+                                      <Children>
+                                        <Widget Id="StratScrollbarHandle"
+                                                WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                SuggestedWidth="10" SuggestedHeight="20"
+                                                HorizontalAlignment="Center"
+                                                Sprite="BlankWhiteSquare_9"
+                                                Color="#B8960CFF" />
+                                      </Children>
+                                    </ScrollbarWidget>
+                                  </Children>
+                                </Widget>
+
+                              </Children>
+                            </Widget>
+
+                            <!-- Active group header: label + hint + reset-this-group button -->
+                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                       StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                       VerticalAlignment="Center"
+                                       MarginTop="6" MarginBottom="6">
+                              <Children>
+                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                                           VerticalAlignment="Center">
+                                  <Children>
+                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                Text="@ActiveGroupLabel"
+                                                VerticalAlignment="Center" />
+                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                Text="@ActiveGroupHint"
+                                                VerticalAlignment="Center"
+                                                MarginTop="2" />
+                                  </Children>
+                                </ListPanel>
+                                <ButtonWidget DoNotPassEventsToChildren="true"
+                                              Command.Click="ExecuteResetActiveGroup"
+                                              WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                              SuggestedHeight="32"
+                                              VerticalAlignment="Center">
+                                  <Children>
+                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Text="@ResetGroupLabel"
+                                                MarginLeft="12" MarginRight="12" />
+                                  </Children>
+                                </ButtonWidget>
+                              </Children>
+                            </ListPanel>
+
+                            <!-- Group-filter chip row + advanced-params toggle -->
+                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                       StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                       VerticalAlignment="Center"
+                                       MarginTop="6" MarginBottom="6">
+                              <Children>
+                                <ListPanel DataSource="{VisibleGroups}"
+                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                           StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                  <ItemTemplate>
+                                    <STCPChip />
+                                  </ItemTemplate>
+                                </ListPanel>
+                                <!-- Advanced toggle: Command.Click → ExecuteToggleAdvanced (avoids two-way IsSelected loops) -->
+                                <ButtonWidget DoNotPassEventsToChildren="true"
+                                              ButtonType="Toggle"
+                                              IsSelected="@ShowAdvanced"
+                                              Command.Click="ExecuteToggleAdvanced"
+                                              WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                              SuggestedHeight="30"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Right"
+                                              Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.18">
+                                  <Children>
+                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Text="@AdvancedToggleLabel"
+                                                MarginLeft="12" MarginRight="12" />
+                                  </Children>
+                                </ButtonWidget>
+                              </Children>
+                            </ListPanel>
+
+                            <!-- Thin gold divider -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                    SuggestedHeight="1"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    MarginBottom="6" MarginTop="4" />
+
+                            <!-- Intro2 -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro2"
+                                        MarginBottom="4" />
+
+                            <!-- Intro1 -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro1"
+                                        MarginBottom="4" />
+
+                            <!-- Tab title -->
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="@Title"
+                                        MarginBottom="6" />
+
+                          </Children>
+                        </ListPanel>
                       </Children>
                     </Widget>
 

@@ -22,12 +22,20 @@ public sealed class ControlPanelVM : ViewModel
 
     // ── Tab VMs ──
     private FeaturesTabVM _featuresTab;
+    private StrategyTabVM _strategyTab;
 
     [DataSourceProperty]
     public FeaturesTabVM FeaturesTab
     {
         get => _featuresTab;
         private set { _featuresTab = value; OnPropertyChanged(nameof(FeaturesTab)); }
+    }
+
+    [DataSourceProperty]
+    public StrategyTabVM StrategyTab
+    {
+        get => _strategyTab;
+        private set { _strategyTab = value; OnPropertyChanged(nameof(StrategyTab)); }
     }
 
     // ── 表头状态 ──
@@ -213,7 +221,10 @@ public sealed class ControlPanelVM : ViewModel
         }
 
         if (_config != null)
+        {
             FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
+            StrategyTab = new StrategyTabVM(_config, MarkDirty);
+        }
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
@@ -312,7 +323,10 @@ public sealed class ControlPanelVM : ViewModel
         AddLog(ControlPanelLoc.Tr("已从磁盘重读配置", "Configuration reloaded from disk"), LogKind.Ok);
         // 重建各 TabVM — 旧 VM 绑定已废弃的 _config，必须全部重建。
         if (_config != null)
+        {
             FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
+            StrategyTab = new StrategyTabVM(_config, MarkDirty);
+        }
     }
 
     /// <summary>关闭警告横幅。</summary>

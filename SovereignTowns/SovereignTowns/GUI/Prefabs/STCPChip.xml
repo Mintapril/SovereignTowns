@@ -1,0 +1,35 @@
+<Prefab>
+  <Window>
+    <!-- A small group-filter chip.
+         Binding contract (SettingsGroupVM here; Task 12's ChipVM must also satisfy it):
+         Label (string) / IsActive (bool) / IsDimmed (bool) / ExecuteClick (command).
+         IsDimmed is always false for SettingsGroupVM, so no dim styling here —
+         Task 12's ChipVM revisits this. -->
+    <ButtonWidget DoNotPassEventsToChildren="true"
+                  Command.Click="ExecuteClick"
+                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                  SuggestedHeight="30"
+                  VerticalAlignment="Center"
+                  MarginRight="6" MarginBottom="4"
+                  Sprite="BlankWhiteSquare_9"
+                  Color="#B8960CFF"
+                  AlphaFactor="0.18">
+      <Children>
+
+        <!-- Active highlight: a gold underline visible when this group is selected -->
+        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                SuggestedHeight="3"
+                VerticalAlignment="Bottom"
+                Sprite="BlankWhiteSquare_9" Color="#E6C44CFF"
+                IsVisible="@IsActive" />
+
+        <!-- Chip label -->
+        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Text="@Label"
+                    MarginLeft="12" MarginRight="12" />
+
+      </Children>
+    </ButtonWidget>
+  </Window>
+</Prefab>

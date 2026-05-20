@@ -1,0 +1,82 @@
+<Prefab>
+  <Window>
+    <!-- One numeric strategy-parameter row: [label + hint + reset] | [slider] | [number input].
+         Bound to SliderRowVM: Label / Hint / IsAdvanced / ShowReset / ResetLabel / Value / Min / Max / IsDiscrete / ValueText.
+         SliderWidget contract from Native Standard.Slider.Float.xml + Options/SPOptions/OptionItem.xml. -->
+    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+               StackLayout.LayoutMethod="HorizontalLeftToRight"
+               VerticalAlignment="Center"
+               MarginBottom="6" MarginTop="2">
+      <Children>
+
+        <!-- Left column: label + hint + reset link -->
+        <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                   SuggestedWidth="320"
+                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                   VerticalAlignment="Center"
+                   MarginRight="12">
+          <Children>
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                        Text="@Label"
+                        VerticalAlignment="Center" />
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                        Text="@Hint"
+                        VerticalAlignment="Center"
+                        MarginTop="2" />
+
+            <!-- Reset link: visible only when value differs from factory default -->
+            <ButtonWidget DoNotPassEventsToChildren="true"
+                          Command.Click="ExecuteReset"
+                          IsVisible="@ShowReset"
+                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                          SuggestedHeight="24"
+                          MarginTop="2">
+              <Children>
+                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                            HorizontalAlignment="Left" VerticalAlignment="Center"
+                            Text="@ResetLabel" />
+              </Children>
+            </ButtonWidget>
+          </Children>
+        </ListPanel>
+
+        <!-- Middle: slider (float-valued; IsDiscrete bound for int specs) -->
+        <SliderWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                      SuggestedHeight="24"
+                      VerticalAlignment="Center"
+                      MarginRight="10"
+                      DoNotUpdateHandleSize="true"
+                      Filler="Filler" Handle="SliderHandle"
+                      IsDiscrete="@IsDiscrete"
+                      MinValueFloat="@Min" MaxValueFloat="@Max" ValueFloat="@Value">
+          <Children>
+            <Widget DoNotAcceptEvents="true"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6"
+                    VerticalAlignment="Center"
+                    Sprite="BlankWhiteSquare_9" Color="#3A2E12FF" />
+            <Widget Id="Filler" DoNotAcceptEvents="true"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6"
+                    VerticalAlignment="Center"
+                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+            <ImageWidget Id="SliderHandle"
+                         WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                         SuggestedWidth="14" SuggestedHeight="20"
+                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                         Sprite="BlankWhiteSquare_9" Color="#E6C44CFF" />
+          </Children>
+        </SliderWidget>
+
+        <!-- Right: numeric text input -->
+        <EditableTextWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                            SuggestedWidth="72" SuggestedHeight="28"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            Sprite="BlankWhiteSquare_9" Color="#1A1408FF"
+                            Text="@ValueText" />
+
+      </Children>
+    </ListPanel>
+  </Window>
+</Prefab>
