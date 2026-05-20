@@ -27,6 +27,10 @@ public sealed class ControlPanelVM : ViewModel
     private string _warning = "";
     private string _success = "";
 
+    // ── Tab 选择 ──
+    private int _activeTab;
+    private readonly MBBindingList<LogEntryVM> _logEntries = new MBBindingList<LogEntryVM>();
+
     // ── 公开工作副本引用（后续 Tab VM 用）──
     public GlobalConfig Config => _config;
 
@@ -113,6 +117,45 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public bool HasWarning => !string.IsNullOrEmpty(_warning);
     [DataSourceProperty] public bool HasSuccess => !string.IsNullOrEmpty(_success);
 
+    // ── Tab 状态 ──
+
+    [DataSourceProperty] public MBBindingList<LogEntryVM> LogEntries => _logEntries;
+
+    [DataSourceProperty]
+    public int ActiveTab
+    {
+        get => _activeTab;
+        set
+        {
+            if (_activeTab != value)
+            {
+                _activeTab = value;
+                OnPropertyChanged(nameof(ActiveTab));
+                RefreshTabVisibility();
+            }
+        }
+    }
+
+    [DataSourceProperty] public bool IsTab0Active => _activeTab == 0;
+    [DataSourceProperty] public bool IsTab1Active => _activeTab == 1;
+    [DataSourceProperty] public bool IsTab2Active => _activeTab == 2;
+    [DataSourceProperty] public bool IsTab3Active => _activeTab == 3;
+    [DataSourceProperty] public bool IsTab4Active => _activeTab == 4;
+    [DataSourceProperty] public bool IsTab5Active => _activeTab == 5;
+
+    [DataSourceProperty] public string Tab0Label => ControlPanelLoc.Tr("功能开关", "Features");
+    [DataSourceProperty] public string Tab1Label => ControlPanelLoc.Tr("策略参数", "Strategy");
+    [DataSourceProperty] public string Tab2Label => ControlPanelLoc.Tr("兵种编制", "Composition");
+    [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("兵员模板", "Templates");
+    [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Branches");
+    [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("财务", "Finance");
+    [DataSourceProperty] public string ActivityLogLabel => ControlPanelLoc.Tr("活动日志", "Activity log");
+
+    private void RefreshTabVisibility()
+    {
+        for (int i = 0; i < 6; i++) OnPropertyChanged($"IsTab{i}Active");
+    }
+
     [DataSourceProperty]
     public string SaveLabel =>
         _isSaving ? ControlPanelLoc.Tr("保存中…", "Saving…")
@@ -158,6 +201,8 @@ public sealed class ControlPanelVM : ViewModel
             Logger.Error("ControlPanelVM: capital name lookup failed", ex);
             _capitalName = ControlPanelLoc.Tr("首府: 无", "Capital: none");
         }
+
+        AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
 
     // ── 公共辅助 ──
@@ -165,7 +210,20 @@ public sealed class ControlPanelVM : ViewModel
     /// <summary>标记工作副本已被修改（由子 VM 在任何字段变更后调用）。</summary>
     public void MarkDirty() { IsDirty = true; }
 
+    public void AddLog(string message, LogKind kind = LogKind.Info)
+    {
+        _logEntries.Insert(0, new LogEntryVM(message, kind));
+        while (_logEntries.Count > 20) _logEntries.RemoveAt(_logEntries.Count - 1);
+    }
+
     // ── 命令 ──
+
+    public void ExecuteSelectTab0() => ActiveTab = 0;
+    public void ExecuteSelectTab1() => ActiveTab = 1;
+    public void ExecuteSelectTab2() => ActiveTab = 2;
+    public void ExecuteSelectTab3() => ActiveTab = 3;
+    public void ExecuteSelectTab4() => ActiveTab = 4;
+    public void ExecuteSelectTab5() => ActiveTab = 5;
 
     /// <summary>关闭按钮 / ESC 调用。</summary>
     public void ExecuteClose()
@@ -185,10 +243,12 @@ public sealed class ControlPanelVM : ViewModel
         {
             IsDirty = false;
             Success = ControlPanelLoc.Tr("已保存到游戏。", "Saved to the game.");
+            AddLog(ControlPanelLoc.Tr("配置已保存", "Configuration saved"), LogKind.Ok);
         }
         else
         {
             Warning = ControlPanelLoc.Tr("保存失败：", "Save failed: ") + reason;
+            AddLog(Warning, LogKind.Err);
         }
     }
 
@@ -236,6 +296,7 @@ public sealed class ControlPanelVM : ViewModel
         IsDirty = false;
         Warning = "";
         Success = ControlPanelLoc.Tr("已从磁盘重读配置。", "Configuration reloaded from disk.");
+        AddLog(ControlPanelLoc.Tr("已从磁盘重读配置", "Configuration reloaded from disk"), LogKind.Ok);
         // 注意：后续任务会在此处重建各 TabVM（本任务暂无 tab）。
     }
 

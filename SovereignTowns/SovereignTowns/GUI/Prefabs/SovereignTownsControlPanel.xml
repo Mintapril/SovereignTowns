@@ -12,9 +12,315 @@
                    MarginTop="30" MarginBottom="30">
           <Children>
 
-            <!-- 4. 正文占位（Task 7 会在此插入 Tab 面板） -->
-            <Widget Id="BodyPlaceholder"
-                    WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" />
+            <!-- 4. 正文：左侧 Tab 导轨 + 右侧内容区 -->
+            <ListPanel Id="Body"
+                       WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+              <Children>
+
+                <!-- ── 左列：Tab 按钮 + 活动日志 ── -->
+                <ListPanel Id="LeftRail"
+                           WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                           SuggestedWidth="180"
+                           StackLayout.LayoutMethod="VerticalBottomToTop"
+                           MarginRight="8">
+                  <Children>
+
+                    <!-- 活动日志区（占余下空间） -->
+                    <Widget Id="ActivityLogArea"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                            MarginTop="4">
+                      <Children>
+
+                        <!-- 日志标题 -->
+                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                    Text="@ActivityLogLabel"
+                                    VerticalAlignment="Top"
+                                    MarginBottom="4" />
+
+                        <!-- 可滚动日志列表 -->
+                        <Widget Id="LogScrollContainer"
+                                WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                MarginTop="20">
+                          <Children>
+
+                            <ScrollablePanel Id="LogScrollPanel"
+                                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                             InnerPanel="LogClipRect\LogInnerPanel"
+                                             ClipRect="LogClipRect"
+                                             VerticalScrollbar="..\LogScrollbarHolder\LogScrollbar"
+                                             AutoHideScrollBars="true">
+                              <Children>
+                                <Widget Id="LogClipRect"
+                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                        ClipContents="true">
+                                  <Children>
+                                    <ListPanel Id="LogInnerPanel"
+                                               DataSource="{LogEntries}"
+                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                               VerticalAlignment="Top"
+                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                      <ItemTemplate>
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   MarginBottom="2">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                        Text="@Timestamp"
+                                                        VerticalAlignment="Center"
+                                                        MarginRight="4" />
+                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        Text="@Message"
+                                                        VerticalAlignment="Center" />
+                                          </Children>
+                                        </ListPanel>
+                                      </ItemTemplate>
+                                    </ListPanel>
+                                  </Children>
+                                </Widget>
+                              </Children>
+                            </ScrollablePanel>
+
+                            <Widget Id="LogScrollbarHolder"
+                                    WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                    HorizontalAlignment="Right">
+                              <Children>
+                                <ScrollbarWidget Id="LogScrollbar"
+                                                 WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                 SuggestedWidth="10"
+                                                 AlignmentAxis="Vertical"
+                                                 Handle="LogScrollbarHandle"
+                                                 MinValue="0" MaxValue="100">
+                                  <Children>
+                                    <Widget Id="LogScrollbarHandle"
+                                            WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                            SuggestedWidth="10" SuggestedHeight="20"
+                                            HorizontalAlignment="Center"
+                                            Sprite="BlankWhiteSquare_9"
+                                            Color="#B8960CFF" />
+                                  </Children>
+                                </ScrollbarWidget>
+                              </Children>
+                            </Widget>
+
+                          </Children>
+                        </Widget>
+
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 按钮（VerticalBottomToTop → 01 在顶部） -->
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab5"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab5Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="06 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab5Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab4"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab4Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="05 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab4Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab3"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab3Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="04 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab3Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab2"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab2Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="03 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab2Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab1"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab1Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="02 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab1Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                  Command.Click="ExecuteSelectTab0"
+                                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                  SuggestedHeight="40"
+                                  MarginBottom="2">
+                      <Children>
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                   VerticalAlignment="Center">
+                          <Children>
+                            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                    SuggestedWidth="4"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF"
+                                    IsVisible="@IsTab0Active" />
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="01 " VerticalAlignment="Center" MarginLeft="6" />
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Tab0Label" VerticalAlignment="Center" />
+                          </Children>
+                        </ListPanel>
+                      </Children>
+                    </ButtonWidget>
+
+                  </Children>
+                </ListPanel>
+
+                <!-- ── 右列：6 个 Tab 内容区（按 IsTabNActive 切换可见） ── -->
+                <Widget Id="ContentArea"
+                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                  <Children>
+
+                    <!-- Tab 0: 功能开关 / Features -->
+                    <Widget IsVisible="@IsTab0Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab0Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 1: 策略参数 / Strategy -->
+                    <Widget IsVisible="@IsTab1Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab1Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 2: 兵种编制 / Composition -->
+                    <Widget IsVisible="@IsTab2Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab2Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 3: 兵员模板 / Templates -->
+                    <Widget IsVisible="@IsTab3Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab3Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 4: 非首府驻军 / Branches -->
+                    <Widget IsVisible="@IsTab4Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab4Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                    <!-- Tab 5: 财务 / Finance -->
+                    <Widget IsVisible="@IsTab5Active"
+                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                      <Children>
+                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                    Text="@Tab5Label"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Children>
+                    </Widget>
+
+                  </Children>
+                </Widget>
+
+              </Children>
+            </ListPanel>
 
             <!-- 3. 成功横幅（绿底） -->
             <Widget IsVisible="@HasSuccess"
