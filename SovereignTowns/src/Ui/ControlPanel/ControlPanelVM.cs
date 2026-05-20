@@ -24,6 +24,7 @@ public sealed class ControlPanelVM : ViewModel
     private FeaturesTabVM _featuresTab;
     private StrategyTabVM _strategyTab;
     private CompositionTabVM _compositionTab;
+    private TemplatesTabVM _templatesTab;
     private BranchesTabVM _branchesTab;
 
     [DataSourceProperty]
@@ -45,6 +46,13 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _compositionTab;
         private set { _compositionTab = value; OnPropertyChanged(nameof(CompositionTab)); }
+    }
+
+    [DataSourceProperty]
+    public TemplatesTabVM TemplatesTab
+    {
+        get => _templatesTab;
+        private set { _templatesTab = value; OnPropertyChanged(nameof(TemplatesTab)); }
     }
 
     [DataSourceProperty]
@@ -241,6 +249,7 @@ public sealed class ControlPanelVM : ViewModel
             FeaturesTab    = new FeaturesTabVM(_config, MarkDirty);
             StrategyTab    = new StrategyTabVM(_config, MarkDirty);
             CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
+            TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
 
@@ -345,6 +354,7 @@ public sealed class ControlPanelVM : ViewModel
             FeaturesTab    = new FeaturesTabVM(_config, MarkDirty);
             StrategyTab    = new StrategyTabVM(_config, MarkDirty);
             CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
+            TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
     }

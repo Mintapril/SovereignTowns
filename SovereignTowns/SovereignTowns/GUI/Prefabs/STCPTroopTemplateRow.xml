@@ -1,0 +1,118 @@
+<Prefab>
+  <Window>
+    <!-- One selected-template row (Tab 4 RIGHT card).
+         Bound to TroopTemplateRowVM: Name / CultureName / TierText / TypeLabel /
+         RatioPercent / EstimatedCount / Ratio (0..1) / ExecuteRemove.
+         SliderWidget Filler/Handle structure copied from STCPSliderRow.xml. -->
+    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+               StackLayout.LayoutMethod="VerticalBottomToTop"
+               MarginBottom="6">
+      <Children>
+
+        <!-- Top line: dot + name/meta + percent/est + remove -->
+        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                   VerticalAlignment="Center"
+                   MarginBottom="2">
+          <Children>
+
+            <!-- Tier color dot -->
+            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                    SuggestedWidth="8" SuggestedHeight="8"
+                    VerticalAlignment="Center"
+                    MarginLeft="4" MarginRight="6"
+                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+
+            <!-- Name + meta line -->
+            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                       StackLayout.LayoutMethod="VerticalBottomToTop"
+                       VerticalAlignment="Center">
+              <Children>
+                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                           MarginTop="1">
+                  <Children>
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@CultureName"
+                                VerticalAlignment="Center"
+                                MarginRight="8" />
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@TierText"
+                                VerticalAlignment="Center"
+                                MarginRight="8" />
+                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                Text="@TypeLabel"
+                                VerticalAlignment="Center" />
+                  </Children>
+                </ListPanel>
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                            Text="@Name"
+                            VerticalAlignment="Center" />
+              </Children>
+            </ListPanel>
+
+            <!-- Percent + estimated count -->
+            <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                       SuggestedWidth="96"
+                       StackLayout.LayoutMethod="VerticalBottomToTop"
+                       VerticalAlignment="Center"
+                       MarginRight="6">
+              <Children>
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                            Text="@EstimatedCount"
+                            HorizontalAlignment="Right" />
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                            Text="@RatioPercent"
+                            HorizontalAlignment="Right" />
+              </Children>
+            </ListPanel>
+
+            <!-- Remove button -->
+            <ButtonWidget DoNotPassEventsToChildren="true"
+                          Command.Click="ExecuteRemove"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                          SuggestedWidth="24" SuggestedHeight="24"
+                          VerticalAlignment="Center"
+                          MarginRight="4"
+                          Sprite="BlankWhiteSquare_9" Color="#7A2018FF" AlphaFactor="0.5">
+              <Children>
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Text="X" />
+              </Children>
+            </ButtonWidget>
+
+          </Children>
+        </ListPanel>
+
+        <!-- Ratio slider (0..1, continuous) -->
+        <SliderWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                      SuggestedHeight="20"
+                      VerticalAlignment="Center"
+                      MarginLeft="4" MarginRight="4" MarginBottom="4"
+                      DoNotUpdateHandleSize="true"
+                      Filler="TplFiller" Handle="TplHandle"
+                      MinValueFloat="0" MaxValueFloat="1" ValueFloat="@Ratio">
+          <Children>
+            <Widget DoNotAcceptEvents="true"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6"
+                    VerticalAlignment="Center"
+                    Sprite="BlankWhiteSquare_9" Color="#3A2E12FF" />
+            <Widget Id="TplFiller" DoNotAcceptEvents="true"
+                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6"
+                    VerticalAlignment="Center"
+                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+            <ImageWidget Id="TplHandle"
+                         WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                         SuggestedWidth="14" SuggestedHeight="18"
+                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                         Sprite="BlankWhiteSquare_9" Color="#E6C44CFF" />
+          </Children>
+        </SliderWidget>
+
+      </Children>
+    </ListPanel>
+  </Window>
+</Prefab>

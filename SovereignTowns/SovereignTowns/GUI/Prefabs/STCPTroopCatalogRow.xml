@@ -1,0 +1,70 @@
+<Prefab>
+  <Window>
+    <!-- One catalog row in the troop picker (Tab 4 LEFT card).
+         Bound to TroopRowVM: TierText / Name / CultureName / TypeGlyph / AddLabel / ExecuteToggle.
+         The whole row is a button so a click anywhere toggles add/remove. -->
+    <ButtonWidget DoNotPassEventsToChildren="true"
+                  Command.Click="ExecuteToggle"
+                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                  SuggestedHeight="32"
+                  MarginBottom="2"
+                  Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+      <Children>
+        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                   VerticalAlignment="Center">
+          <Children>
+
+            <!-- Tier color dot -->
+            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                    SuggestedWidth="8" SuggestedHeight="8"
+                    VerticalAlignment="Center"
+                    MarginLeft="6" MarginRight="6"
+                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+
+            <!-- Tier text -->
+            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                        SuggestedWidth="34"
+                        Text="@TierText"
+                        VerticalAlignment="Center" />
+
+            <!-- Troop name -->
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        Text="@Name"
+                        VerticalAlignment="Center"
+                        MarginRight="6" />
+
+            <!-- Culture badge -->
+            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                        Text="@CultureName"
+                        VerticalAlignment="Center"
+                        MarginRight="6" />
+
+            <!-- Type glyph -->
+            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                        SuggestedWidth="20"
+                        Text="@TypeGlyph"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MarginRight="6" />
+
+            <!-- Add / Added button -->
+            <ButtonWidget DoNotPassEventsToChildren="true"
+                          Command.Click="ExecuteToggle"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                          SuggestedWidth="72" SuggestedHeight="24"
+                          VerticalAlignment="Center"
+                          MarginRight="6"
+                          Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.25">
+              <Children>
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Text="@AddLabel" />
+              </Children>
+            </ButtonWidget>
+
+          </Children>
+        </ListPanel>
+      </Children>
+    </ButtonWidget>
+  </Window>
+</Prefab>

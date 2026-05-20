@@ -924,9 +924,375 @@
                     <Widget IsVisible="@IsTab3Active"
                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                       <Children>
-                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                    Text="@Tab3Label"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                                   DataSource="{TemplatesTab}">
+                          <Children>
+
+                            <!-- ── Header: title + count line ── -->
+                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                       StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                       VerticalAlignment="Center"
+                                       MarginBottom="4">
+                              <Children>
+                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            Text="@Title"
+                                            VerticalAlignment="Center"
+                                            MarginRight="16" />
+                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            Text="@SelectedCount"
+                                            VerticalAlignment="Center"
+                                            MarginRight="4" />
+                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                            Text="@SelectedSectionLabel"
+                                            VerticalAlignment="Center"
+                                            MarginRight="16" />
+                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                            Text="@ExactTroopTotalText"
+                                            VerticalAlignment="Center" />
+                                <ButtonWidget DoNotPassEventsToChildren="true"
+                                              Command.Click="ExecuteClearTroops"
+                                              IsVisible="@HasSelection"
+                                              WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                              SuggestedHeight="26"
+                                              VerticalAlignment="Center">
+                                  <Children>
+                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                Text="@ClearLabel"
+                                                MarginLeft="8" MarginRight="8" />
+                                  </Children>
+                                </ButtonWidget>
+                              </Children>
+                            </ListPanel>
+
+                            <!-- Intro -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro"
+                                        MarginBottom="4" />
+
+                            <!-- Mode banner: shown when UseGenericMatching is on -->
+                            <Widget IsVisible="@IsGenericMode"
+                                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                    MarginBottom="6"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.12">
+                              <Children>
+                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                           StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                           VerticalAlignment="Center">
+                                  <Children>
+                                    <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                SuggestedWidth="24"
+                                                Text="@ModeBannerMark"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                Text="@ModeBannerText"
+                                                VerticalAlignment="Center"
+                                                MarginTop="6" MarginBottom="6" MarginRight="8" />
+                                    <ButtonWidget DoNotPassEventsToChildren="true"
+                                                  Command.Click="ExecuteSwitchToExactMode"
+                                                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                  SuggestedHeight="28"
+                                                  VerticalAlignment="Center"
+                                                  MarginRight="6">
+                                      <Children>
+                                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Text="@SwitchToExactLabel"
+                                                    MarginLeft="10" MarginRight="10" />
+                                      </Children>
+                                    </ButtonWidget>
+                                  </Children>
+                                </ListPanel>
+                              </Children>
+                            </Widget>
+
+                            <!-- Exact-mode ok line -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@ExactModeOkText"
+                                        IsVisible="@IsExactMode"
+                                        MarginBottom="4" />
+
+                            <!-- Divider -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                    SuggestedHeight="1"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    MarginBottom="8" />
+
+                            <!-- ── Two-column body ── -->
+                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                              <Children>
+
+                                <!-- LEFT: catalog card -->
+                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                        MarginRight="8"
+                                        Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+                                  <Children>
+                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                               StackLayout.LayoutMethod="VerticalBottomToTop"
+                                               MarginLeft="8" MarginRight="8" MarginTop="8" MarginBottom="8">
+                                      <Children>
+
+                                        <!-- Catalog header -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   VerticalAlignment="Center"
+                                                   MarginBottom="4">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        Text="@CatalogSectionLabel"
+                                                        VerticalAlignment="Center" />
+                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                        Text="@CatalogHint"
+                                                        VerticalAlignment="Center" />
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Search box -->
+                                        <EditableTextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                            SuggestedHeight="30"
+                                                            MarginBottom="6"
+                                                            Sprite="BlankWhiteSquare_9" Color="#0E0B05FF"
+                                                            Text="@SearchText" />
+
+                                        <!-- Culture chip row -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   MarginBottom="2">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                        SuggestedWidth="48"
+                                                        Text="@CultureLabel"
+                                                        VerticalAlignment="Center" />
+                                            <ListPanel DataSource="{CultureChips}"
+                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                              <ItemTemplate>
+                                                <STCPChip />
+                                              </ItemTemplate>
+                                            </ListPanel>
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Type chip row -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   MarginBottom="2">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                        SuggestedWidth="48"
+                                                        Text="@TypeLabel"
+                                                        VerticalAlignment="Center" />
+                                            <ListPanel DataSource="{TypeChips}"
+                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                              <ItemTemplate>
+                                                <STCPChip />
+                                              </ItemTemplate>
+                                            </ListPanel>
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Tier chip row + hide-selected toggle -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   MarginBottom="4">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
+                                                        SuggestedWidth="48"
+                                                        Text="@TierLabel"
+                                                        VerticalAlignment="Center" />
+                                            <ListPanel DataSource="{TierChips}"
+                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                              <ItemTemplate>
+                                                <STCPChip />
+                                              </ItemTemplate>
+                                            </ListPanel>
+                                            <ButtonWidget DoNotPassEventsToChildren="true"
+                                                          Command.Click="ExecuteToggleHideSelected"
+                                                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
+                                                          SuggestedHeight="28"
+                                                          VerticalAlignment="Center">
+                                              <Children>
+                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                        SuggestedHeight="3"
+                                                        VerticalAlignment="Bottom"
+                                                        Sprite="BlankWhiteSquare_9" Color="#E6C44CFF"
+                                                        IsVisible="@HideSelectedActive" />
+                                                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                            Text="@HideSelectedLabel"
+                                                            MarginLeft="8" MarginRight="8" />
+                                              </Children>
+                                            </ButtonWidget>
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Match count line -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   MarginBottom="4">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                        Text="@MatchCountText"
+                                                        VerticalAlignment="Center"
+                                                        MarginRight="8" />
+                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        Text="@CapHintText"
+                                                        IsVisible="@ShowCapHint"
+                                                        VerticalAlignment="Center" />
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Filtered troop list (scrollable) -->
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                                          <Children>
+                                            <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                             InnerPanel="CatClipRect\CatInnerPanel"
+                                                             ClipRect="CatClipRect"
+                                                             VerticalScrollbar="..\CatScrollbarHolder\CatScrollbar"
+                                                             AutoHideScrollBars="true">
+                                              <Children>
+                                                <Widget Id="CatClipRect"
+                                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                        ClipContents="true">
+                                                  <Children>
+                                                    <ListPanel Id="CatInnerPanel"
+                                                               DataSource="{FilteredTroops}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               VerticalAlignment="Top"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPTroopCatalogRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+                                                  </Children>
+                                                </Widget>
+                                              </Children>
+                                            </ScrollablePanel>
+                                            <Widget Id="CatScrollbarHolder"
+                                                    WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                    HorizontalAlignment="Right">
+                                              <Children>
+                                                <ScrollbarWidget Id="CatScrollbar"
+                                                                 WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                                 SuggestedWidth="10"
+                                                                 AlignmentAxis="Vertical"
+                                                                 Handle="CatScrollbarHandle"
+                                                                 MinValue="0" MaxValue="100">
+                                                  <Children>
+                                                    <Widget Id="CatScrollbarHandle"
+                                                            WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                            SuggestedWidth="10" SuggestedHeight="20"
+                                                            HorizontalAlignment="Center"
+                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                                                  </Children>
+                                                </ScrollbarWidget>
+                                              </Children>
+                                            </Widget>
+                                          </Children>
+                                        </Widget>
+
+                                      </Children>
+                                    </ListPanel>
+                                  </Children>
+                                </Widget>
+
+                                <!-- RIGHT: selected card -->
+                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                        Sprite="BlankWhiteSquare_9" Color="#1A1408FF" AlphaFactor="0.5">
+                                  <Children>
+                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                               StackLayout.LayoutMethod="VerticalBottomToTop"
+                                               MarginLeft="8" MarginRight="8" MarginTop="8" MarginBottom="8">
+                                      <Children>
+
+                                        <!-- Selected header: section label + Σ -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight"
+                                                   VerticalAlignment="Center"
+                                                   MarginBottom="4">
+                                          <Children>
+                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        Text="@SelectedSectionLabel"
+                                                        VerticalAlignment="Center" />
+                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                        Text="@RatioSumPercentText"
+                                                        VerticalAlignment="Center"
+                                                        MarginRight="6" />
+                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                                        Text="@RatioNormalizedSuffix"
+                                                        VerticalAlignment="Center" />
+                                          </Children>
+                                        </ListPanel>
+
+                                        <!-- Empty-list hint -->
+                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    Text="@EmptyListText"
+                                                    IsVisible="@IsExactMode"
+                                                    MarginTop="4" MarginBottom="4" />
+
+                                        <!-- Selected troop list (scrollable) -->
+                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                                          <Children>
+                                            <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                             InnerPanel="SelClipRect\SelInnerPanel"
+                                                             ClipRect="SelClipRect"
+                                                             VerticalScrollbar="..\SelScrollbarHolder\SelScrollbar"
+                                                             AutoHideScrollBars="true">
+                                              <Children>
+                                                <Widget Id="SelClipRect"
+                                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                        ClipContents="true">
+                                                  <Children>
+                                                    <ListPanel Id="SelInnerPanel"
+                                                               DataSource="{SelectedTroops}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               VerticalAlignment="Top"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPTroopTemplateRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+                                                  </Children>
+                                                </Widget>
+                                              </Children>
+                                            </ScrollablePanel>
+                                            <Widget Id="SelScrollbarHolder"
+                                                    WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                                    HorizontalAlignment="Right">
+                                              <Children>
+                                                <ScrollbarWidget Id="SelScrollbar"
+                                                                 WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                                 SuggestedWidth="10"
+                                                                 AlignmentAxis="Vertical"
+                                                                 Handle="SelScrollbarHandle"
+                                                                 MinValue="0" MaxValue="100">
+                                                  <Children>
+                                                    <Widget Id="SelScrollbarHandle"
+                                                            WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                            SuggestedWidth="10" SuggestedHeight="20"
+                                                            HorizontalAlignment="Center"
+                                                            Sprite="BlankWhiteSquare_9" Color="#B8960CFF" />
+                                                  </Children>
+                                                </ScrollbarWidget>
+                                              </Children>
+                                            </Widget>
+                                          </Children>
+                                        </Widget>
+
+                                      </Children>
+                                    </ListPanel>
+                                  </Children>
+                                </Widget>
+
+                              </Children>
+                            </ListPanel>
+
+                          </Children>
+                        </ListPanel>
                       </Children>
                     </Widget>
 
