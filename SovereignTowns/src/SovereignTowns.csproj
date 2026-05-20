@@ -85,6 +85,10 @@
       <HintPath>$(GameBinPath)\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="SandBox.View">
+      <HintPath>$(BannerlordPath)\Modules\SandBox\bin\Win64_Shipping_Client\SandBox.View.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- 构建后自动部署到 Modules/SovereignTowns/ -->
