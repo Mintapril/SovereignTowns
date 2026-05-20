@@ -20,6 +20,16 @@ public sealed class ControlPanelVM : ViewModel
     // ── 工作副本 ──
     private GlobalConfig _config;
 
+    // ── Tab VMs ──
+    private FeaturesTabVM _featuresTab;
+
+    [DataSourceProperty]
+    public FeaturesTabVM FeaturesTab
+    {
+        get => _featuresTab;
+        private set { _featuresTab = value; OnPropertyChanged(nameof(FeaturesTab)); }
+    }
+
     // ── 表头状态 ──
     private bool _isDirty;
     private bool _isSaving;
@@ -202,6 +212,9 @@ public sealed class ControlPanelVM : ViewModel
             _capitalName = ControlPanelLoc.Tr("首府: 无", "Capital: none");
         }
 
+        if (_config != null)
+            FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
+
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
 
@@ -297,7 +310,9 @@ public sealed class ControlPanelVM : ViewModel
         Warning = "";
         Success = ControlPanelLoc.Tr("已从磁盘重读配置。", "Configuration reloaded from disk.");
         AddLog(ControlPanelLoc.Tr("已从磁盘重读配置", "Configuration reloaded from disk"), LogKind.Ok);
-        // 注意：后续任务会在此处重建各 TabVM（本任务暂无 tab）。
+        // 重建各 TabVM — 旧 VM 绑定已废弃的 _config，必须全部重建。
+        if (_config != null)
+            FeaturesTab = new FeaturesTabVM(_config, MarkDirty);
     }
 
     /// <summary>关闭警告横幅。</summary>

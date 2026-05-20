@@ -260,9 +260,87 @@
                     <Widget IsVisible="@IsTab0Active"
                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                       <Children>
-                        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                    Text="@Tab0Label"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                   StackLayout.LayoutMethod="VerticalBottomToTop"
+                                   DataSource="{FeaturesTab}">
+                          <Children>
+
+                            <!-- Scrollable toggle list -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                              <Children>
+
+                                <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                 InnerPanel="FeatTab0ClipRect\FeatTab0InnerPanel"
+                                                 ClipRect="FeatTab0ClipRect"
+                                                 VerticalScrollbar="..\FeatTab0ScrollbarHolder\FeatTab0Scrollbar"
+                                                 AutoHideScrollBars="true">
+                                  <Children>
+                                    <Widget Id="FeatTab0ClipRect"
+                                            WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                            ClipContents="true">
+                                      <Children>
+                                        <ListPanel Id="FeatTab0InnerPanel"
+                                                   DataSource="{Toggles}"
+                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                   VerticalAlignment="Top"
+                                                   StackLayout.LayoutMethod="VerticalBottomToTop">
+                                          <ItemTemplate>
+                                            <STCPToggleRow />
+                                          </ItemTemplate>
+                                        </ListPanel>
+                                      </Children>
+                                    </Widget>
+                                  </Children>
+                                </ScrollablePanel>
+
+                                <Widget Id="FeatTab0ScrollbarHolder"
+                                        WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                                        HorizontalAlignment="Right">
+                                  <Children>
+                                    <ScrollbarWidget Id="FeatTab0Scrollbar"
+                                                     WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                     SuggestedWidth="10"
+                                                     AlignmentAxis="Vertical"
+                                                     Handle="FeatTab0ScrollbarHandle"
+                                                     MinValue="0" MaxValue="100">
+                                      <Children>
+                                        <Widget Id="FeatTab0ScrollbarHandle"
+                                                WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                SuggestedWidth="10" SuggestedHeight="20"
+                                                HorizontalAlignment="Center"
+                                                Sprite="BlankWhiteSquare_9"
+                                                Color="#B8960CFF" />
+                                      </Children>
+                                    </ScrollbarWidget>
+                                  </Children>
+                                </Widget>
+
+                              </Children>
+                            </Widget>
+
+                            <!-- Thin gold divider -->
+                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                    SuggestedHeight="1"
+                                    Sprite="BlankWhiteSquare_9" Color="#B8960CFF" AlphaFactor="0.5"
+                                    MarginBottom="6" MarginTop="4" />
+
+                            <!-- Intro2 -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro2"
+                                        MarginBottom="6" />
+
+                            <!-- Intro1 -->
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                        Text="@Intro1"
+                                        MarginBottom="4" />
+
+                            <!-- Tab title -->
+                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                                        Text="@Title"
+                                        MarginBottom="6" />
+
+                          </Children>
+                        </ListPanel>
                       </Children>
                     </Widget>
 
