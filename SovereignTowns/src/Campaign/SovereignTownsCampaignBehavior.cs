@@ -56,6 +56,12 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
 
     /// <summary>
+    /// 大地图左侧常驻「打开控制面板」按钮的 MapView。MapScreen.Instance 在会话早期为 null，
+    /// 故由 CampaignEvents.TickEvent 懒初始化（镜像 IG UIManager.TryInitializeImprovedGarrisonsUI）。
+    /// </summary>
+    private SovereignTowns.Ui.ControlPanel.ControlPanelMapButtonView? _mapButtonView;
+
+    /// <summary>
     /// SyncData(load) → OnSessionLaunched 之间的暂存：clanStringId → settlementStringId。
     /// 用户 2026-05-14 二次决策：仅回补"首府"这一项 mod 自定义存档；scheduler/ledger 仍瞬态。
     /// 玩家 + AI 全在此 dict（取决于存档当时 ApplyToAiSettlementsToo 是否开启）。
@@ -81,6 +87,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             CampaignEvents.WarDeclared.AddNonSerializedListener(this, OnWarDeclared);
             // P0-4：英雄换氏族事件 — 玩家换氏族时迁移所有在途队伍
             CampaignEvents.OnHeroChangedClanEvent.AddNonSerializedListener(this, OnHeroChangedClan);
+            // Task 5：高频 tick — 懒初始化大地图控制面板按钮（MapScreen.Instance 会话早期为 null）。
+            CampaignEvents.TickEvent.AddNonSerializedListener(this, OnCampaignTick);
 
             // B17.4 B1 / R3：config 变更 → 重规划 in-flight recruiter（让 TownGarrisonRule 更改即时生效）。
             // 跨存档去重：用静态字段记住"上一轮注册的实例 delegate"，新一轮 RegisterEvents 时
@@ -297,6 +305,27 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex)
         {
             Logger.Error("OnGameLoaded RebuildFromCampaign failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// 高频 campaign tick（vanilla <c>CampaignEvents.TickEvent</c>，签名 <c>Action&lt;float&gt;</c>）。
+    /// 仅用于懒初始化大地图控制面板按钮：MapScreen.Instance 在会话早期为 null，需等其就绪后再建 MapView。
+    /// 幂等 —— _mapButtonView 非空后不再重建（镜像 IG UIManager.TryInitializeImprovedGarrisonsUI）。
+    /// </summary>
+    private void OnCampaignTick(float dt)
+    {
+        try
+        {
+            if (_mapButtonView == null && SandBox.View.Map.MapScreen.Instance != null)
+            {
+                _mapButtonView = new SovereignTowns.Ui.ControlPanel.ControlPanelMapButtonView();
+                Logger.Info("ControlPanel: map button view created");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnCampaignTick map-button bootstrap failed", ex);
         }
     }
 

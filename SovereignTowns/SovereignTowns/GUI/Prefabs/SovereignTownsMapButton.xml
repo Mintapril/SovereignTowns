@@ -1,0 +1,36 @@
+<Prefab>
+  <Window>
+    <!-- 大地图左侧、垂直居中的常驻入口按钮。Task 15 统一主题，这里只求可见可点。 -->
+    <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="140" SuggestedHeight="44"
+            HorizontalAlignment="Left" VerticalAlignment="Center" MarginLeft="12">
+      <Children>
+
+        <!-- 按钮本体：深色填充 + 金色边框，Command.Click 绑定 VM 的 ExecuteOpen。
+             ButtonWidget + Command.Click 用法见 SovereignTownsControlPanel.xml:12。 -->
+        <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteOpen"
+                      WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                      Sprite="BlankWhiteSquare_9" Color="#1A1410FF" AlphaFactor="0.92">
+          <Children>
+
+            <!-- 金色边框。BlankWhiteSquare_9 是九宫格描边底图，仅显边由内层深色挡住中心。 -->
+            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                    Sprite="BlankWhiteSquare_9" Color="#C9A24BFF" IsEnabled="false">
+              <Children>
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        MarginLeft="2" MarginRight="2" MarginTop="2" MarginBottom="2"
+                        Sprite="BlankWhiteSquare_9" Color="#1A1410FF" />
+              </Children>
+            </Widget>
+
+            <!-- 按钮文字，绑定 VM.Label（双语）。 -->
+            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Brush.FontSize="20" Text="@Label" />
+
+          </Children>
+        </ButtonWidget>
+
+      </Children>
+    </Widget>
+  </Window>
+</Prefab>
