@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -284,6 +285,36 @@ internal static class WebConfigEndpoints
         catch (Exception ex)
         {
             Logger.Error("GetFinance threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// GET /api/activity → 玩家可读的运行动态(今日概况 + 近期动态流)。
+    /// 数据源:<see cref="SovereignTowns.Audit.DailyActivityCounters"/> +
+    /// <see cref="SovereignTowns.Audit.ActivityFeed"/> —— 均为线程安全 in-memory,HTTP 线程可直读。
+    /// </summary>
+    public static void GetActivity(HttpListenerContext ctx)
+    {
+        try
+        {
+            var (recruited, transferred, patrols, sallies, prisoners) =
+                SovereignTowns.Audit.DailyActivityCounters.Snapshot();
+
+            var feed = new List<object>();
+            foreach (var e in SovereignTowns.Audit.ActivityFeed.Read())
+                feed.Add(new { when = e.When, text = e.Text, tone = e.Tone });
+
+            var payload = new
+            {
+                today = new { recruited, transferred, patrols, sallies, prisoners },
+                feed,
+            };
+            WebConfigServer.WriteJson(ctx, 200, payload);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetActivity threw", ex);
             WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
         }
     }

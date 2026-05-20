@@ -1,53 +1,33 @@
 <Prefab>
   <Window>
-    <!-- One feature-switch row: [toggle button] [label + hint text] -->
-    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-               StackLayout.LayoutMethod="HorizontalLeftToRight"
-               VerticalAlignment="Center"
-               MarginBottom="4">
+    <!--
+      一行功能开关：[标签 占满宽度] [vanilla 复选框 靠右]。
+      复选框靠右镜像 IG「Smart Guard Creation Settings」行式样；
+      复选框结构镜像 Native\GUI\Prefabs\Options\SPOptions\OptionItem.xml 的 BooleanOption：
+      ButtonWidget(Brush=Checkbox.Empty) + 子 BrushWidget(Id=ToggleIndicator, Brush=Checkbox.Full)。
+      DataSource 为 ToggleRowVM —— 绑定 @IsChecked / @Label。
+    -->
+    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="48"
+               StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center">
       <Children>
 
-        <!-- Toggle button (checkbox style): ButtonType=Toggle binds IsSelected to IsChecked -->
-        <ButtonWidget DoNotPassEventsToChildren="true"
-                      ButtonType="Toggle"
-                      IsSelected="@IsChecked"
+        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                    Brush="SPOptions.OptionName.Text" Text="@Label"
+                    VerticalAlignment="Center" MarginRight="20" />
+
+        <ButtonWidget DoNotPassEventsToChildren="true" ButtonType="Toggle"
+                      IsSelected="@IsChecked" ToggleIndicator="ToggleIndicator"
+                      UpdateChildrenStates="true"
                       WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                      SuggestedWidth="28" SuggestedHeight="28"
+                      SuggestedWidth="34" SuggestedHeight="34"
                       VerticalAlignment="Center"
-                      MarginRight="10"
-                      Sprite="BlankWhiteSquare_9"
-                      Color="#c8a165FF"
-                      AlphaFactor="0.3"
-                      UpdateChildrenStates="true">
+                      Brush="SPOptions.Checkbox.Empty.Button">
           <Children>
-            <!-- Check indicator: visible when button IsSelected -->
-            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                    SuggestedWidth="16" SuggestedHeight="16"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9"
-                    Color="#c8a165FF"
-                    AlphaFactor="0.0"
-                    Id="CheckMark">
-            </Widget>
+            <BrushWidget Id="ToggleIndicator"
+                         WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                         Brush="SPOptions.Checkbox.Full.Button" />
           </Children>
         </ButtonWidget>
-
-        <!-- Label + hint column -->
-        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                   StackLayout.LayoutMethod="VerticalBottomToTop"
-                   VerticalAlignment="Center">
-          <Children>
-            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                        Text="@Label"
-                        Color="#ecdfb9FF"
-                        VerticalAlignment="Center" />
-            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                        Text="@Hint"
-                        Color="#cdba8cFF"
-                        VerticalAlignment="Center"
-                        MarginTop="2" />
-          </Children>
-        </ListPanel>
 
       </Children>
     </ListPanel>

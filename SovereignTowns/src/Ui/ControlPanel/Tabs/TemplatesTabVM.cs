@@ -25,6 +25,9 @@ public sealed class TemplatesTabVM : ViewModel
     private readonly List<TroopDumper.TroopEntry> _allTroops;
     private readonly Dictionary<string, TroopDumper.TroopEntry> _troopById = new Dictionary<string, TroopDumper.TroopEntry>();
 
+    // 文化 chip 全集（含「全部」）—— 用于激活态刷新；展示时均分到 CultureChipsRow1/2。
+    private readonly List<ChipVM> _cultureChips = new List<ChipVM>();
+
     // ── 过滤状态 ──
     private string _searchText = "";
     private string _cultureFilter = "";   // culture stringId, "" = all
@@ -64,7 +67,9 @@ public sealed class TemplatesTabVM : ViewModel
     //  绑定列表
     // ══════════════════════════════════════════════
 
-    [DataSourceProperty] public MBBindingList<ChipVM> CultureChips { get; } = new MBBindingList<ChipVM>();
+    // 文化 chip 数量较多（随兵种文化动态生成,约 13 个）—— 单行会超出左栏,均分两行渲染。
+    [DataSourceProperty] public MBBindingList<ChipVM> CultureChipsRow1 { get; } = new MBBindingList<ChipVM>();
+    [DataSourceProperty] public MBBindingList<ChipVM> CultureChipsRow2 { get; } = new MBBindingList<ChipVM>();
     [DataSourceProperty] public MBBindingList<ChipVM> TypeChips { get; } = new MBBindingList<ChipVM>();
     [DataSourceProperty] public MBBindingList<ChipVM> TierChips { get; } = new MBBindingList<ChipVM>();
     [DataSourceProperty] public MBBindingList<TroopRowVM> FilteredTroops { get; } = new MBBindingList<TroopRowVM>();
@@ -116,8 +121,10 @@ public sealed class TemplatesTabVM : ViewModel
     }
 
     // ── header counts ──
+    // SelectedCount 仅供内部派生 HasSelection / IsEmpty；prefab 文本绑定必须用
+    // 字符串版 SelectedCountText —— Gauntlet 的 TextWidget.Text setter 是 string，
+    // 直接绑 int 会在 LoadMovie 期抛 ArgumentException 并使整个面板加载失败。
     private int _selectedCount;
-    [DataSourceProperty]
     public int SelectedCount
     {
         get => _selectedCount;
@@ -126,13 +133,14 @@ public sealed class TemplatesTabVM : ViewModel
             if (_selectedCount != value)
             {
                 _selectedCount = value;
-                OnPropertyChanged(nameof(SelectedCount));
+                OnPropertyChanged(nameof(SelectedCountText));
                 OnPropertyChanged(nameof(HasSelection));
                 OnPropertyChanged(nameof(IsEmpty));
             }
         }
     }
 
+    [DataSourceProperty] public string SelectedCountText => _selectedCount.ToString();
     [DataSourceProperty] public bool HasSelection => _selectedCount > 0;
     [DataSourceProperty] public bool IsEmpty => _selectedCount == 0;
 
@@ -537,8 +545,11 @@ public sealed class TemplatesTabVM : ViewModel
     /// <summary>port cultureList（index.html ~1312）—— 去重 + 按显示名排序，stringId 作过滤键。</summary>
     private void BuildCultureChips()
     {
-        CultureChips.Clear();
-        CultureChips.Add(new ChipVM(AllLabel, () => SetCultureFilter("")));
+        _cultureChips.Clear();
+        CultureChipsRow1.Clear();
+        CultureChipsRow2.Clear();
+
+        _cultureChips.Add(new ChipVM(AllLabel, () => SetCultureFilter("")));
 
         var seen = new Dictionary<string, string>();
         var order = new List<string>();
@@ -555,8 +566,13 @@ public sealed class TemplatesTabVM : ViewModel
         foreach (var cid in order)
         {
             var localCid = cid;
-            CultureChips.Add(new ChipVM(seen[cid], () => SetCultureFilter(localCid)));
+            _cultureChips.Add(new ChipVM(seen[cid], () => SetCultureFilter(localCid)));
         }
+
+        // 均分两行：行 1 取上半（含「全部」），行 2 取下半。
+        int row1Count = (_cultureChips.Count + 1) / 2;
+        for (int i = 0; i < _cultureChips.Count; i++)
+            (i < row1Count ? CultureChipsRow1 : CultureChipsRow2).Add(_cultureChips[i]);
     }
 
     private static readonly string[] TypeOrder = { "cavalry", "horsearcher", "infantry", "ranged" };
@@ -608,7 +624,7 @@ public sealed class TemplatesTabVM : ViewModel
     private void RefreshChipStates()
     {
         // culture: index 0 = All
-        if (CultureChips.Count > 0) CultureChips[0].IsActive = string.IsNullOrEmpty(_cultureFilter);
+        if (_cultureChips.Count > 0) _cultureChips[0].IsActive = string.IsNullOrEmpty(_cultureFilter);
         // type
         if (TypeChips.Count > 0)
         {
@@ -643,7 +659,7 @@ public sealed class TemplatesTabVM : ViewModel
             }
         }
         order.Sort((a, b) => string.Compare(seen[a], seen[b], StringComparison.CurrentCulture));
-        for (int i = 0; i < order.Count && i + 1 < CultureChips.Count; i++)
-            CultureChips[i + 1].IsActive = _cultureFilter == order[i];
+        for (int i = 0; i < order.Count && i + 1 < _cultureChips.Count; i++)
+            _cultureChips[i + 1].IsActive = _cultureFilter == order[i];
     }
 }

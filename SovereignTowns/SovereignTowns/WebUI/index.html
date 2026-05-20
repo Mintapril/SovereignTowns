@@ -1009,6 +1009,55 @@
             </div>
           </div>
 
+          <!-- =========== TAB 7: 运行动态 =========== -->
+          <div x-show="activeTab === 6" class="tab-content p-8">
+            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase" x-text="tr('运行动态', 'Activity')"></h2>
+            <p class="text-parchment-200 text-sm mb-6" x-text="tr('本 Mod 自动完成的招募、调运、巡逻、出击等行为，按时间倒序列出，每 5 秒实时刷新。', 'Recruitment, transfers, patrols, sallies and other actions this mod performed automatically — newest first, refreshed live every 5 seconds.')"></p>
+
+            <div x-show="activityError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="activityError"></div>
+            <div x-show="!activity && !activityError" class="text-parchment-400 italic text-sm" x-text="tr('加载中…', 'Loading…')"></div>
+
+            <!-- 今日概况 -->
+            <div x-show="activity" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+              <div class="ornate-frame p-4 text-center">
+                <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.recruited || 0"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('招募兵员', 'Recruited')"></div>
+              </div>
+              <div class="ornate-frame p-4 text-center">
+                <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.transferred || 0"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('调运兵员', 'Transferred')"></div>
+              </div>
+              <div class="ornate-frame p-4 text-center">
+                <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.patrols || 0"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('派出巡逻', 'Patrols')"></div>
+              </div>
+              <div class="ornate-frame p-4 text-center">
+                <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.sallies || 0"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('出击迎敌', 'Sallies')"></div>
+              </div>
+              <div class="ornate-frame p-4 text-center">
+                <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.prisoners || 0"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('策反俘虏', 'Prisoners')"></div>
+              </div>
+            </div>
+
+            <!-- 近期动态 -->
+            <div x-show="activity" class="ornate-frame p-5">
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('近期动态', 'Recent activity')"></h3>
+              <div x-show="(activity?.feed || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('暂无动态 —— Mod 还没有执行任何操作。', 'No activity yet — the mod has not taken any action.')"></div>
+              <ul x-show="(activity?.feed || []).length > 0" class="space-y-1">
+                <template x-for="(e, idx) in (activity?.feed || [])" :key="idx">
+                  <li class="flex items-center gap-3 border-b border-ink-700 last:border-0 py-1.5">
+                    <span class="w-1 h-4 rounded-sm shrink-0"
+                          :style="{ backgroundColor: e.tone === 'ok' ? '#7faf5f' : e.tone === 'err' ? '#c85a4a' : '#6f93c8' }"></span>
+                    <span class="text-parchment-400 font-mono text-xs shrink-0" x-text="e.when"></span>
+                    <span class="text-parchment-100 text-sm" x-text="e.text"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </div>
+
         </div><!-- /ornate-frame -->
 
       </section>
@@ -1032,6 +1081,7 @@
             { label: this.tr('兵员模板', 'Templates') },
             { label: this.tr('非首府驻军', 'Branches') },
             { label: this.tr('财务', 'Finance') },
+            { label: this.tr('运行动态', 'Activity') },
           ];
         },
         config: null,
@@ -1047,6 +1097,8 @@
         logEntries: [],
         finance: null,
         financeError: '',
+        activity: null,
+        activityError: '',
 
         troopSearch: '',
         troopCultureFilter: '',
@@ -1376,7 +1428,8 @@
           // 仅当玩家手编 global.json 后主动点「↻ 重读磁盘」按钮时才执行。
           await this.fetchAll();
           this.loadFinance();
-          setInterval(() => { this.loadFinance(); }, 5000);
+          this.loadActivity();
+          setInterval(() => { this.loadFinance(); this.loadActivity(); }, 5000);
           // 关闭 / 刷新页面时若有未保存改动，浏览器原生拦截一次（防手滑丢配置）。
           window.addEventListener('beforeunload', (e) => {
             if (this.dirty) { e.preventDefault(); e.returnValue = ''; }
@@ -1469,6 +1522,23 @@
             }
           } catch (e) {
             this.financeError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
+          }
+        },
+
+        // loadActivity：拉取运行动态（今日概况 + 近期动态流）。与 loadFinance 同样并入 5 秒轮询。
+        async loadActivity() {
+          try {
+            const r = await this.http('GET', '/api/activity');
+            if (r.ok) {
+              this.activity = r.body;
+              this.activityError = '';
+            } else {
+              this.activityError = this.tr(
+                `加载失败 HTTP ${r.status}: ${r.body?.message || '?'}`,
+                `Load failed, HTTP ${r.status}: ${r.body?.message || '?'}`);
+            }
+          } catch (e) {
+            this.activityError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
           }
         },
 

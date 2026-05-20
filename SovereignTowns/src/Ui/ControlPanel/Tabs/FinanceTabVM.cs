@@ -74,6 +74,9 @@ public sealed class FinanceTabVM : ViewModel
     [DataSourceProperty]
     public bool HasRecent => _recentEntries.Count > 0;
 
+    [DataSourceProperty]
+    public bool HasNoRecent => _recentEntries.Count == 0;
+
     // ── 空条目提示 ──
     [DataSourceProperty]
     public string EmptyRecentText => ControlPanelLoc.Tr("尚无支出记录", "No spending records yet");
@@ -139,6 +142,7 @@ public sealed class FinanceTabVM : ViewModel
             }
 
             OnPropertyChanged(nameof(HasRecent));
+            OnPropertyChanged(nameof(HasNoRecent));
             HasError  = false;
             ErrorText = "";
         }

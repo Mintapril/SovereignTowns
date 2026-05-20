@@ -1,36 +1,35 @@
 <Prefab>
   <Window>
-    <!-- 大地图左侧、垂直居中的常驻入口按钮。Task 15 统一主题，这里只求可见可点。 -->
-    <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="140" SuggestedHeight="44"
-            HorizontalAlignment="Left" VerticalAlignment="Center" MarginLeft="12">
+    <!--
+      大地图左侧、垂直居中的常驻入口按钮 —— 点击 → ExecuteOpen 打开控制面板。
+      美术资源取自 vanilla 城镇菜单（GameMenu）左侧栏右上角的「折叠把手」按钮：
+        Brush=GameMenu.Extend.Button       —— sprite SPGeneral\GameMenu\gamemenu_collapser_button,
+                                              自带 Default/Hovered/Pressed/Selected 状态。
+        Brush=GameMenu.Extend.Button.Arrow —— 把手内的箭头 sprite StdAssets\arrow_pointing_left。
+      做成贴左屏边的竖向 tab 把手。
+      约束：
+        1. gamemenu_collapser_button 非 9-slice（无 _9 后缀、无 Extend）→ 不可拉伸,
+           固定 58×122（与 GameMenu.xml 的 ExtendButton 同尺寸）,否则美术变形。
+        2. 该 sprite 原设计「左侧贴面板、把手向右凸」—— 挂到屏幕左边沿同朝向,正常。
+           箭头朝左是 vanilla 原图（原版由 GameMenuWidget 代码翻转,静态用无法翻转）。
+        3. ButtonWidget 用 Brush 是设计内用法（非裸 Sprite,不会渲染成纯白）。
+        4. UpdateChildrenStates=true → 把手 hover/pressed 状态传递给箭头子件,与原版一致。
+      原先是 227×44 ButtonBrush2 文字按钮,本次按用户要求换成该折叠把手美术。
+    -->
+    <Widget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+            HorizontalAlignment="Left" VerticalAlignment="Center">
       <Children>
-
-        <!-- 按钮本体：深色填充 + 金色边框，Command.Click 绑定 VM 的 ExecuteOpen。
-             ButtonWidget + Command.Click 用法见 SovereignTownsControlPanel.xml:12。 -->
-        <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteOpen"
-                      WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                      Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.92">
+        <ButtonWidget DoNotPassEventsToChildren="true" UpdateChildrenStates="true"
+                      Command.Click="ExecuteOpen"
+                      WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                      SuggestedWidth="58" SuggestedHeight="122" Brush="GameMenu.Extend.Button">
           <Children>
-
-            <!-- 金色边框。BlankWhiteSquare_9 是九宫格描边底图，仅显边由内层深色挡住中心。 -->
-            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" IsEnabled="false">
-              <Children>
-                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                        MarginLeft="2" MarginRight="2" MarginTop="2" MarginBottom="2"
-                        Sprite="BlankWhiteSquare_9" Color="#15110dFF" />
-              </Children>
-            </Widget>
-
-            <!-- 按钮文字，绑定 VM.Label（双语）。 -->
-            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Color="#e6c585FF"
-                        Brush.FontSize="20" Text="@Label" />
-
+            <BrushWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                         SuggestedWidth="30" SuggestedHeight="30"
+                         VerticalAlignment="Center" MarginBottom="15" MarginLeft="8"
+                         Brush="GameMenu.Extend.Button.Arrow" />
           </Children>
         </ButtonWidget>
-
       </Children>
     </Widget>
   </Window>

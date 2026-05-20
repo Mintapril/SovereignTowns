@@ -1,35 +1,37 @@
 <Prefab>
   <Window>
-    <!-- A small group-filter chip.
-         Binding contract (SettingsGroupVM here; Task 12's ChipVM must also satisfy it):
-         Label (string) / IsActive (bool) / IsDimmed (bool) / ExecuteClick (command).
-         IsDimmed is always false for SettingsGroupVM, so no dim styling here —
-         Task 12's ChipVM revisits this. -->
-    <ButtonWidget DoNotPassEventsToChildren="true"
-                  Command.Click="ExecuteClick"
-                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
-                  SuggestedHeight="30"
-                  VerticalAlignment="Center"
-                  MarginRight="6" MarginBottom="4"
-                  Sprite="BlankWhiteSquare_9"
-                  Color="#a88547FF"
-                  AlphaFactor="0.18">
+    <!--
+      过滤 chip。绑定 ChipVM / SettingsGroupVM：Label / IsActive / IsDimmed / ExecuteClick。
+      关键约束（原版 Gauntlet 坑）：
+        1. ButtonWidget 自身设 Sprite 会渲染成纯白 → 按钮保持透明,背景用子 Widget。
+        2. CoverChildren 容器内若出现【可见的 StretchToParent 宽度子元素】会被撑成满宽。
+           之前激活高亮用满宽覆盖层 → "被选中的 chip"膨胀、把同行其它 chip 挤出屏幕。
+      因此激活态金色填充也做成 CoverChildren,内放一份 AlphaFactor=0 的同款文字把它
+      撑到与可见文字等宽 —— 全链路无 StretchToParent 宽度,任何状态都按文字收缩,不膨胀。
+      IsDimmed 暂不做视觉(同样的满宽覆盖层坑),仅保留绑定契约。
+    -->
+    <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteClick"
+                  WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed" SuggestedHeight="30"
+                  VerticalAlignment="Center" MarginRight="6" MarginBottom="4">
       <Children>
-
-        <!-- Active highlight: a gold underline visible when this group is selected -->
-        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                SuggestedHeight="3"
-                VerticalAlignment="Bottom"
-                Sprite="BlankWhiteSquare_9" Color="#c8a165FF"
-                IsVisible="@IsActive" />
-
-        <!-- Chip label -->
-        <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Text="@Label"
-                    Color="#ecdfb9FF"
-                    MarginLeft="12" MarginRight="12" />
-
+        <Widget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                Sprite="BlankWhiteSquare_9" Color="#2a2218FF">
+          <Children>
+            <Widget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                    Sprite="BlankWhiteSquare_9" Color="#9c7d3eFF" IsVisible="@IsActive">
+              <Children>
+                <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                            Brush="SPOptions.Slider.Value.Text" Text="@Label"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            MarginLeft="12" MarginRight="12" AlphaFactor="0.0" />
+              </Children>
+            </Widget>
+            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
+                        Brush="SPOptions.Slider.Value.Text" Text="@Label"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        MarginLeft="12" MarginRight="12" />
+          </Children>
+        </Widget>
       </Children>
     </ButtonWidget>
   </Window>

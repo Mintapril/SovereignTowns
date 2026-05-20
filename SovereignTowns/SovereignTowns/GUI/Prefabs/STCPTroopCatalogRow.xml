@@ -1,72 +1,41 @@
 <Prefab>
   <Window>
-    <!-- One catalog row in the troop picker (Tab 4 LEFT card).
-         Bound to TroopRowVM: TierText / Name / CultureName / TypeGlyph / AddLabel / ExecuteToggle.
-         The whole row is a button so a click anywhere toggles add/remove. -->
-    <ButtonWidget DoNotPassEventsToChildren="true"
-                  Command.Click="ExecuteToggle"
-                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                  SuggestedHeight="32"
-                  MarginBottom="2"
-                  Sprite="BlankWhiteSquare_9" Color="#15110dFF" AlphaFactor="0.5">
+    <!--
+      兵种名录一行。绑定 TroopRowVM：TierText/Name/CultureName/TypeGlyph/AddLabel/ExecuteToggle。
+      整行是按钮；ButtonWidget 不设 Sprite，背景用子 Widget（交互控件设 Sprite 会渲染成白）。
+    -->
+    <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteToggle"
+                  WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="34"
+                  MarginBottom="3">
       <Children>
+        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                   StackLayout.LayoutMethod="HorizontalLeftToRight"
-                   VerticalAlignment="Center">
+                   StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center">
           <Children>
-
-            <!-- Tier color dot (static gold-400 placeholder; per-tier coloring needs TierColor VM property) -->
-            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                    SuggestedWidth="8" SuggestedHeight="8"
-                    VerticalAlignment="Center"
-                    MarginLeft="6" MarginRight="6"
-                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
-
-            <!-- Tier text -->
-            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
-                        SuggestedWidth="34"
-                        Text="@TierText"
-                        Color="#cdba8cFF"
-                        VerticalAlignment="Center" />
-
-            <!-- Troop name -->
+            <TextWidget WidthSizePolicy="Fixed" SuggestedWidth="44" HeightSizePolicy="StretchToParent"
+                        Brush="SPOptions.Slider.Value.Text" Text="@TierText"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" MarginLeft="6" />
             <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                        Text="@Name"
-                        Color="#ecdfb9FF"
-                        VerticalAlignment="Center"
-                        MarginRight="6" />
-
-            <!-- Culture badge -->
+                        Brush="SPOptions.OptionName.Text" Text="@Name"
+                        VerticalAlignment="Center" MarginRight="8" />
             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
-                        Text="@CultureName"
-                        Color="#cdba8cFF"
-                        VerticalAlignment="Center"
-                        MarginRight="6" />
-
-            <!-- Type glyph -->
-            <TextWidget WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
-                        SuggestedWidth="20"
-                        Text="@TypeGlyph"
-                        Color="#cdba8cFF"
-                        HorizontalAlignment="Center" VerticalAlignment="Center"
-                        MarginRight="6" />
-
-            <!-- Add / Added button -->
-            <ButtonWidget DoNotPassEventsToChildren="true"
-                          Command.Click="ExecuteToggle"
-                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                          SuggestedWidth="72" SuggestedHeight="24"
-                          VerticalAlignment="Center"
-                          MarginRight="6"
-                          Sprite="BlankWhiteSquare_9" Color="#c8a165FF" AlphaFactor="0.25">
+                        Brush="SPOptions.Slider.Value.Text" Text="@CultureName"
+                        VerticalAlignment="Center" MarginRight="8" />
+            <TextWidget WidthSizePolicy="Fixed" SuggestedWidth="22" HeightSizePolicy="StretchToParent"
+                        Brush="SPOptions.Slider.Value.Text" Text="@TypeGlyph"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" MarginRight="8" />
+            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteToggle"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="80" SuggestedHeight="26"
+                          VerticalAlignment="Center" MarginRight="6">
               <Children>
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        Sprite="BlankWhiteSquare_9" Color="#5a4a2aFF" />
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Color="#ecdfb9FF"
-                            Text="@AddLabel" />
+                            Brush="SPOptions.Slider.Value.Text" Text="@AddLabel"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Children>
             </ButtonWidget>
-
           </Children>
         </ListPanel>
       </Children>

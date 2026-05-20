@@ -1,118 +1,83 @@
 <Prefab>
   <Window>
-    <!-- One selected-template row (Tab 4 RIGHT card).
-         Bound to TroopTemplateRowVM: Name / CultureName / TierText / TypeLabel /
-         RatioPercent / EstimatedCount / Ratio (0..1) / ExecuteRemove.
-         SliderWidget Filler/Handle structure copied from STCPSliderRow.xml. -->
+    <!--
+      已选兵员一行。绑定 TroopTemplateRowVM：
+      Name/CultureName/TierText/TypeLabel/RatioPercent/EstimatedCount/Ratio/ExecuteRemove。
+      移除按钮不设 Sprite，背景用子 Widget。
+    -->
     <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-               StackLayout.LayoutMethod="VerticalBottomToTop"
-               MarginBottom="6">
+               StackLayout.LayoutMethod="VerticalBottomToTop" MarginBottom="8">
       <Children>
 
-        <!-- Top line: dot + name/meta + percent/est + remove -->
+        <!-- 顶行：名称/元信息 + 占比 + 移除 -->
         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                    StackLayout.LayoutMethod="HorizontalLeftToRight"
-                   VerticalAlignment="Center"
-                   MarginBottom="2">
+                   VerticalAlignment="Center" MarginBottom="2">
           <Children>
 
-            <!-- Tier color dot (static gold-400 placeholder; per-tier coloring needs TierColor VM property) -->
-            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                    SuggestedWidth="8" SuggestedHeight="8"
-                    VerticalAlignment="Center"
-                    MarginLeft="4" MarginRight="6"
-                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
-
-            <!-- Name + meta line -->
             <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                       StackLayout.LayoutMethod="VerticalBottomToTop"
-                       VerticalAlignment="Center">
+                       StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
               <Children>
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                            Brush="SPOptions.OptionName.Text" Text="@Name" />
                 <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                           StackLayout.LayoutMethod="HorizontalLeftToRight"
-                           MarginTop="1">
+                           StackLayout.LayoutMethod="HorizontalLeftToRight" MarginTop="1">
                   <Children>
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                Text="@CultureName"
-                                Color="#cdba8cFF"
-                                VerticalAlignment="Center"
-                                MarginRight="8" />
+                                Brush="SPOptions.Slider.Value.Text" Text="@CultureName"
+                                VerticalAlignment="Center" MarginRight="8" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                Text="@TierText"
-                                Color="#cdba8cFF"
-                                VerticalAlignment="Center"
-                                MarginRight="8" />
+                                Brush="SPOptions.Slider.Value.Text" Text="@TierText"
+                                VerticalAlignment="Center" MarginRight="8" />
                     <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                Text="@TypeLabel"
-                                Color="#cdba8cFF"
+                                Brush="SPOptions.Slider.Value.Text" Text="@TypeLabel"
                                 VerticalAlignment="Center" />
                   </Children>
                 </ListPanel>
-                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                            Text="@Name"
-                            Color="#ecdfb9FF"
-                            VerticalAlignment="Center" />
               </Children>
             </ListPanel>
 
-            <!-- Percent + estimated count -->
-            <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren"
-                       SuggestedWidth="96"
+            <ListPanel WidthSizePolicy="Fixed" HeightSizePolicy="CoverChildren" SuggestedWidth="100"
                        StackLayout.LayoutMethod="VerticalBottomToTop"
-                       VerticalAlignment="Center"
-                       MarginRight="6">
+                       VerticalAlignment="Center" MarginRight="6">
               <Children>
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                            Text="@EstimatedCount"
-                            Color="#cdba8cFF"
+                            Brush="SPOptions.OptionName.Text" Text="@RatioPercent"
                             HorizontalAlignment="Right" />
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                            Text="@RatioPercent"
-                            Color="#f4e4bcFF"
+                            Brush="SPOptions.Slider.Value.Text" Text="@EstimatedCount"
                             HorizontalAlignment="Right" />
               </Children>
             </ListPanel>
 
-            <!-- Remove button (danger) -->
-            <ButtonWidget DoNotPassEventsToChildren="true"
-                          Command.Click="ExecuteRemove"
-                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                          SuggestedWidth="24" SuggestedHeight="24"
-                          VerticalAlignment="Center"
-                          MarginRight="4"
-                          Sprite="BlankWhiteSquare_9" Color="#c34a4aFF" AlphaFactor="0.5">
+            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteRemove"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="26" SuggestedHeight="26"
+                          VerticalAlignment="Center" MarginRight="4">
               <Children>
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        Sprite="BlankWhiteSquare_9" Color="#7a3030FF" />
                 <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                            Color="#ecdfb9FF"
-                            Text="X" />
+                            Brush="SPOptions.Slider.Value.Text" Text="X"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Children>
             </ButtonWidget>
 
           </Children>
         </ListPanel>
 
-        <!-- Ratio slider (0..1, continuous) -->
-        <SliderWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                      SuggestedHeight="20"
-                      VerticalAlignment="Center"
-                      MarginLeft="4" MarginRight="4" MarginBottom="4"
-                      DoNotUpdateHandleSize="true"
-                      Filler="TplFiller" Handle="TplHandle"
+        <!-- 占比滑条 -->
+        <SliderWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="20"
+                      VerticalAlignment="Center" MarginLeft="2" MarginRight="6" MarginBottom="2"
+                      DoNotUpdateHandleSize="true" Filler="TplFiller" Handle="TplHandle"
                       MinValueFloat="0" MaxValueFloat="1" ValueFloat="@Ratio">
           <Children>
-            <Widget DoNotAcceptEvents="true"
-                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                    SuggestedHeight="6"
-                    VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#1c1813FF" />
-            <Widget Id="TplFiller" DoNotAcceptEvents="true"
-                    WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                    SuggestedHeight="6"
-                    VerticalAlignment="Center"
+            <Widget DoNotAcceptEvents="true" WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6" VerticalAlignment="Center"
+                    Sprite="BlankWhiteSquare_9" Color="#2a2218FF" />
+            <Widget Id="TplFiller" DoNotAcceptEvents="true" WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                    SuggestedHeight="6" VerticalAlignment="Center"
                     Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
-            <ImageWidget Id="TplHandle"
-                         WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+            <ImageWidget Id="TplHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
                          SuggestedWidth="14" SuggestedHeight="18"
                          HorizontalAlignment="Left" VerticalAlignment="Center"
                          Sprite="BlankWhiteSquare_9" Color="#e6c585FF" />
