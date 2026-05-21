@@ -190,10 +190,12 @@ public static class SupplyDemandGraph
 
     private static bool _selfTestLogged;
 
-    public static SupplyDemandGraphResult Run(CapitalManager manager, Settlement capitalSettlement)
-        => RunInternal(manager, capitalSettlement, "MCMF");
+    public static SupplyDemandGraphResult Run(
+        CapitalManager manager, Settlement capitalSettlement, GarrisonAllocationResult? passA = null)
+        => RunInternal(manager, capitalSettlement, "MCMF", passA);
 
-    private static SupplyDemandGraphResult RunInternal(CapitalManager manager, Settlement capitalSettlement, string logTag)
+    private static SupplyDemandGraphResult RunInternal(
+        CapitalManager manager, Settlement capitalSettlement, string logTag, GarrisonAllocationResult? passA)
     {
         if (!_selfTestLogged)
         {
@@ -204,7 +206,7 @@ public static class SupplyDemandGraph
                 Logger.Error(logTag + " self-test failed: " + selfTestMessage);
         }
 
-        var states = BuildSettlementStates(manager, capitalSettlement);
+        var states = BuildSettlementStates(manager, capitalSettlement, passA);
         if (states.Count == 0)
             return new SupplyDemandGraphResult(0, 0, 0, 0, 0, new List<DispatchInstruction>());
         AccountInFlight(states, manager.OwnerClan);
@@ -333,8 +335,18 @@ public static class SupplyDemandGraph
     private static PartyThresholds Thresholds
         => ConfigurationManager.Current?.Thresholds ?? new PartyThresholds();
 
-    private static List<SettlementState> BuildSettlementStates(CapitalManager manager, Settlement capitalSettlement)
+    private static List<SettlementState> BuildSettlementStates(
+        CapitalManager manager, Settlement capitalSettlement, GarrisonAllocationResult? passA)
     {
+        // Task 6: Pass A → Pass B 集成。AllowManualGarrisonTargets==false → 路由直接采用
+        // Pass A（GarrisonAllocationSolver）按预算解出的每城目标头数；==true → 玩家手动目标
+        // 权威，Pass A 仅作推荐（assessment 已由 CapitalLogisticsManager 单独 stash）。
+        // passA 中缺失的定居点回退到旧的 ComputeDesiredTarget / branch.TargetPower 行为。
+        var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+        bool manualMode = cfg.AllowManualGarrisonTargets;
+        int hardCap = Math.Max(1, cfg.MaxGarrisonHardCap);
+        float perTroopPower = ReferencePerTroopPower();
+
         var result = new List<SettlementState>();
         foreach (var town in Town.AllTowns)
         {
@@ -349,7 +361,22 @@ public static class SupplyDemandGraph
             if (isCapital)
             {
                 var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
-                int desired = ComputeDesiredTarget(rule, RiskAssessmentService.Assess(settlement));
+                int desired;
+                if (manualMode)
+                {
+                    // 手动模式:玩家配置目标(含风险乘数)再 clamp 到 hardCap。
+                    desired = Math.Min(ComputeDesiredTarget(rule, RiskAssessmentService.Assess(settlement)), hardCap);
+                }
+                else if (passA != null && passA.Target.TryGetValue(settlement, out var passACapital))
+                {
+                    // 自动模式:Pass A 解出的目标头数权威。
+                    desired = Math.Max(1, passACapital);
+                }
+                else
+                {
+                    // passA 缺该定居点 → 回退旧行为。
+                    desired = ComputeDesiredTarget(rule, RiskAssessmentService.Assess(settlement));
+                }
                 result.Add(new SettlementState(town, settlement, capitalRule: rule, branchRule: null,
                     desiredTotal: desired, desiredPower: 0, isCapital: true));
             }
@@ -377,8 +404,24 @@ public static class SupplyDemandGraph
                 else
                 {
                     var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
+                    int branchPower;
+                    if (manualMode)
+                    {
+                        // 手动模式:玩家配置的 TargetPower,但不得超过 hardCap 换算出的 power 上限。
+                        branchPower = Math.Min(branch.TargetPower, HeadsToPower(hardCap, perTroopPower));
+                    }
+                    else if (passA != null && passA.Target.TryGetValue(settlement, out var passABranch))
+                    {
+                        // 自动模式:Pass A 解出的目标头数,换算成 branch 的 power 口径需求。
+                        branchPower = HeadsToPower(passABranch, perTroopPower);
+                    }
+                    else
+                    {
+                        // passA 缺该定居点 → 回退旧行为(直接用 BranchRule.TargetPower)。
+                        branchPower = branch.TargetPower;
+                    }
                     result.Add(new SettlementState(town, settlement, capitalRule: null, branchRule: branch,
-                        desiredTotal: 0, desiredPower: branch.TargetPower, isCapital: false));
+                        desiredTotal: 0, desiredPower: branchPower, isCapital: false));
                 }
             }
         }
@@ -484,6 +527,34 @@ public static class SupplyDemandGraph
             : rule.PeacetimeMultiplier;
         return Math.Max(1, (int)Math.Round(rule.TargetTotalCount * multiplier));
     }
+
+    /// <summary>
+    /// Task 6: Pass A 产出的是"头数"目标,但非首府 demand 走 vanilla power 口径。
+    /// 把头数近似换算成 power = heads × 参考单兵 power。参考值取中 tier(T3)的
+    /// vanilla MilitaryPowerModel power(自检基准 ≈ 1.30) —— 这是一个有意的近似:
+    /// 真实 power 取决于实际驻军兵种构成,但路由 demand 只需一个合理量级即可。
+    /// </summary>
+    private const float ReferencePerTroopPowerFallback = 1.3f;
+
+    private static float ReferencePerTroopPower()
+    {
+        try
+        {
+            var model = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.MilitaryPowerModel;
+            var stub = SovereignTowns.Evaluators.GarrisonPowerEvaluator.MakeStubTroop(3, mounted: false);
+            if (model == null || stub == null) return ReferencePerTroopPowerFallback;
+            float power = model.GetDefaultTroopPower(stub);
+            return power > 0f ? power : ReferencePerTroopPowerFallback;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("SupplyDemandGraph.ReferencePerTroopPower failed; using fallback", ex);
+            return ReferencePerTroopPowerFallback;
+        }
+    }
+
+    private static int HeadsToPower(int heads, float perTroopPower)
+        => Math.Max(0, (int)Math.Round(Math.Max(0, heads) * perTroopPower));
 
     private static void AddRosterSurplusSources(
         MinCostFlow graph,
