@@ -4,6 +4,7 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Library;
+using SovereignTowns.Common;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -80,9 +81,7 @@ public static class GarrisonXpInjector
             }
 
             var rule = ConfigurationManager.GetRuleFor(town);
-            // B7.19：每日 XP 奖励改为按兵营建筑等级派生（不再可手动调整）。
-            // settlement_garrison（Town）/ castle_barracks（Castle）等级 → (level + 1) × 5
-            // 即 lvl 0→5, lvl 1→10, lvl 2→15, lvl 3→20。
+            // 每日 XP = GarrisonXpBasePerDay + 军营(Barracks)等级 × GarrisonXpPerBarracksLevel。
             int perTroopBase = ComputeXpFromBarracks(settlement);
 
             // vanilla daily bonus：失败时回退 0
@@ -197,39 +196,15 @@ public static class GarrisonXpInjector
     }
 
     /// <summary>
-    /// B7.19：按兵营建筑等级派生每日 XP 奖励。Town 用 <c>settlement_garrison</c>、
-    /// Castle 用 <c>castle_barracks</c> 的 CurrentLevel（0..3），返回 (level + 1) × 5。
-    /// 找不到建筑或异常时返回 5（最低保底，对应 lvl 0）。
+    /// 按军营(Barracks)建筑等级派生每日 XP:GarrisonXpBasePerDay + level × GarrisonXpPerBarracksLevel。
+    /// 系数取自 GlobalConfig.BuildingBonus;读不到建筑按 0 级。
     /// </summary>
     private static int ComputeXpFromBarracks(Settlement? settlement)
     {
-        const int XpPerLevel = 5;
-        const int FallbackXp = XpPerLevel; // lvl 0 等价
-        try
-        {
-            var town = settlement?.Town;
-            if (town?.Buildings == null) return FallbackXp;
-            string targetId = (settlement != null && settlement.IsCastle) ? "castle_barracks" : "settlement_garrison";
-            foreach (var b in town.Buildings)
-            {
-                if (b?.BuildingType == null) continue;
-                string id;
-                try { id = b.BuildingType.StringId ?? ""; } catch { continue; }
-                if (string.Equals(id, targetId, StringComparison.Ordinal))
-                {
-                    int level;
-                    try { level = b.CurrentLevel; } catch { level = 0; }
-                    if (level < 0) level = 0;
-                    if (level > 3) level = 3;
-                    return (level + 1) * XpPerLevel;
-                }
-            }
-            return FallbackXp; // 兵营尚未建造
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"ComputeXpFromBarracks failed for '{settlement?.Name}'", ex);
-            return FallbackXp;
-        }
+        var cfg = ConfigurationManager.Current?.BuildingBonus;
+        int xpBase = cfg?.GarrisonXpBasePerDay ?? 5;
+        int xpPerLevel = cfg?.GarrisonXpPerBarracksLevel ?? 5;
+        int level = BuildingLevelReader.GetLevel(settlement, StBuilding.Barracks);
+        return xpBase + level * xpPerLevel;
     }
 }

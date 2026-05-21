@@ -27,10 +27,7 @@ namespace SovereignTowns.Lifecycle;
 public sealed class PartyLifecycleManager
 {
     // ────────── 上限（按城镇 × kind） ──────────
-    /// <summary>B7.27 起：KindRecruiter 不再使用此常量，改用 ComputePatrolCapForHome。常量保留作为 fallback / 历史参考。</summary>
-    public const int MaxRecruitersPerTown = 1;
-    public const int MaxTransfersPerTown  = 1;
-    public const int MaxSallyForthPerTown = 1;
+    // 各类队伍并发上限改为建筑等级派生，见 GetMaxFor / CapFrom。
 
     // ────────── 空闲检测阈值（小时） ──────────
     public const int IdleHoursBeforeForceReturn = 24;
@@ -590,57 +587,41 @@ public sealed class PartyLifecycleManager
     // ────────── 辅助 ──────────
 
     /// <summary>
-    /// 按 (home, kind) 返回硬上限。
-    /// B7.16：KindPatrol 按 vanilla "settlement_garrison" 建筑（兵营）等级缩放：
-    ///   未建造 / 0 级 → 1 支
-    ///   1 级 → 2 支
-    ///   2 级 → 3 支
-    ///   3 级 → 4 支
-    /// 城堡（IsCastle）走 castle 对应建筑 stringId "castle_barracks"。
-    /// 其他 kind 与 home 无关，沿用静态常量。
+    /// 按 (home, kind) 返回并发硬上限。
+    /// 征兵 / 调拨 / 出击 ← 军营(Barracks)等级;巡逻 ← 哨所(Guard House)等级。
+    /// 公式:cap = Base + 建筑等级 × PerLevel,系数取自 GlobalConfig.BuildingBonus。
     /// </summary>
     private static int GetMaxFor(Settlement home, string kind)
     {
-        // B7.27：征兵队上限改用与巡逻队相同的兵营建筑等级公式（首府 barracks lvl + 1，0级 1 支，3级 4 支）
-        if (kind == KindRecruiter)  return ComputePatrolCapForHome(home);
-        if (kind == KindTransfer)   return MaxTransfersPerTown;
-        if (kind == KindSallyForth) return MaxSallyForthPerTown;
-        if (kind == KindPatrol)     return ComputePatrolCapForHome(home);
+        var cfg = SovereignTowns.Configuration.ConfigurationManager.Current?.BuildingBonus;
+        if (kind == KindRecruiter)
+            return CapFrom(home, StBuilding.Barracks,
+                cfg?.RecruiterBaseCap ?? 1, cfg?.RecruiterCapPerBarracksLevel ?? 1);
+        if (kind == KindTransfer)
+            return CapFrom(home, StBuilding.Barracks,
+                cfg?.TransferBaseCap ?? 1, cfg?.TransferCapPerBarracksLevel ?? 1);
+        if (kind == KindSallyForth)
+            return CapFrom(home, StBuilding.Barracks,
+                cfg?.SallyBaseCap ?? 1, cfg?.SallyCapPerBarracksLevel ?? 1);
+        if (kind == KindPatrol)
+            return CapFrom(home, StBuilding.GuardHouse,
+                cfg?.PatrolBaseCap ?? 1, cfg?.PatrolCapPerGuardHouseLevel ?? 1);
         // 未知 kind：保守上限 1，避免失控创建
         return 1;
     }
 
-    /// <summary>
-    /// 兵营（Town: "settlement_garrison" / Castle: "castle_barracks"）等级 + 1。
-    /// 找不到 building 或 town == null → 退回 1（最低保底）。失败也返回 1，绝不抛。
-    /// </summary>
-    private static int ComputePatrolCapForHome(Settlement? home)
+    /// <summary>cap = baseCap + 建筑等级 × perLevel，钳制 ≥ 1。读不到建筑按 0 级处理。绝不抛。</summary>
+    private static int CapFrom(Settlement? home, StBuilding building, int baseCap, int perLevel)
     {
         try
         {
-            var town = home?.Town;
-            if (town?.Buildings == null) return 1;
-            string targetId = (home != null && home.IsCastle) ? "castle_barracks" : "settlement_garrison";
-            foreach (var b in town.Buildings)
-            {
-                if (b?.BuildingType == null) continue;
-                string id;
-                try { id = b.BuildingType.StringId ?? ""; }
-                catch { continue; }
-                if (string.Equals(id, targetId, StringComparison.Ordinal))
-                {
-                    int level;
-                    try { level = b.CurrentLevel; } catch { level = 0; }
-                    if (level < 0) level = 0;
-                    if (level > 3) level = 3;
-                    return level + 1;
-                }
-            }
-            return 1; // 未建造该建筑（建造槽空着）
+            int level = BuildingLevelReader.GetLevel(home, building);
+            int cap = baseCap + level * perLevel;
+            return cap < 1 ? 1 : cap;
         }
         catch (Exception ex)
         {
-            Logger.Error($"ComputePatrolCapForHome failed for '{home?.Name}'", ex);
+            Logger.Error($"CapFrom failed for '{home?.Name}' ({building})", ex);
             return 1;
         }
     }

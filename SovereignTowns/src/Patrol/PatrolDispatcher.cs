@@ -277,33 +277,14 @@ public sealed class PatrolDispatcher
     /// </summary>
     private static PartyTemplateObject? TryFindPatrolTemplate(Settlement? settlement, out string idUsed)
     {
-        int barracksLevel = 0;
-        try
-        {
-            var town = settlement?.Town;
-            if (town?.Buildings != null)
-            {
-                foreach (var b in town.Buildings)
-                {
-                    if (b?.BuildingType == null) continue;
-                    string id;
-                    try { id = b.BuildingType.StringId ?? ""; } catch { continue; }
-                    if (string.Equals(id, "settlement_garrison", StringComparison.Ordinal))
-                    {
-                        try { barracksLevel = b.CurrentLevel; } catch { barracksLevel = 0; }
-                        break;
-                    }
-                }
-            }
-        }
-        catch { /* 任何异常按 lvl 0 处理 */ }
-
-        if (barracksLevel < 1) barracksLevel = 1;
-        if (barracksLevel > 3) barracksLevel = 3;
+        // 巡逻模板等级 ← 哨所(Guard House)等级。读不到建筑按 0 级,下面 clamp 到 [1,3]。
+        int guardHouseLevel = BuildingLevelReader.GetLevel(settlement, StBuilding.GuardHouse);
+        if (guardHouseLevel < 1) guardHouseLevel = 1;
+        if (guardHouseLevel > 3) guardHouseLevel = 3;
 
         // 优先匹配同等级，找不到逐级降级，最后试 coastal 兜底
         var candidates = new System.Collections.Generic.List<string>();
-        for (int lvl = barracksLevel; lvl >= 1; lvl--)
+        for (int lvl = guardHouseLevel; lvl >= 1; lvl--)
         {
             candidates.Add($"settlement_patrol_template_level_{lvl}");
         }
