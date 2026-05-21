@@ -257,7 +257,7 @@ public static class GarrisonAllocationSolver
     }
 
     /// <summary>clan 是否与任意势力交战。FactionHelper.GetStances + IsAtWarWith(DefaultClanFinanceModel 同套路)。</summary>
-    private static bool IsClanAtWar(Clan clan)
+    internal static bool IsClanAtWar(Clan clan)
     {
         try
         {

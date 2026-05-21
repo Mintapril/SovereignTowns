@@ -4,6 +4,8 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Library;
+using SovereignTowns.Algorithm;
+using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
@@ -179,10 +181,35 @@ public static class GarrisonXpInjector
             // 2026-05-12 差距 2 修复：原 TryUpgradeGarrison 仅在 capital-only 路径触发，
             // 导致非首府 town 与所有 castle 累积 XP 却"卡 tier"。XP 注入后立即触发本城升级，
             // 让受管氏族自有的每个城/堡都能正常升级兵种。
+            // Task 7 Step 2: war + dry treasury → pause upgrades (stop pushing tier/wage up).
             try
             {
-                int budgetCap = Math.Max(0, rule?.BudgetLimit ?? 5000);
-                TroopUpgradeService.TryUpgradeGarrison(town, budgetCap, maxUpgradesPerCall: 20);
+                bool skipUpgrade = false;
+                try
+                {
+                    var ownerClan = town.OwnerClan;
+                    if (ownerClan != null && GarrisonAllocationSolver.IsClanAtWar(ownerClan))
+                    {
+                        var mgr = CapitalRegistry.Instance?.GetForClan(ownerClan);
+                        if (mgr != null && mgr.Treasury.Balance <= 0)
+                        {
+                            skipUpgrade = true;
+                            Logger.Info(
+                                $"GarrisonXpInjector: upgrade paused for '{settlement.StringId}' — clan at war + treasury balance={mgr.Treasury.Balance}");
+                        }
+                    }
+                }
+                catch (Exception warCheckEx)
+                {
+                    Logger.Error($"GarrisonXpInjector: war-buffer check failed for '{settlement.StringId}'", warCheckEx);
+                    // Fail open: allow upgrade if check errors
+                }
+
+                if (!skipUpgrade)
+                {
+                    int budgetCap = Math.Max(0, rule?.BudgetLimit ?? 5000);
+                    TroopUpgradeService.TryUpgradeGarrison(town, budgetCap, maxUpgradesPerCall: 20);
+                }
             }
             catch (Exception upgEx)
             {

@@ -5,11 +5,13 @@ using System.Threading;
 using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
+using SovereignTowns.Common;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Recruitment;
 using SovereignTowns.Transfer;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
@@ -100,6 +102,99 @@ public sealed class CapitalLogisticsManager
         }
 
         ExecuteMcmfInstructions(manager, result);
+
+        // Task 7 Step 1: peacetime disband-excess.
+        // Must run after MCMF so passA targets are already computed and used for routing.
+        DisbandExcessGarrisons(manager, passA);
+    }
+
+    /// <summary>
+    /// Task 7 Step 1: 和平期遣散超额驻军。
+    /// 对该氏族每个拥有 GarrisonParty 的城/堡，当实际头数 > 可承担目标 × DisbandExcessThreshold 时，
+    /// 通过 TroopTransferHelper.TransferFromGarrison（LowestTierFirst）抽走超额兵员并丢弃（废除）。
+    /// </summary>
+    private static void DisbandExcessGarrisons(CapitalManager manager, GarrisonAllocationResult passA)
+    {
+        try
+        {
+            var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+
+            // Gate 1: feature disabled
+            if (!cfg.DisbandUnaffordableExcess) return;
+
+            // Gate 2: manual mode — player chose to over-garrison; never disband
+            if (cfg.AllowManualGarrisonTargets) return;
+
+            var clan = manager?.OwnerClan;
+            if (clan == null) return;
+
+            foreach (var town in clan.Fiefs)
+            {
+                if (town == null) continue;
+                var settlement = town.Settlement;
+                if (settlement == null || !settlement.IsActive) continue;
+
+                try
+                {
+                    // Gate 3: under siege — never disband
+                    if (settlement.IsUnderSiege) continue;
+
+                    // Gate 4: high/critical risk — peacetime-only, skip when threatened
+                    var risk = RiskAssessmentService.Assess(settlement);
+                    if (risk.Level >= RiskLevel.High) continue;
+
+                    // Gate 5: settlement not in passA result (not allocated by solver)
+                    if (!passA.Target.TryGetValue(settlement, out int affordable)) continue;
+                    if (affordable <= 0) continue;
+
+                    int current = GarrisonThresholdMath.ActualGarrisonCount(settlement);
+
+                    // Gate 6: not over threshold
+                    if (current <= (int)(affordable * cfg.DisbandExcessThreshold)) continue;
+
+                    int excess = current - affordable;
+                    if (excess <= 0) continue;
+
+                    var garrison = town.GarrisonParty;
+                    if (garrison == null) continue;
+                    var garrisonRoster = garrison.MemberRoster;
+                    if (garrisonRoster == null) continue;
+
+                    // Use a throwaway roster as target — troops extracted here are abandoned (disbanded).
+                    // This matches the established TroopRoster.CreateDummyTroopRoster() pattern used
+                    // across transfer/patrol/recruiter paths (no PartyBase needed).
+                    var discardRoster = TroopRoster.CreateDummyTroopRoster();
+                    int disbanded = TroopTransferHelper.TransferFromGarrison(
+                        garrisonRoster,
+                        discardRoster,
+                        excess,
+                        TroopTransferHelper.SortStrategy.LowestTierFirst);
+
+                    if (disbanded > 0)
+                    {
+                        Logger.Info(
+                            $"DisbandExcessGarrisons: settlement='{settlement.StringId}' " +
+                            $"current={current} affordable={affordable} threshold={cfg.DisbandExcessThreshold:F2} " +
+                            $"disbanded={disbanded}");
+                        DecisionAuditLogger.LogRule(
+                            decisionType: "DisbandExcessGarrison",
+                            inputSummary: $"settlement={settlement.StringId} clan={clan.StringId} current={current} affordable={affordable} disbanded={disbanded}",
+                            decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan.StringId}\",\"current\":{current},\"affordable\":{affordable},\"disbanded\":{disbanded}}}",
+                            accepted: true);
+                    }
+                }
+                catch (Exception perEx)
+                {
+                    Logger.Error(
+                        $"DisbandExcessGarrisons: per-settlement failed (settlement='{town?.Settlement?.StringId}' clan='{clan?.StringId}')",
+                        perEx);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"DisbandExcessGarrisons failed (clan='{manager?.OwnerClan?.StringId}')", ex);
+        }
     }
 
     private static GarrisonAllocationResult RunPassA(CapitalManager manager)
