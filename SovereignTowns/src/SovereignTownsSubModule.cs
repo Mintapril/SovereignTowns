@@ -5,6 +5,7 @@ using TaleWorlds.Library;
 using TaleWorlds.Localization;
 using TaleWorlds.ModuleManager;
 using TaleWorlds.MountAndBlade;
+using HarmonyLib;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns;
@@ -64,9 +65,21 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
                 }
             }
 
-            if (!_skipBehaviorRegistration && _loggerInitialized)
+            if (!_skipBehaviorRegistration)
             {
-                Logger.Info($"互斥检测通过：未发现冲突模块 ({string.Join(", ", IncompatibleModuleIds)})");
+                if (_loggerInitialized)
+                    Logger.Info($"互斥检测通过：未发现冲突模块 ({string.Join(", ", IncompatibleModuleIds)})");
+
+                try
+                {
+                    new Harmony("sovereigntowns.patches").PatchAll();
+                    if (_loggerInitialized) Logger.Info("Harmony patches applied");
+                }
+                catch (System.Exception hex)
+                {
+                    if (_loggerInitialized) Logger.Error("Harmony PatchAll failed — patrol suppression disabled", hex);
+                    TrySafeDebugPrint($"{Tag} Harmony PatchAll threw: {hex.Message}");
+                }
             }
         }
         catch (System.Exception ex)
