@@ -115,7 +115,7 @@ public static class ControlPanelSpecs
                         LabelZh="征兵队：首府最低驻军", LabelEn="Recruiter: minimum home garrison",
                         HintZh="派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭限制，允许 0 兵裸车",
                         HintEn="Before a recruiter party is dispatched, the capital actual garrison must be >= this value; 0 = no limit, allowing a bare 0-troop dispatch.",
-                        Min=0, Max=10000, Discrete=true, Step=1, Def=0 },
+                        Min=0, Max=500, Discrete=true, Step=1, Def=0 },
 
                     new SpecEntry { Root="Thresholds", Key="RecruitmentCandidateBatchSize",
                         LabelZh="征兵：每轮候选村庄数", LabelEn="Recruitment: candidate villages per round",
@@ -317,13 +317,13 @@ public static class ControlPanelSpecs
                         LabelZh="MCMF：硬不匹配罚分", LabelEn="MCMF: hard-mismatch penalty",
                         HintZh="兵种 role 不符或精确模板不在升级树上的硬罚分",
                         HintEn="Hard penalty when a troop role mismatches or an exact-template troop is not on the upgrade tree.",
-                        Min=0, Max=100000, Discrete=true, Step=1, Def=1000, Advanced=true },
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=1000, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="McmfTierPenalty",
                         LabelZh="MCMF：Tier 差距罚分", LabelEn="MCMF: tier-gap penalty",
                         HintZh="每差 1 个 Tier 的匹配罚分",
                         HintEn="Matching penalty per tier of difference.",
-                        Min=0, Max=100000, Discrete=true, Step=1, Def=50, Advanced=true },
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=50, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="McmfLeniency",
                         LabelZh="MCMF：缺口宽容度", LabelEn="MCMF: shortfall leniency",
@@ -335,19 +335,19 @@ public static class ControlPanelSpecs
                         LabelZh="MCMF：未满足成本", LabelEn="MCMF: unmet-demand cost",
                         HintZh="需求未满足的成本；低于极差路线时会选择暂不派遣",
                         HintEn="Cost of leaving demand unmet; when this is below a very poor route, the solver chooses not to dispatch for now.",
-                        Min=0, Max=100000, Discrete=true, Step=1, Def=2000, Advanced=true },
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=2000, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="McmfRecruiterOverhead",
                         LabelZh="MCMF：征兵队固定成本", LabelEn="MCMF: recruiter party overhead",
                         HintZh="派出一支征兵队的固定成本",
                         HintEn="Fixed cost of dispatching one recruiter party.",
-                        Min=0, Max=100000, Discrete=true, Step=1, Def=100, Advanced=true },
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=100, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="McmfTransferOverhead",
                         LabelZh="MCMF：调拨队固定成本", LabelEn="MCMF: transfer party overhead",
                         HintZh="派出一支调拨队的固定成本",
                         HintEn="Fixed cost of dispatching one transfer party.",
-                        Min=0, Max=100000, Discrete=true, Step=1, Def=50, Advanced=true },
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=50, Advanced=true },
                 },
             },
 
@@ -377,13 +377,13 @@ public static class ControlPanelSpecs
                         LabelZh="通用：俘虏上限", LabelEn="General: prisoner cap",
                         HintZh="所有本 Mod 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每游戏内小时随机释放非英雄俘虏；0 = 关闭",
                         HintEn="Prisoner cap for all mod parties (recruiter/transfer/patrol/sally); above it, non-hero prisoners are released at random each in-game hour; 0 = off.",
-                        Min=0, Max=10000, Discrete=true, Step=1, Def=30 },
+                        Min=0, Max=500, Discrete=true, Step=1, Def=30 },
 
                     new SpecEntry { Root="Thresholds", Key="StuckTeleportHours",
                         LabelZh="通用：卡死瞬移阈值（真实小时）", LabelEn="General: stuck-teleport threshold (real hours)",
                         HintZh="首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭",
                         HintEn="Real hours accumulated since a stuck state was first detected; past this value the party is teleported to the capital gate; 0 = off.",
-                        Min=0, Max=720, Discrete=false, Step=1, Def=24, Advanced=true },
+                        Min=0, Max=168, Discrete=false, Step=1, Def=24, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="IdleHoursBeforeForceReturn",
                         LabelZh="生命周期：空闲遣返小时", LabelEn="Lifecycle: idle hours before forced return",

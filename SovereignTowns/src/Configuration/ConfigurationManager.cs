@@ -783,16 +783,16 @@ public static class ConfigurationManager
         // Issue #5：B17.4 新增阈值校验。
         if (t.RecruiterMinHomeGarrison < 0)
         { reason = $"Thresholds.RecruiterMinHomeGarrison invalid ({t.RecruiterMinHomeGarrison}); must be >= 0"; return false; }
-        if (t.RecruiterMinHomeGarrison > 10000)
-        { reason = $"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} 超过上限 10000"; return false; }
+        if (t.RecruiterMinHomeGarrison > 500)
+        { reason = $"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} 超过上限 500"; return false; }
         if (t.PartyPrisonerCap < 0)
         { reason = $"Thresholds.PartyPrisonerCap invalid ({t.PartyPrisonerCap}); must be >= 0"; return false; }
-        if (t.PartyPrisonerCap > 10000)
-        { reason = $"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} 超过上限 10000"; return false; }
+        if (t.PartyPrisonerCap > 500)
+        { reason = $"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} 超过上限 500"; return false; }
         if (!IsNonNegativeFloat(t.StuckTeleportHours))
         { reason = $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"; return false; }
-        if (t.StuckTeleportHours > 720f)
-        { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 720"; return false; }
+        if (t.StuckTeleportHours > 168f)
+        { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 168"; return false; }
         if (!IsNonNegativeFloat(t.PatrolMaxLifetimeHours) || t.PatrolMaxLifetimeHours > 720f)
         { reason = $"Thresholds.PatrolMaxLifetimeHours invalid ({t.PatrolMaxLifetimeHours}); [0, 720]"; return false; }
         if (t.PatrolMinDispatchSize < 0)
@@ -836,18 +836,18 @@ public static class ConfigurationManager
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruitmentCandidateBatchSize < 1 || t.RecruitmentCandidateBatchSize > 50)
         { reason = $"Thresholds.RecruitmentCandidateBatchSize invalid ({t.RecruitmentCandidateBatchSize}); [1, 50]"; return false; }
-        if (t.McmfHardPenalty < 0 || t.McmfHardPenalty > 100000)
-        { reason = $"Thresholds.McmfHardPenalty invalid ({t.McmfHardPenalty}); [0, 100000]"; return false; }
-        if (t.McmfTierPenalty < 0 || t.McmfTierPenalty > 100000)
-        { reason = $"Thresholds.McmfTierPenalty invalid ({t.McmfTierPenalty}); [0, 100000]"; return false; }
+        if (t.McmfHardPenalty < 0 || t.McmfHardPenalty > 10000)
+        { reason = $"Thresholds.McmfHardPenalty invalid ({t.McmfHardPenalty}); [0, 10000]"; return false; }
+        if (t.McmfTierPenalty < 0 || t.McmfTierPenalty > 10000)
+        { reason = $"Thresholds.McmfTierPenalty invalid ({t.McmfTierPenalty}); [0, 10000]"; return false; }
         if (!IsRatio(t.McmfLeniency))
         { reason = $"Thresholds.McmfLeniency invalid ({t.McmfLeniency}); [0, 1]"; return false; }
-        if (t.McmfUnmetCost < 0 || t.McmfUnmetCost > 100000)
-        { reason = $"Thresholds.McmfUnmetCost invalid ({t.McmfUnmetCost}); [0, 100000]"; return false; }
-        if (t.McmfRecruiterOverhead < 0 || t.McmfRecruiterOverhead > 100000)
-        { reason = $"Thresholds.McmfRecruiterOverhead invalid ({t.McmfRecruiterOverhead}); [0, 100000]"; return false; }
-        if (t.McmfTransferOverhead < 0 || t.McmfTransferOverhead > 100000)
-        { reason = $"Thresholds.McmfTransferOverhead invalid ({t.McmfTransferOverhead}); [0, 100000]"; return false; }
+        if (t.McmfUnmetCost < 0 || t.McmfUnmetCost > 10000)
+        { reason = $"Thresholds.McmfUnmetCost invalid ({t.McmfUnmetCost}); [0, 10000]"; return false; }
+        if (t.McmfRecruiterOverhead < 0 || t.McmfRecruiterOverhead > 10000)
+        { reason = $"Thresholds.McmfRecruiterOverhead invalid ({t.McmfRecruiterOverhead}); [0, 10000]"; return false; }
+        if (t.McmfTransferOverhead < 0 || t.McmfTransferOverhead > 10000)
+        { reason = $"Thresholds.McmfTransferOverhead invalid ({t.McmfTransferOverhead}); [0, 10000]"; return false; }
 
         reason = "";
         return true;
