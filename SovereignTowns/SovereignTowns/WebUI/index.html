@@ -857,8 +857,13 @@
             </p>
             <div class="diamond-divider mb-6"></div>
 
-            <!-- TargetPower -->
-            <div class="card p-5 mb-4">
+            <!-- 自动调度模式提示（手动驻军目标关闭时） -->
+            <div x-show="!config.FiscalAutonomy?.AllowManualGarrisonTargets"
+                 class="card p-5 mb-4 text-[13px] text-parchment-300"
+                 x-text="tr('当前为自动驻军调度模式：非首府目标兵力由中央调度器按防御价值与氏族预算决定，下方「目标兵力」旋钮已隐藏。如需手动设定，请在「策略参数 → 财政自治」中开启「允许手动驻军目标」。', 'Auto garrison dispatch mode is active: branch target strength is decided by the central dispatcher from defensive value and clan budget, so the “Target strength” knob below is hidden. To set it manually, enable “Allow manual garrison targets” under Strategy → Fiscal Autonomy.')"></div>
+
+            <!-- TargetPower（仅手动驻军目标模式可见） -->
+            <div x-show="config.FiscalAutonomy?.AllowManualGarrisonTargets" class="card p-5 mb-4">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
                   <div class="text-[15px] text-parchment-50 font-medium" x-text="tr('目标兵力', 'Target strength')"></div>
@@ -1007,6 +1012,106 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- =========== Task 9: 财政自治视图 =========== -->
+            <div class="diamond-divider my-8"></div>
+            <h2 class="font-display text-2xl text-gold-100 mb-2 tracking-wide uppercase" x-text="tr('财政自治', 'Fiscal autonomy')"></h2>
+            <p class="text-parchment-200 text-sm mb-6" x-text="tr('受管氏族金库与各受管领地的单城盈亏（收入对比驻军工资），数据来自调度器每日评估。', 'The managed clan treasury and per-holding P&amp;L (income vs garrison wage), sourced from the dispatcher’s daily evaluation.')"></p>
+
+            <div x-show="!finance?.fiscal" class="text-parchment-400 italic text-sm mb-8"
+                 x-text="tr('暂无财政数据 —— 调度器尚未运行（载入存档后等一个游戏日）。', 'No fiscal data yet — the dispatcher has not run (wait one in-game day after loading a save).')"></div>
+
+            <div x-show="finance?.fiscal" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <!-- 金库余额 -->
+              <div class="ornate-frame p-5 text-center">
+                <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.TreasuryBalance ?? 0) + 'd'"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('金库余额', 'Treasury balance')"></div>
+              </div>
+              <!-- 缓冲金上限 -->
+              <div class="ornate-frame p-5 text-center">
+                <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.BufferCap ?? 0) + 'd'"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('缓冲金上限', 'Buffer cap')"></div>
+              </div>
+              <!-- 近 7 日日均开销 -->
+              <div class="ornate-frame p-5 text-center">
+                <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.TrailingDailyExpense ?? 0) + 'd'"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('近 7 日日均开销', 'Trailing daily expense')"></div>
+              </div>
+            </div>
+
+            <!-- 单城 P&amp;L -->
+            <div x-show="finance?.fiscal" class="ornate-frame p-5 mb-8">
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('各领地盈亏', 'Per-holding P&amp;L')"></h3>
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="border-b-2 border-gold-700 text-parchment-200">
+                    <th class="py-2 text-left" x-text="tr('领地', 'Holding')"></th>
+                    <th class="py-2 text-right" x-text="tr('收入', 'Income')"></th>
+                    <th class="py-2 text-right" x-text="tr('驻军工资', 'Garrison wage')"></th>
+                    <th class="py-2 text-right" x-text="tr('净额', 'Net')"></th>
+                    <th class="py-2 text-right" x-text="tr('推荐/当前驻军', 'Rec/cur garrison')"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(s, idx) in (finance?.fiscal?.Settlements || [])" :key="idx">
+                    <tr class="border-b border-ink-700 last:border-0">
+                      <td class="py-1.5 text-parchment-100">
+                        <span x-text="s.Name"></span>
+                        <span x-show="s.IsCastle" class="text-[10px] text-parchment-400 ml-1" x-text="tr('（堡）', '(castle)')"></span>
+                      </td>
+                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="s.Income + 'd'"></td>
+                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="s.GarrisonWage + 'd'"></td>
+                      <td class="py-1.5 text-right font-mono" :class="s.Net >= 0 ? 'text-sage-300' : 'text-danger-500'"
+                          x-text="(s.Net >= 0 ? '+' : '') + s.Net + 'd'"></td>
+                      <td class="py-1.5 text-right text-parchment-300 font-mono" x-text="s.RecommendedGarrison + ' / ' + s.CurrentGarrison"></td>
+                    </tr>
+                  </template>
+                </tbody>
+                <tfoot>
+                  <tr class="font-bold border-t-2 border-gold-700">
+                    <td class="py-2 text-gold-100" x-text="tr('合计', 'Total')"></td>
+                    <td class="py-2 text-right text-gold-100 font-mono" x-text="(finance?.fiscal?.TotalIncome ?? 0) + 'd'"></td>
+                    <td class="py-2 text-right text-gold-100 font-mono" x-text="(finance?.fiscal?.TotalGarrisonWage ?? 0) + 'd'"></td>
+                    <td class="py-2 text-right font-mono"
+                        :class="((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) >= 0 ? 'text-sage-300' : 'text-danger-500'"
+                        x-text="(((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) >= 0 ? '+' : '') + ((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) + 'd'"></td>
+                    <td class="py-2"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <!-- 手动驻军目标评估（仅手动模式可见） -->
+            <div x-show="assessment?.manualMode" class="ornate-frame p-5">
+              <h3 class="font-display text-gold-200 text-base mb-2 tracking-wide" x-text="tr('手动驻军目标评估', 'Manual garrison target assessment')"></h3>
+              <p class="text-parchment-300 text-[13px] mb-3" x-text="tr('对比你设定的目标与调度器推荐值；每日工资差额为正表示你比推荐值多付的工资。', 'Compares your set target with the dispatcher’s recommendation; a positive daily wage delta is the extra wage you pay over the recommendation.')"></p>
+              <div x-show="(assessment?.assessments || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('暂无评估数据 —— 调度器尚未在手动模式下运行。', 'No assessment data yet — the dispatcher has not run in manual mode.')"></div>
+              <table x-show="(assessment?.assessments || []).length > 0" class="w-full text-sm">
+                <thead>
+                  <tr class="border-b-2 border-gold-700 text-parchment-200">
+                    <th class="py-2 text-left" x-text="tr('领地', 'Holding')"></th>
+                    <th class="py-2 text-right" x-text="tr('你的目标', 'Your target')"></th>
+                    <th class="py-2 text-right" x-text="tr('推荐目标', 'Recommended')"></th>
+                    <th class="py-2 text-right" x-text="tr('每日工资差额', 'Daily wage delta')"></th>
+                    <th class="py-2 text-right" x-text="tr('判定', 'Verdict')"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(a, idx) in (assessment?.assessments || [])" :key="idx">
+                    <tr class="border-b border-ink-700 last:border-0">
+                      <td class="py-1.5 text-parchment-100" x-text="a.settlementId"></td>
+                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="a.playerTarget"></td>
+                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="a.recommendedTarget"></td>
+                      <td class="py-1.5 text-right font-mono" :class="a.dailyWageDelta <= 0 ? 'text-sage-300' : 'text-danger-500'"
+                          x-text="(a.dailyWageDelta >= 0 ? '+' : '') + a.dailyWageDelta + 'd'"></td>
+                      <td class="py-1.5 text-right text-xs"
+                          :class="a.loopClosesAtPlayerTarget ? 'text-sage-300' : 'text-danger-500'"
+                          x-text="a.loopClosesAtPlayerTarget ? tr('✓ 闭环', '✓ sustainable') : tr('⚠ 超支', '⚠ over budget')"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <!-- =========== TAB 7: 运行动态 =========== -->
@@ -1104,6 +1209,8 @@
         financeError: '',
         activity: null,
         activityError: '',
+        assessment: null,       // Task 9: 手动驻军目标评估（/api/assessment）
+        assessmentError: '',
 
         troopSearch: '',
         troopCultureFilter: '',
@@ -1161,10 +1268,13 @@
           // pickLang：把 *Zh/*En 双语字段映射成当前语言的 label/hint。
           // 语言切换时本 getter 重新求值 —— 渲染保持响应式（无须重拉 /api/specs）。
           const pickLang = (zh, en) => this.tr(zh, en);
+          // Task 9：手动驻军目标模式开关 —— 决定带 requiresManualMode 的旋钮是否渲染。
+          const manualMode = !!this.config?.FiscalAutonomy?.AllowManualGarrisonTargets;
           return this.specGroups.map(g => {
-            // clean：未开启「高级参数」时隐藏 adv 旋钮。
+            // clean：未开启「高级参数」时隐藏 adv 旋钮；auto 模式下隐藏 requiresManualMode 旋钮。
             const specs = g.specs
               .filter(s => this.showAdvanced || !s.adv)
+              .filter(s => manualMode || !s.requiresManualMode)
               .map(s => ({
                 root: s.root || '',
                 key: s.key,
@@ -1177,6 +1287,7 @@
                 discrete: s.discrete,
                 def: s.def,
                 adv: s.adv,
+                requiresManualMode: s.requiresManualMode,
               }));
             return {
               key: g.key,
@@ -1275,7 +1386,8 @@
           await this.fetchAll();
           this.loadFinance();
           this.loadActivity();
-          setInterval(() => { this.loadFinance(); this.loadActivity(); }, 5000);
+          this.loadAssessment();
+          setInterval(() => { this.loadFinance(); this.loadActivity(); this.loadAssessment(); }, 5000);
           // 关闭 / 刷新页面时若有未保存改动，浏览器原生拦截一次（防手滑丢配置）。
           window.addEventListener('beforeunload', (e) => {
             if (this.dirty) { e.preventDefault(); e.returnValue = ''; }
@@ -1383,6 +1495,23 @@
             }
           } catch (e) {
             this.financeError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
+          }
+        },
+
+        // loadAssessment：拉取手动驻军目标评估（仅手动模式有数据）。并入 5 秒轮询。
+        async loadAssessment() {
+          try {
+            const r = await this.http('GET', '/api/assessment');
+            if (r.ok) {
+              this.assessment = r.body;
+              this.assessmentError = '';
+            } else {
+              this.assessmentError = this.tr(
+                `加载失败 HTTP ${r.status}: ${r.body?.message || '?'}`,
+                `Load failed, HTTP ${r.status}: ${r.body?.message || '?'}`);
+            }
+          } catch (e) {
+            this.assessmentError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
           }
         },
 

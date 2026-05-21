@@ -865,7 +865,16 @@
                                         <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                     Brush="SPOptions.Slider.Value.Text" Text="@Intro"
                                                     MarginTop="6" MarginBottom="14" />
-                                        <STCPSliderRow DataSource="{TargetPowerRow}" />
+                                        <TextWidget IsVisible="@AutoMode"
+                                                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    Brush="SPOptions.Slider.Value.Text" Text="@AutoModeNotice"
+                                                    MarginBottom="10" />
+                                        <Widget IsVisible="@ManualMode"
+                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren">
+                                          <Children>
+                                            <STCPSliderRow DataSource="{TargetPowerRow}" />
+                                          </Children>
+                                        </Widget>
                                         <STCPSliderRow DataSource="{LowTierRow}" />
                                       </Children>
                                     </ListPanel>
@@ -990,6 +999,57 @@
                                                     <TextWidget IsVisible="@HasNoRecent"
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                 Brush="SPOptions.Slider.Value.Text" Text="@EmptyRecentText" />
+
+                                                    <!-- ════ Task 9：财政自治视图 ════ -->
+                                                    <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                 SuggestedHeight="9" Brush="SPOptions.CollapserLine"
+                                                                 MarginTop="14" MarginBottom="8" />
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="Clan.TabControl.Text" Text="@FiscalTitle"
+                                                                HorizontalAlignment="Center" MarginBottom="8" />
+
+                                                    <TextWidget IsVisible="@HasNoFiscal"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.Slider.Value.Text" Text="@EmptyFiscalText" />
+
+                                                    <!-- 金库摘要 -->
+                                                    <TextWidget IsVisible="@HasFiscal"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.OptionName.Text" Text="@TreasuryTitle" MarginBottom="4" />
+                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{TreasuryRows}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop" MarginBottom="10">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+
+                                                    <!-- 单城 P&L -->
+                                                    <TextWidget IsVisible="@HasFiscal"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.OptionName.Text" Text="@PnlTitle" MarginBottom="4" />
+                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{PnlRows}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop" MarginBottom="10">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+
+                                                    <!-- 手动模式评估 -->
+                                                    <TextWidget IsVisible="@ShowAssessment"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.OptionName.Text" Text="@AssessmentTitle" MarginBottom="4" />
+                                                    <TextWidget IsVisible="@ShowAssessment"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.Slider.Value.Text" Text="@AssessmentIntro" MarginBottom="6" />
+                                                    <ListPanel IsVisible="@ShowAssessment" DataSource="{AssessmentRows}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                                      <ItemTemplate>
+                                                        <STCPFinanceRow />
+                                                      </ItemTemplate>
+                                                    </ListPanel>
 
                                                   </Children>
                                                 </ListPanel>

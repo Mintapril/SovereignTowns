@@ -276,17 +276,73 @@ internal static class WebConfigEndpoints
         }
     }
 
-    /// <summary>GET /api/finance → mod 支出报告（今日/本周/全部 + 近期流水）。</summary>
+    /// <summary>
+    /// GET /api/finance → mod 支出报告（今日/本周/全部 + 近期流水）+ Task 9 财政自治视图
+    /// （玩家氏族金库余额/缓冲上限/日均开销 + 各受管领地单城 P&amp;L）。
+    /// 支出报告来自 <see cref="ModExpenseLedger"/>（线程安全 in-memory）；财政视图来自
+    /// <see cref="FinancialSnapshot"/>（主线程产出的纯数值快照，HTTP 线程只读）。
+    /// </summary>
     public static void GetFinance(HttpListenerContext ctx)
     {
         try
         {
             var report = ModExpenseLedger.BuildReport();
-            WebConfigServer.WriteJson(ctx, 200, report);
+            var clanFinance = FinancialSnapshot.ReadPlayerClan(FinancialSnapshot.PlayerClanId);
+
+            // 报告字段原样下发；额外挂 fiscal 节点（无快照时为 null，WebUI 据此显示「暂无数据」）。
+            var payload = new
+            {
+                report.Today, report.TodayTotal,
+                report.Week, report.WeekTotal,
+                report.AllTime, report.AllTimeTotal,
+                report.RecentEntries,
+                fiscal = clanFinance,
+            };
+            WebConfigServer.WriteJson(ctx, 200, payload);
         }
         catch (Exception ex)
         {
             Logger.Error("GetFinance threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// GET /api/assessment → 手动驻军目标模式下的「玩家目标 vs 调度器推荐」评估。
+    /// 数据源 <see cref="SovereignTowns.Managers.CapitalLogisticsManager.LatestAssessments"/>
+    /// （主线程每日填充的纯数值快照，仅手动模式有数据）。auto 模式 / 无数据时返回空列表。
+    /// </summary>
+    public static void GetAssessment(HttpListenerContext ctx)
+    {
+        try
+        {
+            string playerClanId = FinancialSnapshot.PlayerClanId;
+            var all = SovereignTowns.Managers.CapitalLogisticsManager.LatestAssessments;
+            var list = new List<object>();
+            bool manualMode = ConfigurationManager.Current?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
+
+            if (!string.IsNullOrEmpty(playerClanId)
+                && all.TryGetValue(playerClanId, out var entries) && entries != null)
+            {
+                foreach (var a in entries)
+                {
+                    if (a == null) continue;
+                    list.Add(new
+                    {
+                        settlementId = a.SettlementId,
+                        playerTarget = a.PlayerTarget,
+                        recommendedTarget = a.RecommendedTarget,
+                        dailyWageDelta = a.DailyWageDelta,
+                        loopClosesAtPlayerTarget = a.LoopClosesAtPlayerTarget,
+                    });
+                }
+            }
+
+            WebConfigServer.WriteJson(ctx, 200, new { manualMode, count = list.Count, assessments = list });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetAssessment threw", ex);
             WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
         }
     }
@@ -359,6 +415,8 @@ internal static class WebConfigEndpoints
                         discrete = s.Discrete,
                         def,
                         adv = s.Advanced,
+                        // Task 9：条件可见 —— 非空时该旋钮仅在手动驻军目标模式下渲染。
+                        requiresManualMode = string.IsNullOrEmpty(s.RequiresManualMode) ? null : s.RequiresManualMode,
                     });
                 }
 

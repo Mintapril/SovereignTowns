@@ -17,6 +17,14 @@ public sealed class BranchesTabVM : ViewModel
     [DataSourceProperty] public SliderRowVM TargetPowerRow { get; }
     [DataSourceProperty] public SliderRowVM LowTierRow { get; }
 
+    /// <summary>
+    /// 目标兵力旋钮仅在「财政自治 → 允许手动驻军目标」开启时可见。
+    /// auto 模式下非首府目标由中央调度器（Pass A）按防御价值决定，手动旋钮无意义。
+    /// </summary>
+    [DataSourceProperty] public bool ManualMode { get; }
+    [DataSourceProperty] public bool AutoMode => !ManualMode;
+    [DataSourceProperty] public string AutoModeNotice { get; }
+
     [DataSourceProperty]
     public bool ShowResetAll =>
         Math.Abs(StrategyTabVM.GetD(_config, _targetPowerSpec) - 150.0) > 1e-6 ||
@@ -31,6 +39,10 @@ public sealed class BranchesTabVM : ViewModel
     public BranchesTabVM(GlobalConfig config, Action markDirty)
     {
         _config = config;
+        ManualMode = config?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
+        AutoModeNotice = ControlPanelLoc.Tr(
+            "当前为自动驻军调度模式：非首府目标兵力由中央调度器按防御价值与氏族预算决定，下方「目标兵力」旋钮已隐藏。如需手动设定，请在「策略参数 → 财政自治」中开启「允许手动驻军目标」。",
+            "Auto garrison dispatch mode is active: branch target strength is decided by the central dispatcher from defensive value and clan budget, so the \"Target strength\" knob below is hidden. To set it manually, enable \"Allow manual garrison targets\" under Strategy → Fiscal Autonomy.");
         Title = ControlPanelLoc.Tr("非首府驻军", "Branch garrison");
         Intro = ControlPanelLoc.Tr(
             "下面两项仅作用于首府拥有者本人名下的非首府城镇 / 城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。",

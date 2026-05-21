@@ -57,6 +57,9 @@ internal static class SettlementsSnapshot
                 return;
             }
 
+            // Task 9: 发布玩家氏族 StringId 供 FinancialSnapshot / 评估视图的 HTTP 线程使用。
+            FinancialSnapshot.SetPlayerClanId(playerClan.StringId ?? "");
+
             var fresh = new List<SettlementInfo>(8);
 
             // Town.AllTowns 同时包含 IsTown=true 与 IsCastle=true 的 Town wrapper（vanilla 设计：

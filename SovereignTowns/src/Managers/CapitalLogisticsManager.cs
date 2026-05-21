@@ -94,6 +94,10 @@ public sealed class CapitalLogisticsManager
             // 清掉该 clan 上一次手动模式残留的 assessment,避免控制面板展示过期数据。
             ClearAssessments(manager);
 
+        // Task 9: 财政自治财务视图快照（金库 + 单城 P&L）。在主线程产出纯数值 DTO，
+        // 供 /api/finance 与控制面板 FinanceTabVM 跨线程只读消费。
+        StashFinancialSnapshot(manager, passA);
+
         var result = RunMcmf(manager, capitalSettlement, passA);
         if (result.SettlementCount == 0)
         {
@@ -543,5 +547,96 @@ public sealed class CapitalLogisticsManager
             snapshot[clanId] = entries ?? new List<GarrisonAssessment>();
         }
         Volatile.Write(ref _latestAssessments, snapshot);
+    }
+
+    // ── Task 9: 财政自治财务视图快照 ──────────────────────────────────────────
+
+    /// <summary>一次性 warn 去重：registered ClanFinanceModel 不是 STClanFinanceModel 时只警告一次。</summary>
+    private static bool _warnedFinanceModelMissing;
+
+    /// <summary>
+    /// 在 Campaign 主线程调用:对该受管氏族产出一份 <see cref="WebConfig.FinancialSnapshot.ClanFinance"/>
+    /// (金库余额/缓冲上限/日均开销 + 各受管领地单城 P&amp;L),整体替换该 clan 在快照中的条目。
+    /// 收入用 <see cref="Models.STClanFinanceModel.SafeTownIncome"/> 重算;推荐头数取 Pass A 输出。
+    /// 任何失败保留旧快照不变(本方法整体 try/catch)。
+    /// </summary>
+    private static void StashFinancialSnapshot(CapitalManager manager, GarrisonAllocationResult passA)
+    {
+        try
+        {
+            var clan = manager?.OwnerClan;
+            if (clan == null) return;
+            string clanId = clan.StringId ?? "";
+            if (string.IsNullOrEmpty(clanId)) return;
+
+            var treasury = manager.Treasury;
+            int bufferDays = ConfigurationManager.Current?.FiscalAutonomy?.TreasuryBufferDays ?? 30;
+
+            // STClanFinanceModel 的 SafeTownIncome 是只读重算 helper(绝不抛、绝不改金库)。
+            // 优先复用已注册的 model 实例;取不到则构造一个(无状态,构造廉价)。
+            // 取不到说明别的 mod 覆盖了 ClanFinanceModel —— 一次性 warn 提示兼容性意外
+            // (SafeTownIncome 是纯读 helper,fallback 实例本身安全)。
+            var financeModel =
+                TaleWorlds.CampaignSystem.Campaign.Current?.Models?.ClanFinanceModel as Models.STClanFinanceModel;
+            if (financeModel == null)
+            {
+                if (!_warnedFinanceModelMissing)
+                {
+                    _warnedFinanceModelMissing = true;
+                    Logger.Warn("CapitalLogisticsManager.StashFinancialSnapshot: registered ClanFinanceModel is not STClanFinanceModel (another mod overrode it); using a standalone instance for the read-only SafeTownIncome helper.");
+                }
+                financeModel = new Models.STClanFinanceModel();
+            }
+
+            var cf = new WebConfig.FinancialSnapshot.ClanFinance
+            {
+                ClanId = clanId,
+                ClanName = clan.Name?.ToString() ?? clanId,
+                TreasuryBalance = treasury?.Balance ?? 0,
+                BufferCap = treasury?.BufferCap(bufferDays) ?? 0,
+                TrailingDailyExpense = treasury?.TrailingDailyExpense() ?? 0,
+            };
+
+            var fiefs = clan.Fiefs?.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList()
+                        ?? new List<Town>();
+            foreach (var town in fiefs)
+            {
+                try
+                {
+                    var s = town.Settlement;
+                    long income = financeModel.SafeTownIncome(clan, town);
+                    long wage = 0;
+                    var gp = town.GarrisonParty;
+                    if (gp != null && gp.IsActive) wage = Math.Max(0, gp.TotalWage);
+                    int current = Math.Min(gp?.MemberRoster?.TotalManCount ?? 0, 100000);
+                    int recommended = passA != null && passA.Target.TryGetValue(s, out var rec)
+                        ? Math.Max(0, rec) : 0;
+
+                    cf.Settlements.Add(new WebConfig.FinancialSnapshot.SettlementPnl
+                    {
+                        SettlementId = s.StringId ?? "",
+                        Name = s.Name?.ToString() ?? s.StringId ?? "",
+                        IsCastle = s.IsCastle,
+                        Income = income,
+                        GarrisonWage = wage,
+                        Net = income - wage,
+                        CurrentGarrison = current,
+                        RecommendedGarrison = recommended,
+                    });
+                    cf.TotalIncome += income;
+                    cf.TotalGarrisonWage += wage;
+                }
+                catch (Exception inner)
+                {
+                    Logger.Error($"CapitalLogisticsManager.StashFinancialSnapshot: skipping '{town?.Settlement?.StringId}'", inner);
+                }
+            }
+
+            WebConfig.FinancialSnapshot.ReplaceClan(clanId, cf);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.StashFinancialSnapshot failed (clan={manager?.OwnerClan?.StringId})", ex);
+        }
     }
 }
