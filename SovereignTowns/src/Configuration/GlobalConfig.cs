@@ -57,6 +57,9 @@ public sealed class GlobalConfig
     /// <summary>建筑等级 → 队伍加成系数。军营 / 哨所等级派生各类队伍并发上限与驻军 XP。</summary>
     public BuildingBonusConfig BuildingBonus { get; set; } = new BuildingBonusConfig();
 
+    /// <summary>财政自治 + 中央驻军调度器配置。金库预算、遣散超额、MCMF 价值函数等所有财政自治旋钮。</summary>
+    public FiscalAutonomyConfig FiscalAutonomy { get; set; } = new FiscalAutonomyConfig();
+
     /// <summary>构造一份纯默认配置（用于首次安装 / 配置丢失回退）。</summary>
     public static GlobalConfig CreateDefault() => new GlobalConfig
     {
@@ -69,6 +72,7 @@ public sealed class GlobalConfig
         ClanRecruiter = new ClanRecruiterConfig(),
         Thresholds = new PartyThresholds(),
         BuildingBonus = new BuildingBonusConfig(),
+        FiscalAutonomy = new FiscalAutonomyConfig(),
     };
 }
 

@@ -24,7 +24,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 20;
+    public const int CurrentConfigVersion = 21;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -547,6 +547,7 @@ public static class ConfigurationManager
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.Thresholds ??= new PartyThresholds();
             parsed.BuildingBonus ??= new BuildingBonusConfig();
+            parsed.FiscalAutonomy ??= new FiscalAutonomyConfig();
             parsed.LastModified ??= "";
 
             // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
@@ -714,6 +715,10 @@ public static class ConfigurationManager
         {
             return false;
         }
+        if (config.FiscalAutonomy != null && !ValidateFiscalAutonomy(config.FiscalAutonomy, out reason))
+        {
+            return false;
+        }
 
         reason = "";
         return true;
@@ -769,6 +774,30 @@ public static class ConfigurationManager
                 return false;
             }
         }
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateFiscalAutonomy(FiscalAutonomyConfig f, out string reason)
+    {
+        if (f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
+        { reason = $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1,1.0]"; return false; }
+        if (f.TreasuryBufferDays < 0 || f.TreasuryBufferDays > 120)
+        { reason = $"FiscalAutonomy.TreasuryBufferDays invalid ({f.TreasuryBufferDays}); [0,120]"; return false; }
+        if (f.MinGarrisonFloor < 0 || f.MinGarrisonFloor > 500)
+        { reason = $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0,500]"; return false; }
+        if (f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
+        { reason = $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0,3.0]"; return false; }
+        if (f.SurplusEdgeCost < 1 || f.SurplusEdgeCost > 1000)
+        { reason = $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1,1000]"; return false; }
+        if (f.CoreTierCount < 1 || f.CoreTierCount > 20)
+        { reason = $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1,20]"; return false; }
+        if (f.MaxGarrisonHardCap < f.MinGarrisonFloor || f.MaxGarrisonHardCap > 2000)
+        { reason = $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor,2000]"; return false; }
+        if (f.AdequateBase < f.MinGarrisonFloor || f.AdequateBase > f.MaxGarrisonHardCap)
+        { reason = $"FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor,MaxGarrisonHardCap]"; return false; }
+        if (f.ValueFloorBase <= f.ValueCoreBase)
+        { reason = $"FiscalAutonomy.ValueFloorBase must exceed ValueCoreBase (floor must dominate core)"; return false; }
         reason = "";
         return true;
     }
