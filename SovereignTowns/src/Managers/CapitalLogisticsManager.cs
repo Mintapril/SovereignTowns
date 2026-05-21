@@ -484,12 +484,18 @@ public sealed class CapitalLogisticsManager
 
                     int recommended = passA.Target.TryGetValue(settlement, out var rec) ? Math.Max(0, rec) : 0;
 
+                    // DailyWageDelta for castles: BranchRule.TargetPower is in military-power units
+                    // (~3-5× headcount) while passA.Target (recommended) is in headcount. Subtracting
+                    // the two different units yields a meaningless inflated figure, so we emit 0 for
+                    // castles. Town settlements use headcount for both sides and compute correctly.
+                    int dailyWageDelta = town.IsTown ? (playerTarget - recommended) * wagePerTroop : 0;
+
                     assessments.Add(new GarrisonAssessment
                     {
                         SettlementId = settlement.StringId ?? "",
                         PlayerTarget = playerTarget,
                         RecommendedTarget = recommended,
-                        DailyWageDelta = (playerTarget - recommended) * wagePerTroop,
+                        DailyWageDelta = dailyWageDelta,
                         LoopClosesAtPlayerTarget = playerTarget <= recommended,
                     });
                 }

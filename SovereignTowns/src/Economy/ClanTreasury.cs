@@ -28,6 +28,18 @@ public sealed class ClanTreasury
 
     public bool CanAfford(long amount) => amount <= 0 || _balance >= amount;
 
+    /// <summary>
+    /// 退款路径：归还余额 AND 从当日开销环中扣除对应金额（夹紧 ≥ 0 防止跨日退款出现负值）。
+    /// 与 Credit 的区别：Credit 仅增加余额（收入路径），Refund 同时回滚开销记录。
+    /// </summary>
+    public void Refund(long amount)
+    {
+        if (amount <= 0) return;
+        _balance += amount;
+        long slot = _expenseByDay[_dayCursor];
+        _expenseByDay[_dayCursor] = slot > amount ? slot - amount : 0;
+    }
+
     public void RollDay() { _dayCursor = (_dayCursor + 1) % 7; _expenseByDay[_dayCursor] = 0; }
 
     public long TrailingDailyExpense()

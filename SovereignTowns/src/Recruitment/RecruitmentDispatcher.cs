@@ -1,4 +1,5 @@
 using System;
+using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
@@ -82,6 +83,28 @@ public sealed class RecruitmentDispatcher
             else
             {
                 Logger.Warn($"  RecruitmentDispatcher: capitalRegistry == null，跳过首府校验（兼容模式）");
+            }
+
+            // §3.5 war-buffer: pause external recruiter dispatch when the clan is at war and treasury
+            // balance is empty (mirrors the upgrade gate in GarrisonXpInjector). Fail open on error.
+            try
+            {
+                var ownerClan = homeTown.OwnerClan;
+                if (ownerClan != null && GarrisonAllocationSolver.IsClanAtWar(ownerClan))
+                {
+                    var mgr = CapitalRegistry.Instance?.GetForClan(ownerClan);
+                    if (mgr != null && mgr.Treasury.Balance <= 0)
+                    {
+                        Logger.Info(
+                            $"  RecruitmentDispatcher: dispatch paused for '{homeTown.Name}' — clan at war + treasury balance={mgr.Treasury.Balance}");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception warEx)
+            {
+                // Fail open: allow dispatch if this read-only heuristic check errors.
+                Logger.Warn($"  RecruitmentDispatcher: war-buffer check failed for '{homeTown.Name}'", warEx);
             }
 
             var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();

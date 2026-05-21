@@ -189,7 +189,9 @@ public static class ModTreasury
             var treasury = ResolveFor(clan);
             if (treasury != null)
             {
-                treasury.Credit(amount);
+                // Use Refund (not Credit) so the expense ring is also corrected, preventing
+                // phantom trailing-expense inflation that would inflate TrailingDailyExpense / BufferCap.
+                treasury.Refund(amount);
 
                 ModExpenseLedger.Record(category, -amount, "refund:" + note);
                 DecisionAuditLogger.LogRule(
