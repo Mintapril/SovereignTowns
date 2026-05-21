@@ -143,16 +143,24 @@ public sealed class CapitalLogisticsManager
                     var risk = RiskAssessmentService.Assess(settlement);
                     if (risk.Level >= RiskLevel.High) continue;
 
-                    // Gate 5: settlement not in passA result (not allocated by solver)
+                    // Gate 5: settlement genuinely absent from Pass A (not a fief the solver saw).
+                    // The solver pre-seeds Target=0 for every fief, so present-with-0 is NOT skipped
+                    // here — it falls through to the MinGarrisonFloor clamp below.
                     if (!passA.Target.TryGetValue(settlement, out int affordable)) continue;
-                    if (affordable <= 0) continue;
+
+                    // MinGarrisonFloor is the design's guaranteed minimum garrison (fiscal-autonomy §3.5):
+                    // a budget-starved clan whose affordable target came out below the floor keeps the
+                    // floor as an accepted subsidy — disband-excess must never breach it. The Math.Max
+                    // clamp uniformly handles affordable==0 and any affordable < MinGarrisonFloor.
+                    int effectiveTarget = Math.Max(affordable, Math.Max(0, cfg.MinGarrisonFloor));
+                    if (effectiveTarget <= 0) continue;
 
                     int current = GarrisonThresholdMath.ActualGarrisonCount(settlement);
 
                     // Gate 6: not over threshold
-                    if (current <= (int)(affordable * cfg.DisbandExcessThreshold)) continue;
+                    if (current <= (int)(effectiveTarget * cfg.DisbandExcessThreshold)) continue;
 
-                    int excess = current - affordable;
+                    int excess = current - effectiveTarget;
                     if (excess <= 0) continue;
 
                     var garrison = town.GarrisonParty;
@@ -174,12 +182,12 @@ public sealed class CapitalLogisticsManager
                     {
                         Logger.Info(
                             $"DisbandExcessGarrisons: settlement='{settlement.StringId}' " +
-                            $"current={current} affordable={affordable} threshold={cfg.DisbandExcessThreshold:F2} " +
-                            $"disbanded={disbanded}");
+                            $"current={current} affordable={affordable} effectiveTarget={effectiveTarget} " +
+                            $"threshold={cfg.DisbandExcessThreshold:F2} disbanded={disbanded}");
                         DecisionAuditLogger.LogRule(
                             decisionType: "DisbandExcessGarrison",
-                            inputSummary: $"settlement={settlement.StringId} clan={clan.StringId} current={current} affordable={affordable} disbanded={disbanded}",
-                            decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan.StringId}\",\"current\":{current},\"affordable\":{affordable},\"disbanded\":{disbanded}}}",
+                            inputSummary: $"settlement={settlement.StringId} clan={clan.StringId} current={current} affordable={affordable} effectiveTarget={effectiveTarget} disbanded={disbanded}",
+                            decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan.StringId}\",\"current\":{current},\"affordable\":{affordable},\"effectiveTarget\":{effectiveTarget},\"disbanded\":{disbanded}}}",
                             accepted: true);
                     }
                 }
