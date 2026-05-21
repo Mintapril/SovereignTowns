@@ -47,6 +47,9 @@ internal static class WebConfigGameThreadSync
 
             try { VanillaSuppressionManager.Instance?.ApplyToAllSettlements(); }
             catch (System.Exception ex) { Logger.Warn($"WebConfigGameThreadSync: VanillaSuppression re-apply failed: {ex.Message}"); }
+
+            try { VanillaPatrolSuppressor.Instance?.DissolveAllManagedVanillaPatrols(); }
+            catch (System.Exception ex) { Logger.Warn($"WebConfigGameThreadSync: VanillaPatrolSuppressor re-apply failed: {ex.Message}"); }
         }
 
         // C1：HTTP 客户端短时间内大批 PATCH 时 _pendingChangedSettlementIds 可能积累上百条 →

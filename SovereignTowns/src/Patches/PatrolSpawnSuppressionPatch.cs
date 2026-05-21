@@ -16,6 +16,9 @@ namespace SovereignTowns.Patches;
 [HarmonyPatch(typeof(PatrolPartiesCampaignBehavior), "CanSettlementSpawnNewPartyCurrently")]
 internal static class PatrolSpawnSuppressionPatch
 {
+    // 复用同一个空 TextObject — 前缀跑在 vanilla 热路径上,避免每次抑制都分配。
+    private static readonly TextObject EmptyReason = new TextObject(string.Empty);
+
     private static bool Prefix(Settlement settlement, ref bool __result, ref TextObject reason)
     {
         try
@@ -23,7 +26,7 @@ internal static class PatrolSpawnSuppressionPatch
             if (VanillaPatrolSuppressor.ShouldSuppressPatrolFor(settlement))
             {
                 __result = false;
-                reason = new TextObject(string.Empty);
+                reason = EmptyReason;
                 return false; // 跳过 vanilla 原方法
             }
         }

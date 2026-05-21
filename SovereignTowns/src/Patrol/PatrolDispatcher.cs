@@ -88,14 +88,14 @@ public sealed class PatrolDispatcher
                 return;
             }
 
-            // B7.16：cap 来自 town 的兵营建筑（settlement_garrison）等级 + 1。
+            // cap 来自首府哨所(Guard House)建筑等级,见 PartyLifecycleManager.GetMaxFor。
             // 统计该 settlement 的 ST 巡逻队总数；只有 < cap 才允许再创建。
             // B16.4：vanilla auto-spawn 的 PatrolPartyComponent 不再纳入计数 — 与我们独立共存。
             int cap = _lifecycle.GetCapFor(settlement, PartyLifecycleManager.KindPatrol);
             int existing = CountExistingPatrolsAtHome(settlement);
             if (existing >= cap)
             {
-                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' st-patrols={existing}/{cap} (cap from barracks lvl) — skip");
+                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' st-patrols={existing}/{cap} (cap from guard house lvl) — skip");
                 return;
             }
 
