@@ -139,14 +139,15 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
                 return;
             }
 
-            // 注册 3 个自定义 GameModel — 必须在 OnGameStart 内。
+            // 注册自定义 GameModel — 必须在 OnGameStart 内（CLAUDE.md 不变量 #4）。
             try
             {
                 campaignStarter.AddModel(new SovereignTowns.Models.STPartySizeLimitModel());
                 campaignStarter.AddModel(new SovereignTowns.Models.STPartySpeedModel());
                 campaignStarter.AddModel(new SovereignTowns.Models.STPartyWageModel());
                 campaignStarter.AddModel(new SovereignTowns.Models.STVolunteerModel());
-                if (_loggerInitialized) Logger.Info("Registered 4 ST GameModels (PartySize/Speed/Wage/Volunteer)");
+                campaignStarter.AddModel(new SovereignTowns.Models.STClanFinanceModel());
+                if (_loggerInitialized) Logger.Info("Registered 5 ST GameModels (PartySize/Speed/Wage/Volunteer/ClanFinance)");
             }
             catch (System.Exception ex)
             {
