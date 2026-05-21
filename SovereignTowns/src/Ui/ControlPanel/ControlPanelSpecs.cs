@@ -416,6 +416,78 @@ public static class ControlPanelSpecs
                         Min=1, Max=500, Discrete=true, Step=1, Def=20 },
                 },
             },
+
+            // ── 7. building_bonus ─────────────────────────────────────────────────────
+            new SpecGroup
+            {
+                Key = "building_bonus",
+                LabelZh = "建筑加成", LabelEn = "Building bonuses",
+                HintZh  = "军营(Barracks)等级派生征兵 / 调拨 / 出击队的并发上限与驻军每日 XP;哨所(Guard House)等级派生巡逻队并发上限。上限 = 基础值 + 建筑等级 × 每级增量。",
+                HintEn  = "Barracks level drives recruiter / transfer / sally concurrent caps and daily garrison XP; Guard House level drives the patrol cap. Cap = base + building level × per-level increment.",
+                Advanced = false,
+                Specs = new List<SpecEntry>
+                {
+                    new SpecEntry { Root="BuildingBonus", Key="RecruiterBaseCap",
+                        LabelZh="征兵队：上限基础值", LabelEn="Recruiter: base cap",
+                        HintZh="征兵队并发上限的基础值（军营 0 级时的上限）",
+                        HintEn="Base value of the recruiter concurrent cap (the cap at barracks level 0).",
+                        Min=1, Max=10, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="RecruiterCapPerBarracksLevel",
+                        LabelZh="征兵队：军营每级增量", LabelEn="Recruiter: cap per barracks level",
+                        HintZh="军营每升 1 级，征兵队并发上限 +N",
+                        HintEn="Each barracks level adds N to the recruiter concurrent cap.",
+                        Min=0, Max=5, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="TransferBaseCap",
+                        LabelZh="调拨队：上限基础值", LabelEn="Transfer: base cap",
+                        HintZh="调拨队并发上限的基础值（军营 0 级时的上限）",
+                        HintEn="Base value of the transfer concurrent cap (the cap at barracks level 0).",
+                        Min=1, Max=10, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="TransferCapPerBarracksLevel",
+                        LabelZh="调拨队：军营每级增量", LabelEn="Transfer: cap per barracks level",
+                        HintZh="军营每升 1 级，调拨队并发上限 +N",
+                        HintEn="Each barracks level adds N to the transfer concurrent cap.",
+                        Min=0, Max=5, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="SallyBaseCap",
+                        LabelZh="出击队：上限基础值", LabelEn="Sally: base cap",
+                        HintZh="出击队并发上限的基础值（军营 0 级时的上限）",
+                        HintEn="Base value of the sally concurrent cap (the cap at barracks level 0).",
+                        Min=1, Max=10, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="SallyCapPerBarracksLevel",
+                        LabelZh="出击队：军营每级增量", LabelEn="Sally: cap per barracks level",
+                        HintZh="军营每升 1 级，出击队并发上限 +N",
+                        HintEn="Each barracks level adds N to the sally concurrent cap.",
+                        Min=0, Max=5, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="PatrolBaseCap",
+                        LabelZh="巡逻队：上限基础值", LabelEn="Patrol: base cap",
+                        HintZh="巡逻队并发上限的基础值（哨所 0 级时的上限）",
+                        HintEn="Base value of the patrol concurrent cap (the cap at Guard House level 0).",
+                        Min=1, Max=10, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="PatrolCapPerGuardHouseLevel",
+                        LabelZh="巡逻队：哨所每级增量", LabelEn="Patrol: cap per Guard House level",
+                        HintZh="哨所每升 1 级，巡逻队并发上限 +N",
+                        HintEn="Each Guard House level adds N to the patrol concurrent cap.",
+                        Min=0, Max=5, Discrete=true, Step=1, Def=1 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="GarrisonXpBasePerDay",
+                        LabelZh="驻军：每日 XP 基础值", LabelEn="Garrison: base daily XP",
+                        HintZh="驻军每兵每日 XP 的基础值（军营 0 级时的值）",
+                        HintEn="Base per-troop daily garrison XP (the value at barracks level 0).",
+                        Min=0, Max=50, Discrete=true, Step=1, Def=5 },
+
+                    new SpecEntry { Root="BuildingBonus", Key="GarrisonXpPerBarracksLevel",
+                        LabelZh="驻军：军营每级 XP 增量", LabelEn="Garrison: daily XP per barracks level",
+                        HintZh="军营每升 1 级，驻军每兵每日 XP +N",
+                        HintEn="Each barracks level adds N to per-troop daily garrison XP.",
+                        Min=0, Max=50, Discrete=true, Step=1, Def=5 },
+                },
+            },
         };
     }
 }
