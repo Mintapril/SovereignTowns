@@ -1,5 +1,6 @@
 using System;
 using Newtonsoft.Json.Linq;
+using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Localization;
 using TaleWorlds.ObjectSystem;
@@ -124,6 +125,25 @@ internal static class ActivityNarrator
                     return ("info", Tr($"首府已手动设为 {newCap}",
                                        $"Capital manually set to {newCap}"));
                 }
+                case "DispatcherBudget":
+                {
+                    string clan = ClanName((string?)j["clan"]);
+                    long budget = Long(j, "budget");
+                    int cap = Int(j, "troopCap");
+                    bool manual = (string?)j["mode"] == "manual";
+                    return ("info", manual
+                        ? Tr($"中央调度器评估:{clan} 驻军工资预算 {budget} 金币/日(约可供养 {cap} 名满编兵)",
+                             $"Dispatcher assessment: {clan} garrison wage budget {budget} gold/day (~{cap} fully-paid troops)")
+                        : Tr($"中央调度器:{clan} 驻军工资预算调整为 {budget} 金币/日(约可供养 {cap} 名满编兵)",
+                             $"Dispatcher: {clan} garrison wage budget set to {budget} gold/day (~{cap} fully-paid troops)"));
+                }
+                case "DisbandExcessGarrison":
+                {
+                    string place = Place((string?)j["settlement"]);
+                    int n = Int(j, "disbanded");
+                    return ("info", Tr($"中央调度器:在 {place} 遣散了 {n} 名超额驻军(超出预算可承担)",
+                                       $"Dispatcher: disbanded {n} excess garrison troops at {place} (over budget)"));
+                }
                 default:
                     // mod_expense / mod_refund(财务,另有 Finance 标签页)及未知类型 — 不进活动流。
                     return null;
@@ -156,5 +176,27 @@ internal static class ActivityNarrator
     {
         try { return (int?)j[key] ?? 0; }
         catch { return 0; }
+    }
+
+    private static long Long(JObject j, string key)
+    {
+        try { return (long?)j[key] ?? 0L; }
+        catch { return 0L; }
+    }
+
+    /// <summary>
+    /// 把 clan StringId 解析成玩家可读的氏族名;查不到原样返回。空值返回占位符。
+    /// </summary>
+    private static string ClanName(string? clanId)
+    {
+        if (string.IsNullOrEmpty(clanId)) return Tr("某氏族", "a clan");
+        try
+        {
+            var c = MBObjectManager.Instance?.GetObject<Clan>(clanId);
+            string? name = c?.Name?.ToString();
+            if (!string.IsNullOrEmpty(name)) return name!;
+        }
+        catch { /* swallow — fall through to raw token */ }
+        return clanId!;
     }
 }

@@ -87,6 +87,12 @@ public sealed class CapitalLogisticsManager
         // GarrisonAssessment 供控制面板消费。
         var passA = RunPassA(manager);
         bool manualMode = ConfigurationManager.Current?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
+
+        // 把调度器的预算决策叙述进运行动态(看板「近期动态」段消费)。
+        NarrateDispatcherDecisions(manager, passA, manualMode);
+        // 把每座领地的价值函数诊断串写进决策审计日志(诊断 only,不进玩家动态流)。
+        LogGarrisonPlan(manager, passA);
+
         if (manualMode)
             StashAssessments(manager, passA);
         else
@@ -95,7 +101,7 @@ public sealed class CapitalLogisticsManager
             ClearAssessments(manager);
 
         // 财政自治财务视图快照（金库 + 单城 P&L）。在主线程产出纯数值 DTO，
-        // 供 /api/finance 与控制面板 FinanceTabVM 跨线程只读消费。
+        // 供 /api/finance 与控制面板状态一览看板跨线程只读消费。
         StashFinancialSnapshot(manager, passA);
 
         var result = RunMcmf(manager, capitalSettlement, passA);
@@ -225,6 +231,84 @@ public sealed class CapitalLogisticsManager
         }
     }
 
+    // ── 调度器决策叙述（看板「近期动态」段）──────────────────────────────────
+
+    /// <summary>预算相对上次变动达到此比例才发一条 feed，避免每日税收抖动刷屏。</summary>
+    private const double DispatcherBudgetDeltaFraction = 0.10;
+
+    /// <summary>
+    /// 上次发布过的 clan 驻军工资预算，按 clan StringId。仅 EvaluateClan（Campaign 主线程，
+    /// 顺序遍历）读写 —— 单线程，无需锁。非持久化：重载后首次评估按「首次」发一条。
+    /// </summary>
+    private static readonly Dictionary<string, long> _prevDispatcherBudget = new Dictionary<string, long>();
+
+    /// <summary>
+    /// 把调度器 Pass A 的预算决策叙述进 ActivityFeed。仅当预算相对上次变动
+    /// ≥ <see cref="DispatcherBudgetDeltaFraction"/> 或首次评估该 clan 时发一条。
+    /// 经 DecisionAuditLogger.LogRule → ActivityNarrator，与其余决策共用同一管线。
+    /// </summary>
+    private static void NarrateDispatcherDecisions(CapitalManager manager, GarrisonAllocationResult passA, bool manualMode)
+    {
+        try
+        {
+            var clan = manager?.OwnerClan;
+            if (clan == null || passA == null) return;
+            string clanId = clan.StringId ?? "";
+            if (string.IsNullOrEmpty(clanId)) return;
+
+            long budget = passA.Budget;
+            bool first = !_prevDispatcherBudget.TryGetValue(clanId, out long prev);
+            bool changed = first
+                ? budget > 0
+                : Math.Abs(budget - prev) >= Math.Max(1L, (long)(Math.Max(prev, 1L) * DispatcherBudgetDeltaFraction));
+            _prevDispatcherBudget[clanId] = budget;
+            if (!changed) return;
+
+            int totalTarget = 0;
+            foreach (var kv in passA.Target) totalTarget += Math.Max(0, kv.Value);
+            string mode = manualMode ? "manual" : "auto";
+
+            DecisionAuditLogger.LogRule(
+                decisionType: "DispatcherBudget",
+                inputSummary: $"clan={clanId} budget={budget} troopCap={passA.BudgetTroopCap} totalTarget={totalTarget} holdings={passA.Target.Count} mode={mode}",
+                decisionJson: $"{{\"clan\":\"{clanId}\",\"budget\":{budget},\"troopCap\":{passA.BudgetTroopCap},\"totalTarget\":{totalTarget},\"holdings\":{passA.Target.Count},\"mode\":\"{mode}\"}}",
+                accepted: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.NarrateDispatcherDecisions failed (clan={manager?.OwnerClan?.StringId})", ex);
+        }
+    }
+
+    /// <summary>
+    /// 把 Pass A 每座领地的价值函数诊断串（threat / strat / floor / adequate / hardCap）
+    /// 加解出的目标头数,逐条写进决策审计日志。诊断 only —— decisionType "DispatcherGarrisonPlan"
+    /// 在 ActivityNarrator 无对应 case,不进玩家动态流;inputSummary 带 home= 故同时落 per-settlement ring。
+    /// </summary>
+    private static void LogGarrisonPlan(CapitalManager manager, GarrisonAllocationResult passA)
+    {
+        try
+        {
+            if (passA == null) return;
+            string clanId = manager?.OwnerClan?.StringId ?? "";
+            foreach (var kv in passA.Target)
+            {
+                var s = kv.Key;
+                if (s == null) continue;
+                string breakdown = passA.Breakdown.TryGetValue(s, out var b) ? b : "(no breakdown)";
+                DecisionAuditLogger.LogRule(
+                    decisionType: "DispatcherGarrisonPlan",
+                    inputSummary: $"home={s.StringId} clan={clanId} target={kv.Value} {breakdown}",
+                    decisionJson: $"{{\"settlement\":\"{s.StringId}\",\"target\":{kv.Value},\"budget\":{passA.Budget}}}",
+                    accepted: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.LogGarrisonPlan failed (clan={manager?.OwnerClan?.StringId})", ex);
+        }
+    }
+
     private static SupplyDemandGraphResult RunMcmf(
         CapitalManager manager, Settlement capitalSettlement, GarrisonAllocationResult passA)
     {
@@ -282,11 +366,17 @@ public sealed class CapitalLogisticsManager
                 else skipped++;
             }
 
-            foreach (var group in recruiterInstructions.GroupBy(x => new { x.Town, x.ReturnSettlement }))
+            // 按 role 分组：MCMF 为每个 (村, role) 出一条指令；同 role 的多个目标村打包成一支
+            // 征兵队的多站行程（按距首府最近邻排序）。每 role 一支队，count 按该 role 精确求和。
+            // 征兵队上限由 PartyLifecycleManager 控制，多 role 时未派出的留待下个 daily tick。
+            foreach (var group in recruiterInstructions.GroupBy(x => new { x.Town, x.ReturnSettlement, x.Role }))
             {
                 var first = group.First();
                 int count = group.Sum(x => x.Count);
-                bool ok = ExecuteRecruiterDispatch(manager, new RecruiterPartyInstruction(first.Town, first.ReturnSettlement, first.Role, count));
+                var itinerary = OrderItineraryNearestNeighbor(
+                    first.ReturnSettlement, group.Select(x => x.TargetVillage));
+                bool ok = ExecuteRecruiterDispatch(
+                    manager, first.Town, first.ReturnSettlement, first.Role, itinerary, count);
                 if (ok) accepted++;
                 else skipped++;
             }
@@ -311,7 +401,8 @@ public sealed class CapitalLogisticsManager
                     return ExecuteInPlaceRecruitment(x);
 
                 case RecruiterPartyInstruction x:
-                    return ExecuteRecruiterDispatch(manager, x);
+                    return ExecuteRecruiterDispatch(
+                        manager, x.Town, x.ReturnSettlement, x.Role, new[] { x.TargetVillage }, x.Count);
 
                 case TransferPartyInstruction x:
                     return ExecuteTransferDispatch(manager, x);
@@ -374,20 +465,55 @@ public sealed class CapitalLogisticsManager
         }
     }
 
-    private bool ExecuteRecruiterDispatch(CapitalManager manager, RecruiterPartyInstruction instruction)
+    private bool ExecuteRecruiterDispatch(
+        CapitalManager manager, Town town, Settlement returnSettlement,
+        GenericTroopRole role, IReadOnlyList<Settlement> itinerary, int tripTarget)
     {
         var capital = manager.GetCapital();
-        if (capital == null || instruction.Town != capital || instruction.ReturnSettlement != capital.Settlement)
+        if (capital == null || town != capital || returnSettlement != capital.Settlement)
         {
             Logger.Warn(
                 $"CapitalLogistics MCMF: recruiter skipped because current dispatcher only supports capital dispatch " +
-                $"town={instruction.Town?.Settlement?.StringId} return={instruction.ReturnSettlement?.StringId}");
+                $"town={town?.Settlement?.StringId} return={returnSettlement?.StringId}");
             return false;
         }
+        if (itinerary == null || itinerary.Count == 0) return false;
 
         string reason =
-            $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={instruction.Role} count={instruction.Count}";
-        return _recruitmentDispatcher.TryDispatchRecruiter(instruction.Town, instruction.Count, reason);
+            $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={role} stops={itinerary.Count} count={tripTarget}";
+        return _recruitmentDispatcher.TryDispatchRecruiter(town, itinerary, role, tripTarget, reason);
+    }
+
+    /// <summary>
+    /// 把 MCMF 选定的一组目标村按"从首府出发的最近邻"排成征兵队多站行程。去重；
+    /// 这只是把 MCMF 已决定的村集合排序成可走的路线，不做任何"选不选这个村"的二次决策。
+    /// </summary>
+    private static List<Settlement> OrderItineraryNearestNeighbor(
+        Settlement start, IEnumerable<Settlement> villages)
+    {
+        var remaining = new List<Settlement>();
+        foreach (var v in villages)
+            if (v != null && !remaining.Contains(v)) remaining.Add(v);
+
+        var ordered = new List<Settlement>();
+        var cursor = start;
+        while (remaining.Count > 0 && cursor != null)
+        {
+            var cursorPos = cursor.GetPosition2D;
+            int bestIdx = 0;
+            float bestDist = float.MaxValue;
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                float d = (remaining[i].GetPosition2D - cursorPos).Length;
+                if (d < bestDist) { bestDist = d; bestIdx = i; }
+            }
+            cursor = remaining[bestIdx];
+            remaining.RemoveAt(bestIdx);
+            ordered.Add(cursor);
+        }
+        // cursor 为 null 的极端兜底：剩余村原样追加。
+        ordered.AddRange(remaining);
+        return ordered;
     }
 
     private bool ExecuteTransferDispatch(CapitalManager manager, TransferPartyInstruction instruction)
@@ -601,6 +727,7 @@ public sealed class CapitalLogisticsManager
                 TreasuryBalance = treasury?.Balance ?? 0,
                 BufferCap = treasury?.BufferCap(bufferDays) ?? 0,
                 TrailingDailyExpense = treasury?.TrailingDailyExpense() ?? 0,
+                GarrisonWageBudget = passA?.Budget ?? 0,
             };
 
             var fiefs = clan.Fiefs?.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList()

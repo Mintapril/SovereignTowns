@@ -913,143 +913,40 @@
             </div>
           </div>
 
-          <!-- =========== TAB 6: 财务 =========== -->
+          <!-- =========== TAB 6: 状态一览（看板，默认页）=========== -->
           <div x-show="activeTab === 5" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase" x-text="tr('财务报告', 'Finance report')"></h2>
-            <p class="text-parchment-200 text-sm mb-6" x-text="tr('本 Mod 引发的金币开销（招兵、升级、出击本钱等）。所有支出从玩家个人金币扣，本表实时刷新（每 5 秒）。', 'Gold spending caused by this mod (recruitment, upgrades, sally seed funds, etc.). All spending is deducted from your personal gold; this table refreshes live (every 5 seconds).')"></p>
+            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase" x-text="tr('状态一览', 'Overview')"></h2>
+            <p class="text-parchment-200 text-sm mb-6" x-text="tr('中央调度器的关键决策一览：氏族金库与驻军工资预算、各城镇城堡的驻军（人数）与收支、今日概况，以及近期运行动态。每 5 秒实时刷新。', 'Key decisions from the central dispatcher: clan treasury and garrison wage budget, each town/castle’s garrison (headcount) and P&amp;L, today’s counts, plus recent activity. Refreshed live every 5 seconds.')"></p>
 
-            <div x-show="financeError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="financeError"></div>
-
-            <div x-show="!finance && !financeError" class="text-parchment-400 italic text-sm" x-text="tr('加载中…', 'Loading…')"></div>
-
-            <div x-show="finance" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <!-- 今日 -->
-              <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('今日', 'Today')"></h3>
-                <table class="w-full text-sm">
-                  <tbody>
-                    <template x-for="(amt, cat) in (finance?.Today || {})" :key="cat">
-                      <tr class="border-b border-ink-700 last:border-0">
-                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
-                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
-                      </tr>
-                    </template>
-                  </tbody>
-                  <tfoot>
-                    <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
-                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.TodayTotal || 0) + 'd'"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              <!-- 本周 -->
-              <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('本周', 'This week')"></h3>
-                <table class="w-full text-sm">
-                  <tbody>
-                    <template x-for="(amt, cat) in (finance?.Week || {})" :key="cat">
-                      <tr class="border-b border-ink-700 last:border-0">
-                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
-                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
-                      </tr>
-                    </template>
-                  </tbody>
-                  <tfoot>
-                    <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
-                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.WeekTotal || 0) + 'd'"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              <!-- 全部 -->
-              <div class="ornate-frame p-5">
-                <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('全部', 'All time')"></h3>
-                <table class="w-full text-sm">
-                  <tbody>
-                    <template x-for="(amt, cat) in (finance?.AllTime || {})" :key="cat">
-                      <tr class="border-b border-ink-700 last:border-0">
-                        <td class="py-1.5 text-parchment-200" x-text="cat"></td>
-                        <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + amt + 'd'"></td>
-                      </tr>
-                    </template>
-                  </tbody>
-                  <tfoot>
-                    <tr class="font-bold border-t-2 border-gold-700">
-                      <td class="py-2 text-gold-100" x-text="tr('总', 'Total')"></td>
-                      <td class="py-2 text-right text-gold-100 font-mono" x-text="'-' + (finance?.AllTimeTotal || 0) + 'd'"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            <!-- 近期流水 -->
-            <div x-show="finance" class="ornate-frame p-5">
-              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('近期流水（最近 50 条）', 'Recent transactions (last 50)')"></h3>
-              <div x-show="(finance?.RecentEntries || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('尚无支出记录', 'No spending records yet')"></div>
-              <table x-show="(finance?.RecentEntries || []).length > 0" class="w-full text-sm">
-                <thead>
-                  <tr class="border-b-2 border-gold-700 text-parchment-200">
-                    <th class="py-2 text-left" x-text="tr('时间', 'Time')"></th>
-                    <th class="py-2 text-left" x-text="tr('类别', 'Category')"></th>
-                    <th class="py-2 text-right" x-text="tr('金额', 'Amount')"></th>
-                    <th class="py-2 text-left" x-text="tr('备注', 'Note')"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(e, idx) in (finance?.RecentEntries || [])" :key="idx">
-                    <tr class="border-b border-ink-700 last:border-0">
-                      <td class="py-1.5 text-parchment-300 font-mono text-xs" x-text="new Date(e.TimestampMs).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')"></td>
-                      <td class="py-1.5 text-parchment-100" x-text="e.Category"></td>
-                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="'-' + e.Amount + 'd'"></td>
-                      <td class="py-1.5 text-parchment-300 text-xs" x-text="e.Note || ''"></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- =========== 财政自治视图（金库 / 单城 P&amp;L / 手动模式评估） =========== -->
-            <div class="diamond-divider my-8"></div>
-            <h2 class="font-display text-2xl text-gold-100 mb-2 tracking-wide uppercase" x-text="tr('财政自治', 'Fiscal autonomy')"></h2>
-            <p class="text-parchment-200 text-sm mb-6" x-text="tr('受管氏族金库与各受管领地的单城盈亏（收入对比驻军工资），数据来自调度器每日评估。', 'The managed clan treasury and per-holding P&amp;L (income vs garrison wage), sourced from the dispatcher’s daily evaluation.')"></p>
-
+            <!-- 氏族调度概览 -->
+            <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('氏族调度概览', 'Clan dispatch summary')"></h3>
             <div x-show="!finance?.fiscal" class="text-parchment-400 italic text-sm mb-8"
-                 x-text="tr('暂无财政数据 —— 调度器尚未运行（载入存档后等一个游戏日）。', 'No fiscal data yet — the dispatcher has not run (wait one in-game day after loading a save).')"></div>
-
+                 x-text="tr('暂无调度数据 —— 调度器尚未运行（载入存档后等一个游戏日）。', 'No dispatch data yet — the dispatcher has not run (wait one in-game day after loading a save).')"></div>
             <div x-show="finance?.fiscal" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-              <!-- 金库余额 -->
               <div class="ornate-frame p-5 text-center">
                 <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.TreasuryBalance ?? 0) + 'd'"></div>
                 <div class="text-parchment-300 text-xs mt-1" x-text="tr('金库余额', 'Treasury balance')"></div>
               </div>
-              <!-- 缓冲金上限 -->
               <div class="ornate-frame p-5 text-center">
-                <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.BufferCap ?? 0) + 'd'"></div>
-                <div class="text-parchment-300 text-xs mt-1" x-text="tr('缓冲金上限', 'Buffer cap')"></div>
+                <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.GarrisonWageBudget ?? 0) + 'd'"></div>
+                <div class="text-parchment-300 text-xs mt-1" x-text="tr('驻军工资预算 / 日', 'Garrison wage budget / day')"></div>
               </div>
-              <!-- 近 7 日日均开销 -->
               <div class="ornate-frame p-5 text-center">
                 <div class="font-display text-3xl text-gold-100 font-mono" x-text="(finance?.fiscal?.TrailingDailyExpense ?? 0) + 'd'"></div>
                 <div class="text-parchment-300 text-xs mt-1" x-text="tr('近 7 日日均开销', 'Trailing daily expense')"></div>
               </div>
             </div>
 
-            <!-- 单城 P&amp;L -->
+            <!-- 各领地状态 -->
             <div x-show="finance?.fiscal" class="ornate-frame p-5 mb-8">
-              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('各领地盈亏', 'Per-holding P&amp;L')"></h3>
+              <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('各领地状态', 'Holdings status')"></h3>
               <table class="w-full text-sm">
                 <thead>
                   <tr class="border-b-2 border-gold-700 text-parchment-200">
                     <th class="py-2 text-left" x-text="tr('领地', 'Holding')"></th>
+                    <th class="py-2 text-right" x-text="tr('推荐/当前驻军（人）', 'Rec/cur garrison (people)')"></th>
                     <th class="py-2 text-right" x-text="tr('收入', 'Income')"></th>
-                    <th class="py-2 text-right" x-text="tr('驻军工资', 'Garrison wage')"></th>
                     <th class="py-2 text-right" x-text="tr('净额', 'Net')"></th>
-                    <th class="py-2 text-right" x-text="tr('推荐/当前驻军', 'Rec/cur garrison')"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1059,71 +956,31 @@
                         <span x-text="s.Name"></span>
                         <span x-show="s.IsCastle" class="text-[10px] text-parchment-400 ml-1" x-text="tr('（堡）', '(castle)')"></span>
                       </td>
+                      <td class="py-1.5 text-right text-parchment-300 font-mono" x-text="s.RecommendedGarrison + ' / ' + s.CurrentGarrison"></td>
                       <td class="py-1.5 text-right text-gold-300 font-mono" x-text="s.Income + 'd'"></td>
-                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="s.GarrisonWage + 'd'"></td>
                       <td class="py-1.5 text-right font-mono" :class="s.Net >= 0 ? 'text-sage-300' : 'text-danger-500'"
                           x-text="(s.Net >= 0 ? '+' : '') + s.Net + 'd'"></td>
-                      <td class="py-1.5 text-right text-parchment-300 font-mono" x-text="s.RecommendedGarrison + ' / ' + s.CurrentGarrison"></td>
                     </tr>
                   </template>
                 </tbody>
                 <tfoot>
                   <tr class="font-bold border-t-2 border-gold-700">
                     <td class="py-2 text-gold-100" x-text="tr('合计', 'Total')"></td>
+                    <td class="py-2 text-right text-gold-100 font-mono"
+                        x-text="(finance?.fiscal?.Settlements||[]).reduce((a,s)=>a+(s.RecommendedGarrison||0),0) + ' / ' + (finance?.fiscal?.Settlements||[]).reduce((a,s)=>a+(s.CurrentGarrison||0),0)"></td>
                     <td class="py-2 text-right text-gold-100 font-mono" x-text="(finance?.fiscal?.TotalIncome ?? 0) + 'd'"></td>
-                    <td class="py-2 text-right text-gold-100 font-mono" x-text="(finance?.fiscal?.TotalGarrisonWage ?? 0) + 'd'"></td>
                     <td class="py-2 text-right font-mono"
                         :class="((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) >= 0 ? 'text-sage-300' : 'text-danger-500'"
                         x-text="(((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) >= 0 ? '+' : '') + ((finance?.fiscal?.TotalIncome ?? 0) - (finance?.fiscal?.TotalGarrisonWage ?? 0)) + 'd'"></td>
-                    <td class="py-2"></td>
                   </tr>
                 </tfoot>
               </table>
             </div>
 
-            <!-- 手动驻军目标评估（手动模式可见；加载失败时也显示以承载错误横幅） -->
-            <div x-show="assessment?.manualMode || assessmentError" class="ornate-frame p-5">
-              <h3 class="font-display text-gold-200 text-base mb-2 tracking-wide" x-text="tr('手动驻军目标评估', 'Manual garrison target assessment')"></h3>
-              <p class="text-parchment-300 text-[13px] mb-3" x-text="tr('对比你设定的目标与调度器推荐值；每日工资差额为正表示你比推荐值多付的工资。', 'Compares your set target with the dispatcher’s recommendation; a positive daily wage delta is the extra wage you pay over the recommendation.')"></p>
-              <div x-show="assessmentError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="assessmentError"></div>
-              <div x-show="(assessment?.assessments || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('暂无评估数据 —— 调度器尚未在手动模式下运行。', 'No assessment data yet — the dispatcher has not run in manual mode.')"></div>
-              <table x-show="(assessment?.assessments || []).length > 0" class="w-full text-sm">
-                <thead>
-                  <tr class="border-b-2 border-gold-700 text-parchment-200">
-                    <th class="py-2 text-left" x-text="tr('领地', 'Holding')"></th>
-                    <th class="py-2 text-right" x-text="tr('你的目标', 'Your target')"></th>
-                    <th class="py-2 text-right" x-text="tr('推荐目标', 'Recommended')"></th>
-                    <th class="py-2 text-right" x-text="tr('每日工资差额', 'Daily wage delta')"></th>
-                    <th class="py-2 text-right" x-text="tr('判定', 'Verdict')"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template x-for="(a, idx) in (assessment?.assessments || [])" :key="idx">
-                    <tr class="border-b border-ink-700 last:border-0">
-                      <td class="py-1.5 text-parchment-100" x-text="a.settlementId"></td>
-                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="a.playerTarget"></td>
-                      <td class="py-1.5 text-right text-gold-300 font-mono" x-text="a.recommendedTarget"></td>
-                      <td class="py-1.5 text-right font-mono" :class="a.dailyWageDelta <= 0 ? 'text-sage-300' : 'text-danger-500'"
-                          x-text="(a.dailyWageDelta >= 0 ? '+' : '') + a.dailyWageDelta + 'd'"></td>
-                      <td class="py-1.5 text-right text-xs"
-                          :class="a.loopClosesAtPlayerTarget ? 'text-sage-300' : 'text-danger-500'"
-                          x-text="a.loopClosesAtPlayerTarget ? tr('✓ 闭环', '✓ sustainable') : tr('⚠ 超支', '⚠ over budget')"></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- =========== TAB 7: 运行动态 =========== -->
-          <div x-show="activeTab === 6" class="tab-content p-8">
-            <h2 class="font-display text-2xl text-gold-100 mb-4 tracking-wide uppercase" x-text="tr('运行动态', 'Activity')"></h2>
-            <p class="text-parchment-200 text-sm mb-6" x-text="tr('本 Mod 自动完成的招募、调运、巡逻、出击等行为，按时间倒序列出，每 5 秒实时刷新。', 'Recruitment, transfers, patrols, sallies and other actions this mod performed automatically — newest first, refreshed live every 5 seconds.')"></p>
-
-            <div x-show="activityError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="activityError"></div>
-            <div x-show="!activity && !activityError" class="text-parchment-400 italic text-sm" x-text="tr('加载中…', 'Loading…')"></div>
-
             <!-- 今日概况 -->
+            <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('今日概况', 'Today at a glance')"></h3>
+            <div x-show="activityError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="activityError"></div>
+            <div x-show="!activity && !activityError" class="text-parchment-400 italic text-sm mb-4" x-text="tr('加载中…', 'Loading…')"></div>
             <div x-show="activity" class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
               <div class="ornate-frame p-4 text-center">
                 <div class="font-display text-3xl text-gold-100" x-text="activity?.today?.recruited || 0"></div>
@@ -1177,7 +1034,7 @@
         token: '',
         // 'zh' | 'en' — 初始按浏览器语言猜测,fetchStatus 拿到后端 uiLang 后以游戏语言为准。
         lang: (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en',
-        activeTab: 0,
+        activeTab: 5,  // 默认落在「状态一览」看板
         activeSettingsGroup: 'targets',
         get tabs() {
           return [
@@ -1185,9 +1042,8 @@
             { label: this.tr('策略参数', 'Strategy') },
             { label: this.tr('兵种编制', 'Composition') },
             { label: this.tr('兵员模板', 'Templates') },
-            { label: this.tr('非首府驻军', 'Branches') },
-            { label: this.tr('财务', 'Finance') },
-            { label: this.tr('运行动态', 'Activity') },
+            { label: this.tr('非首府驻军', 'Branches') },
+            { label: this.tr('状态一览', 'Overview') },
           ];
         },
         config: null,

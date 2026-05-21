@@ -113,7 +113,6 @@ internal static class WebConfigEndpoints
             parsed.BranchDefaults ??= BranchRule.CreateDefault();
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
-            parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.Thresholds ??= new PartyThresholds();
             parsed.BuildingBonus ??= new BuildingBonusConfig();
             parsed.FiscalAutonomy ??= new FiscalAutonomyConfig();

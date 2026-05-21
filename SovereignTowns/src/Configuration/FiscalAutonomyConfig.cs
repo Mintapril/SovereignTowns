@@ -25,4 +25,8 @@ public sealed class FiscalAutonomyConfig
     public int   AdequateThreatWeight    { get; set; } = 8;
     public int   CoreTierCount           { get; set; } = 5;
     public int   MaxGarrisonHardCap      { get; set; } = 400;
+
+    /// <summary>城镇 adequate 下限锚定:adequate 不低于 vanilla 驻军容量(PartySizeLimit)的此倍数。
+    /// 公式基线对普通城镇偏低,用 vanilla 自身的容量评估兜底。城堡不参与锚定。</summary>
+    public float TownAdequateVanillaAnchorRatio { get; set; } = 0.5f;
 }

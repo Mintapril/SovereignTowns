@@ -46,6 +46,7 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         // 存档读写时序列化层无法识别该 enum 字段。
         AddEnumDefinition(typeof(Parties.StSallyPartyComponent.SallyPhase), 100);
         AddEnumDefinition(typeof(Parties.StRecruiterPartyComponent.RecruiterPhase), 101);
+        AddEnumDefinition(typeof(Evaluators.GenericTroopRole), 102);
     }
 
     protected override void DefineContainerDefinitions()

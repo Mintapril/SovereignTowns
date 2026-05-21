@@ -10,7 +10,7 @@ namespace SovereignTowns.WebConfig;
 ///
 /// 与 <see cref="SettlementsSnapshot"/> / <c>CapitalLogisticsManager.LatestAssessments</c> 同一
 /// 跨线程模式：写入发生在 Campaign 主线程（<c>CapitalLogisticsManager.EvaluateClan</c> 每日一次，
-/// 此时已算出 Pass A 分配结果），HTTP /api/finance 与控制面板 FinanceTabVM 在各自线程只读读取。
+/// 此时已算出 Pass A 分配结果），HTTP /api/finance 与控制面板状态一览看板在各自线程只读读取。
 /// 引用赋值在 CLR 上原子；<see cref="Volatile"/> 套一层 release-acquire 语义，无需锁。
 ///
 /// DTO 只持 string / 数值，绝不持有 Settlement / Clan / Town 任何 vanilla 引用。
@@ -40,6 +40,7 @@ internal static class FinancialSnapshot
         public long TrailingDailyExpense { get; set; }
         public long TotalIncome { get; set; }
         public long TotalGarrisonWage { get; set; }
+        public long GarrisonWageBudget { get; set; }  // Pass A 算出的氏族驻军工资预算（金币/日）
         public List<SettlementPnl> Settlements { get; set; } = new List<SettlementPnl>();
     }
 

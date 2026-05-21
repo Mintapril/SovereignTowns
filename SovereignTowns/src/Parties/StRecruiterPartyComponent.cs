@@ -24,13 +24,13 @@ namespace SovereignTowns.Parties;
 /// <summary>
 /// 征兵队伍组件（B16.3）。显式 RecruiterPhase 状态机（Dispatching / AtVillage / Travelling / Returning）。
 ///
-/// 实例化字段 <see cref="_visitedThisTrip"/> 是 [SaveableField(23)] (B16.4a P1-2 修复)：
-/// 由 [CachedData] 改回持久化以保证重启后候选评估不会推荐已访问村庄。
-/// 改用 List&lt;Settlement&gt; 而非 HashSet 因为：(1) vanilla SaveSystem 不直接支持 HashSet 序列化，
-/// (2) 单次招兵 trip 平均访问 &lt; 10 个村庄，O(n) Contains 完全够用。
-/// 容器声明：见 SovereignTownsTypeDefiner.DefineContainerDefinitions。
+/// 招募行程由 MCMF（SupplyDemandGraph）决定：<see cref="_itinerary"/> 是派遣时静态确定的多站村庄
+/// 序列，<see cref="_itineraryIndex"/> 是当前进度。征兵队不再运行时打分选村，只按行程逐站访问。
+/// <see cref="_itinerary"/> 用 List&lt;Settlement&gt;（vanilla SaveSystem 不直接支持 HashSet；容器声明
+/// 见 SovereignTownsTypeDefiner.DefineContainerDefinitions）。
 ///
-/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 24)。
+/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 28)，槽位 23 空置（原 _visitedThisTrip，
+/// 行程驱动改造后由 _itineraryIndex 取代）。
 /// </summary>
 public sealed class StRecruiterPartyComponent : StPartyComponent
 {
@@ -41,9 +41,6 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     /// <summary>玩家氏族单兵金币折扣（B7.20，硬编码 0.5）。</summary>
     private const float CostDiscount = 0.5f;
     private const int DefaultGoldPerRecruit = 10;
-    private const int CandidateBatchSizeDefault = 8;
-    private static int CandidateBatchSize
-        => ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? CandidateBatchSizeDefault;
 
     public enum RecruiterPhase
     {
@@ -56,32 +53,41 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     [SaveableField(20)] private int _recruitedThisTrip;
     [SaveableField(21)] private Settlement? _assignedTarget;
     [SaveableField(22)] private RecruiterPhase _phase = RecruiterPhase.Dispatching;
-    [SaveableField(23)] private List<Settlement> _visitedThisTrip = new List<Settlement>();
+    // 槽位 23 空置（原 _visitedThisTrip）。
+    // MCMF 指定的定向招募兵种。Unknown = 无偏好。RecruitFromTargetVillage 据此只招该 role。
+    [SaveableField(24)] private GenericTroopRole _assignedRole = GenericTroopRole.Unknown;
+    // MCMF 派遣时静态确定的多站村庄行程；_itineraryIndex 为当前进度。
+    [SaveableField(25)] private List<Settlement> _itinerary = new List<Settlement>();
+    [SaveableField(26)] private int _itineraryIndex;
+    // 本趟招募人数目标（MCMF count 求和）。达到即返航；<=0 时仅靠行程耗尽返航。
+    [SaveableField(27)] private int _tripCountTarget;
     [CachedData] private TextObject? _cachedName;
 
-    private List<Settlement> VisitedThisTrip
+    private List<Settlement> Itin
     {
         get
         {
-            // 读档兼容：旧存档中 _visitedThisTrip 为 null（字段不存在），lazy init 以维持非 null 不变式。
-            if (_visitedThisTrip == null) _visitedThisTrip = new List<Settlement>();
-            return _visitedThisTrip;
+            // 读档兼容：旧存档无此字段时为 null，lazy init 以维持非 null 不变式。
+            if (_itinerary == null) _itinerary = new List<Settlement>();
+            return _itinerary;
         }
     }
 
-    private void MarkVisited(Settlement s)
+    /// <summary>当前及之后尚未访问的行程村庄（供 MCMF 在飞排除已被服务的村）。</summary>
+    public IEnumerable<Settlement> PendingVillages
     {
-        if (s == null) return;
-        var list = VisitedThisTrip;
-        if (!list.Contains(s)) list.Add(s);
+        get
+        {
+            var list = Itin;
+            for (int i = Math.Max(0, _itineraryIndex); i < list.Count; i++)
+                if (list[i] != null) yield return list[i];
+        }
     }
 
     public int RecruitedThisTrip => _recruitedThisTrip;
     public Settlement? AssignedTarget => _assignedTarget;
     public RecruiterPhase Phase => _phase;
-
-    private static int ReturnRecruitedCount
-        => ConfigurationManager.Current?.Thresholds?.RecruiterReturnRecruitedCount ?? 50;
+    public GenericTroopRole AssignedRole => _assignedRole;
 
     public override TextObject Name
     {
@@ -105,7 +111,21 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     public void RecordRecruited(int count) { if (count > 0) _recruitedThisTrip += count; }
     public void SetAssignedTarget(Settlement? target) => _assignedTarget = target;
+    public void SetAssignedRole(GenericTroopRole role) => _assignedRole = role;
     public void TransitionTo(RecruiterPhase phase) => _phase = phase;
+
+    /// <summary>派遣时设定 MCMF 决定的多站行程与本趟招募人数目标。</summary>
+    public void SetItinerary(IReadOnlyList<Settlement>? villages, int tripCountTarget)
+    {
+        _itinerary = new List<Settlement>();
+        if (villages != null)
+        {
+            foreach (var v in villages)
+                if (v != null) _itinerary.Add(v);
+        }
+        _itineraryIndex = 0;
+        _tripCountTarget = tripCountTarget > 0 ? tripCountTarget : 0;
+    }
 
     private StRecruiterPartyComponent(
         Settlement home, TextObject name, Hero owner,
@@ -186,7 +206,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
-        Logger.Debug($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip} visited={VisitedThisTrip.Count}");
+        Logger.Debug($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip}/{_tripCountTarget} itin={_itineraryIndex}/{Itin.Count}");
         switch (_phase)
         {
             case RecruiterPhase.Dispatching: HandleDispatching(self); break;
@@ -197,19 +217,20 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     }
 
     /// <summary>
-    /// Dispatching：刚创建尚未首发，或异常情况下回到 Dispatching。
-    /// ResolveDepartureTarget 取首站目标后切到 Travelling。
+    /// Dispatching：刚创建尚未首发，或读档后回到 Dispatching。
+    /// 取行程当前站后切到 Travelling；行程为空则直接 Returning。
     /// </summary>
     private void HandleDispatching(MobileParty self)
     {
         // B16.4a P1-7：保留 null 防御 —— 用 OrNull 而非抛诊断异常版的 HomeSettlement。
         var home = HomeSettlementOrNull;
         if (home == null) return;
-        var next = ResolveDepartureTarget(self, home);
-        Logger.Debug($"[DIAG] Recruiter.HandleDispatching '{PartyNameFormatter.SafeName(self)}' home='{home.Name}' assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' resolved='{next?.Name?.ToString() ?? "null"}'");
-        if (next == null || next == home)
+        var next = CurrentItineraryStop(home);
+        Logger.Debug($"[DIAG] Recruiter.HandleDispatching '{PartyNameFormatter.SafeName(self)}' home='{home.Name}' itin={_itineraryIndex}/{Itin.Count} resolved='{next?.Name?.ToString() ?? "null"}'");
+        if (next == null)
         {
-            // 无候选；下个 tick 再试
+            MoveTo(self, home, "empty itinerary");
+            _phase = RecruiterPhase.Returning;
             return;
         }
         MoveTo(self, next, "Dispatching → first hop");
@@ -217,7 +238,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     }
 
     /// <summary>
-    /// AtVillage：抵达非 home village → 招募 + 标记冷却 + 阈值检查 + 规划下一站。
+    /// AtVillage：抵达行程村庄 → 招募 + 标记冷却 + 达标检查 + 推进行程。
     /// </summary>
     private void HandleAtVillage(MobileParty self)
     {
@@ -226,18 +247,15 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         if (home == null) return;
 
         var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
-        // 安全网：若实际不在 village（或目标已经变化），重新规划
+        // 安全网：若实际不在 village（被推走 / 战斗等），回 Travelling 逻辑。
         if (currentSettlement == null || !currentSettlement.IsVillage || currentSettlement == home)
         {
-            // 可能 vanilla 已经把我们带离了村子（被推走 / 战斗等）；重新走 Travelling 逻辑
             _phase = RecruiterPhase.Travelling;
             HandleTravelling(self);
             return;
         }
 
-        // 与 _assignedTarget 不一致 = 玩家或 vanilla 改路 / 强制回家。视为继续 travelling 处理。
-        // 同时 — 若 vanilla TargetSettlement 已被基类 ReturnToHome 重定向到 home，
-        // 不应执行招兵；走 Travelling 让基类的 IsAtHome 判定接管下次 tick。
+        // 与 _assignedTarget 不一致 = vanilla 改路 / 强制回家。
         if (_assignedTarget != null && currentSettlement != _assignedTarget)
         {
             _phase = RecruiterPhase.Travelling;
@@ -250,59 +268,52 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             return;
         }
 
-        if (!IsRecruitmentTargetStillValid(currentSettlement, home))
+        if (IsRecruitmentTargetStillValid(currentSettlement, home))
         {
-            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，重新规划");
-            MarkVisited(currentSettlement);
-            var replacement = PlanNextHop(self, home);
-            MoveTo(self, replacement ?? home, "invalid arrived village");
-            _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
-            return;
+            int recruited = RecruitFromTargetVillage(self, currentSettlement, home);
+            if (recruited > 0)
+            {
+                RecordRecruited(recruited);
+                RecruitmentCooldown.MarkRecruited(currentSettlement);
+            }
+            // 2026-05-18 v3：在 just-arrived village 上下文触发经济维护（卖战利品 + 食物补给）。
+            try { TryEconomicMaintenance(self, currentSettlement); }
+            catch (Exception econEx) { Logger.Warn($"Recruiter HandleAtVillage maintenance failed: {econEx.Message}"); }
+        }
+        else
+        {
+            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 目标村庄 '{currentSettlement.Name}' 已不适合招募，跳过");
         }
 
-        int recruited = RecruitFromTargetVillage(self, currentSettlement, home);
-        if (recruited > 0)
+        // 招够目标 → 返航
+        if (TripCountReached())
         {
-            RecordRecruited(recruited);
-            RecruitmentCooldown.MarkRecruited(currentSettlement);
-        }
-        MarkVisited(currentSettlement);
-
-        // 2026-05-18 v3：在 just-arrived village 上下文中触发经济维护（卖战利品入资金 + 食物补给）。
-        // 注意：currentSettlement 此处大概率是 village（HandleAtVillage 入口已校验 IsVillage），
-        // 基类 TryEconomicMaintenance 内部仍要求 Town != null → 当前实现下 village 会被跳过，但日志
-        // 行会清晰显示 isVillage=True hasTownComponent=False，下一步是否打开 village 经济由此 log 决定。
-        try { TryEconomicMaintenance(self, currentSettlement); }
-        catch (Exception econEx) { Logger.Warn($"Recruiter HandleAtVillage maintenance failed: {econEx.Message}"); }
-
-        int returnThreshold = ReturnRecruitedCount;
-        if (_recruitedThisTrip >= returnThreshold)
-        {
-            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募 {_recruitedThisTrip} ≥ 阈值 {returnThreshold}，回 '{home.Name}'");
-            MoveTo(self, home, "recruited threshold");
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募 {_recruitedThisTrip}/{_tripCountTarget} 达标，回 '{home.Name}'");
+            MoveTo(self, home, "trip count reached");
             _phase = RecruiterPhase.Returning;
             return;
         }
 
-        var next = PlanNextHop(self, home);
-        if (next != null && next != home)
+        // 推进行程
+        var next = AdvanceItinerary(home);
+        if (next != null)
         {
-            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 巡回下一站：'{next.Name}' (此前 visited={VisitedThisTrip.Count})");
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 行程下一站：'{next.Name}' ({_itineraryIndex + 1}/{Itin.Count})");
             MoveTo(self, next, "next village");
             _phase = RecruiterPhase.Travelling;
         }
         else
         {
-            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 候选枯竭，回 '{home.Name}'");
-            MoveTo(self, home, "no candidates");
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 行程结束，回 '{home.Name}'");
+            MoveTo(self, home, "itinerary exhausted");
             _phase = RecruiterPhase.Returning;
         }
     }
 
     /// <summary>
     /// Travelling：在路上或刚抵达村庄。
-    /// 抵达分配的村庄 → 同 tick fall-through 到 HandleAtVillage（避免 1h 延迟）。
-    /// 否则检查累计阈值 / 目标失效 / 风险高。
+    /// 抵达行程村庄 → 同 tick fall-through 到 HandleAtVillage（避免 1h 延迟）。
+    /// 否则检查招募达标 / 目标失效 / 风险高。
     /// </summary>
     private void HandleTravelling(MobileParty self)
     {
@@ -310,12 +321,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         var home = HomeSettlementOrNull;
         if (home == null) return;
 
-        // 抵达 _assignedTarget（即 vanilla CurrentSettlement 或 LastVisitedSettlement 与 _assignedTarget 一致）
-        // → 切到 AtVillage 并同 tick 处理（"到村即招"行为，避免 1h 延迟）。
-        // 2026-05-18 修复 v2：原 `self.TargetSettlement == _assignedTarget` 太严格——日志铁证显示
-        // vanilla 在 party 抵达 settlement 时会清空 TargetSettlement（"我到了"），导致征兵队永远卡在
-        // Travelling，"没有当前目标，改去 'Jahasim'" 反复输出 24h 后被 idle force-return。
-        // 防御 ReturnToHome 改成"只在 TargetSettlement 明确指向 home 时绕开"——见下方 Returning 短路。
+        // 抵达 _assignedTarget → 切 AtVillage 并同 tick 处理（"到村即招"，避免 1h 延迟）。
+        // vanilla 抵达 settlement 时会清空 TargetSettlement，故 TargetSettlement==null 也视作抵达。
         var currentSettlement = self.CurrentSettlement ?? self.LastVisitedSettlement;
         if (_assignedTarget != null
             && _assignedTarget != home
@@ -330,46 +337,35 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
         var targetSettlement = self.TargetSettlement;
 
-        // 累计阈值检查：即使没到下一个村也可能因之前累积已满
-        int returnThreshold = ReturnRecruitedCount;
-        if (_recruitedThisTrip >= returnThreshold && (targetSettlement == null || targetSettlement != home))
+        // 招够目标 → 返航（即使没到下一站）
+        if (TripCountReached() && (targetSettlement == null || targetSettlement != home))
         {
-            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募达到阈值 {_recruitedThisTrip}/{returnThreshold}，回 '{home.Name}'");
-            MoveTo(self, home, "road recruited threshold");
+            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 本趟招募 {_recruitedThisTrip}/{_tripCountTarget} 达标，回 '{home.Name}'");
+            MoveTo(self, home, "road trip count reached");
             _phase = RecruiterPhase.Returning;
             return;
         }
 
         if (targetSettlement == null)
         {
-            var replacement = ResolveDepartureTarget(self, home);
-            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 没有当前目标，{(replacement != null && replacement != home ? $"改去 '{replacement.Name}'" : $"回 '{home.Name}'")}");
-            MoveTo(self, replacement ?? home, "missing target");
-            _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+            var next = CurrentItineraryStop(home);
+            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}' 没有当前目标，{(next != null ? $"改去 '{next.Name}'" : $"回 '{home.Name}'")}");
+            MoveTo(self, next ?? home, "missing target");
+            _phase = next != null ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
             return;
         }
 
-        // 目标失效 / 风险高 → 重新规划
-        if (targetSettlement != home)
+        // 目标失效 / 风险高 → 跳到行程下一站
+        if (targetSettlement != home && targetSettlement.IsVillage)
         {
-            if (targetSettlement.IsVillage && !IsRecruitmentTargetStillValid(targetSettlement, home))
+            bool invalid = !IsRecruitmentTargetStillValid(targetSettlement, home);
+            bool risky = !invalid && RiskAssessmentService.Assess(targetSettlement).Level >= RiskLevel.High;
+            if (invalid || risky)
             {
-                Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' 已失效，重新规划");
-                MarkVisited(targetSettlement);
-                var replacement = PlanNextHop(self, home);
-                MoveTo(self, replacement ?? home, "invalid road target");
-                _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
-                return;
-            }
-
-            var risk = RiskAssessmentService.Assess(targetSettlement);
-            if (risk.Level >= RiskLevel.High)
-            {
-                Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' risk={risk.Level}，重新规划");
-                MarkVisited(targetSettlement);
-                var replacement = PlanNextHop(self, home);
-                MoveTo(self, replacement ?? home, "risky road target");
-                _phase = replacement != null && replacement != home ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
+                Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' {(invalid ? "已失效" : "风险高")}，跳到下一站");
+                var next = AdvanceItinerary(home);
+                MoveTo(self, next ?? home, invalid ? "invalid road target" : "risky road target");
+                _phase = next != null ? RecruiterPhase.Travelling : RecruiterPhase.Returning;
             }
         }
     }
@@ -402,11 +398,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         {
             if (village == null || home == null) return false;
             if (!village.IsVillage || !village.IsActive) return false;
-            // 2026-05-18 fix：与 RecruitmentPlanner.RankCandidates 第3类对齐 —— 允许"同阵营友军 /
-            // 中立第三方"村庄（非交战即可），不再要求 MapFaction 严格相等。
-            // 旧实现 `village.MapFaction != home.MapFaction → 失效` 导致 PlanNextHop 选出来的友邦村
-            // 立刻被本函数判失效 → MarkVisited → 又选另一个友邦村 → 一直循环到所有村被 visit 完，
-            // 日志中表现为 100+ 行 "目标 X 已失效，重新规划" 噪声。
+            // 与 SupplyDemandGraph.EnumerateRecruitmentVillages 的入图过滤口径一致 —— 允许"同阵营
+            // 友军 / 中立第三方"村庄（非交战即可），不要求 MapFaction 严格相等。MCMF 已按此口径选村，
+            // 本函数仅复检"行程途中村庄状态是否变化"（沦陷 / 开战 / 被劫）。
             var villageFaction = village.MapFaction;
             var homeFaction = home.MapFaction;
             if (villageFaction == null || homeFaction == null) return false;
@@ -423,65 +417,31 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     }
 
     /// <summary>
-    /// 优先用 <see cref="_assignedTarget"/>（若未访问 + 合法）；否则 PlanNextHop。
+    /// 返回行程当前站：<see cref="_itinerary"/>[<see cref="_itineraryIndex"/>]。
+    /// 若当前条目失效（村庄沦陷 / 围城 / 交战 / 被劫），自动跳过；行程耗尽返回 null。
     /// </summary>
-    private Settlement? ResolveDepartureTarget(MobileParty party, Settlement home)
+    private Settlement? CurrentItineraryStop(Settlement home)
     {
-        try
+        var list = Itin;
+        while (_itineraryIndex < list.Count)
         {
-            var assigned = _assignedTarget;
-            if (assigned != null && assigned != home
-                && !VisitedThisTrip.Contains(assigned)
-                && IsRecruitmentTargetStillValid(assigned, home))
-            {
-                return assigned;
-            }
-            return PlanNextHop(party, home);
+            var v = list[_itineraryIndex];
+            if (v != null && v != home && IsRecruitmentTargetStillValid(v, home))
+                return v;
+            _itineraryIndex++;
         }
-        catch (Exception ex)
-        {
-            Logger.Warn($"ResolveDepartureTarget failed for '{PartyNameFormatter.SafeName(party)}'", ex);
-            return PlanNextHop(party, home);
-        }
+        return null;
     }
 
-    /// <summary>
-    /// 规划巡回的下一站。优先 ClanRecruiterScheduler（多队互补）；失败回退 RankCandidates。
-    /// </summary>
-    private Settlement? PlanNextHop(MobileParty party, Settlement home)
+    /// <summary>推进到行程下一站（先 index++，再取当前站）。行程耗尽返回 null。</summary>
+    private Settlement? AdvanceItinerary(Settlement home)
     {
-        try
-        {
-            var registry = CapitalRegistry.Instance;
-            var capitalMgr = registry?.GetForSettlement(home);
-            if (capitalMgr != null)
-            {
-                var next = capitalMgr.RecruiterScheduler.PickNextVillage(party);
-                if (next != null) return next;
-            }
-
-            var homeTown = home.Town;
-            if (homeTown == null) return null;
-            var rule = ConfigurationManager.GetRuleFor(homeTown) ?? TownGarrisonRule.CreateDefault();
-
-            var exclude = new HashSet<Settlement>();
-            foreach (var s in VisitedThisTrip) exclude.Add(s);
-
-            var candidates = RecruitmentPlanner.RankCandidates(
-                homeTown,
-                maxResults: CandidateBatchSize,
-                excludeSettlements: exclude,
-                matchingRule: rule);
-
-            if (candidates.Count == 0) return null;
-            return candidates[0].VillageSettlement;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("PlanNextHop failed", ex);
-            return null;
-        }
+        _itineraryIndex++;
+        return CurrentItineraryStop(home);
     }
+
+    /// <summary>本趟招募是否已达 MCMF 设定的人数目标。_tripCountTarget &lt;= 0 时恒 false（仅靠行程耗尽返航）。</summary>
+    private bool TripCountReached() => _tripCountTarget > 0 && _recruitedThisTrip >= _tripCountTarget;
 
     /// <summary>
     /// 抵达 village 的实际招募动作。返回实际招到的人数（用于冷却登记判定）。
@@ -561,6 +521,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
                     candidatesScanned++;
                     if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
+                    // MCMF 定向招募：只招指定 role（MCMF 派本队来此村正是为该 role）。
+                    if (_assignedRole != GenericTroopRole.Unknown
+                        && GenericTroopMatcher.GetRole(troop) != _assignedRole) continue;
                     // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
                     if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
                     float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
@@ -657,16 +620,6 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
                 accepted: recruited > 0);
 
-            // B7.27：通知 scheduler 本次访问，更新 LastRecruitedAt
-            if (recruited > 0)
-            {
-                try
-                {
-                    var visitCapitalMgr = CapitalRegistry.Instance?.GetForSettlement(home);
-                    visitCapitalMgr?.RecruiterScheduler.RecordVisit(village);
-                }
-                catch (Exception ex) { Logger.Warn("RecruiterScheduler.RecordVisit (per-village) failed", ex); }
-            }
             Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar）");
         }
         catch (Exception ex)

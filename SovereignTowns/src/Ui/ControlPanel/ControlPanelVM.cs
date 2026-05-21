@@ -26,7 +26,6 @@ public sealed class ControlPanelVM : ViewModel
     private CompositionTabVM _compositionTab;
     private TemplatesTabVM _templatesTab;
     private BranchesTabVM _branchesTab;
-    private FinanceTabVM _financeTab;
     private ActivityTabVM _activityTab;
 
     [DataSourceProperty]
@@ -65,13 +64,6 @@ public sealed class ControlPanelVM : ViewModel
     }
 
     [DataSourceProperty]
-    public FinanceTabVM FinanceTab
-    {
-        get => _financeTab;
-        private set { _financeTab = value; OnPropertyChanged(nameof(FinanceTab)); }
-    }
-
-    [DataSourceProperty]
     public ActivityTabVM ActivityTab
     {
         get => _activityTab;
@@ -86,7 +78,8 @@ public sealed class ControlPanelVM : ViewModel
     private string _success = "";
 
     // ── Tab 选择 ──
-    private int _activeTab;
+    // 默认落在 Tab 5「状态一览」看板 —— 打开面板即见调度器关键决策概览。
+    private int _activeTab = 5;
     private readonly MBBindingList<LogEntryVM> _logEntries = new MBBindingList<LogEntryVM>();
 
     // ── 公开工作副本引用（后续 Tab VM 用）──
@@ -190,8 +183,7 @@ public sealed class ControlPanelVM : ViewModel
                 _activeTab = value;
                 OnPropertyChanged(nameof(ActiveTab));
                 RefreshTabVisibility();
-                if (value == 5) FinanceTab?.Refresh();
-                if (value == 6) ActivityTab?.Refresh();
+                if (value == 5) ActivityTab?.Refresh();
             }
         }
     }
@@ -202,20 +194,18 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public bool IsTab3Active => _activeTab == 3;
     [DataSourceProperty] public bool IsTab4Active => _activeTab == 4;
     [DataSourceProperty] public bool IsTab5Active => _activeTab == 5;
-    [DataSourceProperty] public bool IsTab6Active => _activeTab == 6;
 
     [DataSourceProperty] public string Tab0Label => ControlPanelLoc.Tr("功能开关", "Features");
     [DataSourceProperty] public string Tab1Label => ControlPanelLoc.Tr("策略参数", "Strategy");
     [DataSourceProperty] public string Tab2Label => ControlPanelLoc.Tr("兵种编制", "Composition");
     [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("兵员模板", "Templates");
     [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Branches");
-    [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("财务", "Finance");
-    [DataSourceProperty] public string Tab6Label => ControlPanelLoc.Tr("运行动态", "Activity");
+    [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("状态一览", "Overview");
     [DataSourceProperty] public string ActivityLogLabel => ControlPanelLoc.Tr("活动日志", "Activity log");
 
     private void RefreshTabVisibility()
     {
-        for (int i = 0; i < 7; i++) OnPropertyChanged($"IsTab{i}Active");
+        for (int i = 0; i < 6; i++) OnPropertyChanged($"IsTab{i}Active");
     }
 
     [DataSourceProperty]
@@ -273,7 +263,6 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
-        FinanceTab = new FinanceTabVM();
         ActivityTab = new ActivityTabVM();
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
@@ -298,7 +287,6 @@ public sealed class ControlPanelVM : ViewModel
     public void ExecuteSelectTab3() => ActiveTab = 3;
     public void ExecuteSelectTab4() => ActiveTab = 4;
     public void ExecuteSelectTab5() => ActiveTab = 5;
-    public void ExecuteSelectTab6() => ActiveTab = 6;
 
     /// <summary>关闭按钮 / ESC 调用。</summary>
     public void ExecuteClose()
@@ -381,7 +369,6 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
-        FinanceTab = new FinanceTabVM();
         ActivityTab = new ActivityTabVM();
     }
 

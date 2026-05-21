@@ -5,7 +5,7 @@ namespace SovereignTowns.Ui.ControlPanel;
 /// <summary>一条数值 / bool 参数的元数据。对应 WebUI 的 *Specs 条目。</summary>
 public sealed class SpecEntry
 {
-    public string Root;        // "GlobalDefaults" / "Thresholds" / "ClanPatrol" / "ClanRecruiter" / "" (=GlobalConfig 根)
+    public string Root;        // "GlobalDefaults" / "Thresholds" / "ClanPatrol" / "" (=GlobalConfig 根)
     public string Key;         // 属性名
     public string LabelZh, LabelEn, HintZh, HintEn;
     public bool IsBool;        // true=开关行
@@ -133,30 +133,11 @@ public static class ControlPanelSpecs
                         HintEn="Before a recruiter party is dispatched, the capital actual garrison must be >= this value; 0 = no limit, allowing a bare 0-troop dispatch.",
                         Min=0, Max=500, Discrete=true, Step=1, Def=0 },
 
-                    new SpecEntry { Root="Thresholds", Key="RecruitmentCandidateBatchSize",
-                        LabelZh="征兵：每轮候选村庄数", LabelEn="Recruitment: candidate villages per round",
-                        HintZh="征兵规划每轮评估的候选村庄数",
-                        HintEn="Number of candidate villages evaluated per recruitment-planning round.",
-                        Min=1, Max=50, Discrete=true, Step=1, Def=8, Advanced=true },
-
-                    // ClanRecruiter scheduler — adv=true
-                    new SpecEntry { Root="ClanRecruiter", Key="EtaBufferHours",
-                        LabelZh="征兵调度：ETA 缓冲", LabelEn="Recruiter scheduling: ETA buffer",
-                        HintZh="站点预占时长 = 预计到达时间 + 此值",
-                        HintEn="Stop reservation duration = estimated time of arrival + this value.",
-                        Min=0, Max=168, Discrete=false, Step=0.5, Def=1.0, Advanced=true },
-
-                    new SpecEntry { Root="ClanRecruiter", Key="MinVisitGapHours",
-                        LabelZh="征兵调度：回访间隔", LabelEn="Recruiter scheduling: revisit gap",
-                        HintZh="同一村庄的最小回访间隔",
-                        HintEn="Minimum gap before revisiting the same village.",
-                        Min=0, Max=720, Discrete=false, Step=1, Def=4, Advanced=true },
-
-                    new SpecEntry { Root="ClanRecruiter", Key="DistanceWeightHoursPerTile",
-                        LabelZh="征兵调度：距离评分权重", LabelEn="Recruiter scheduling: distance scoring weight",
-                        HintZh="站点评分中距离项的权重，值越大越偏好近处",
-                        HintEn="Weight of the distance term in stop scoring; higher favours nearer stops.",
-                        Min=0, Max=100, Discrete=false, Step=0.1, Def=0.5, Advanced=true },
+                    new SpecEntry { Root="Thresholds", Key="RecruiterVillageCandidateCap",
+                        LabelZh="征兵：MCMF 候选村数上限", LabelEn="Recruitment: MCMF candidate village cap",
+                        HintZh="MCMF 招募图每个首府纳入的候选村数 —— 取距首府最近的 K 个合格村作为可招募来源。原版全图约 210 村，默认 250 即纳入全图；征兵队实际跋涉多远由边距离费用 + 未满足成本决定。调低纯为限制超大 mod 地图的求解规模",
+                        HintEn="Number of candidate villages the MCMF recruitment graph includes per capital — the K nearest eligible villages. Vanilla Calradia has ~210 villages, so the default 250 includes the whole map; how far a recruiter actually treks is bounded by edge distance cost + unmet-demand cost. Lower it only to limit solve size on very large modded maps.",
+                        Min=4, Max=300, Discrete=true, Step=1, Def=250, Advanced=true },
                 },
             },
 
@@ -522,9 +503,9 @@ public static class ControlPanelSpecs
                 Specs = new List<SpecEntry>
                 {
                     new SpecEntry { Root="FiscalAutonomy", Key="GarrisonWageBudgetRatio",
-                        LabelZh="驻军工资预算比例", LabelEn="Garrison wage budget ratio",
-                        HintZh="氏族驻军工资预算 = 此比例 × 受管领地可持续收入（税+关税）。比例越高养兵越多。",
-                        HintEn="Clan garrison wage budget = this fraction × managed-holding sustainable income (tax + tariffs). Higher means more troops sustained.",
+                        LabelZh="驻军工资预算比例（仅和平期）", LabelEn="Garrison wage budget ratio (peacetime only)",
+                        HintZh="和平期驻军工资预算 = 此比例 × 受管领地可持续收入（税+关税），比例越高养兵越多。注意：战时此旋钮不生效——交战且金库有余额时，预算自动取「全额充足驻军工资」，恒保证养满每城充足驻军。",
+                        HintEn="Peacetime garrison wage budget = this fraction × managed-holding sustainable income (tax + tariffs); higher sustains more troops. Note: this knob does NOT apply in war — while at war with a non-empty treasury the budget auto-jumps to the full adequate-garrison wage, always funding every town's adequate garrison.",
                         Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.55 },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="MinGarrisonFloor",
@@ -614,6 +595,12 @@ public static class ControlPanelSpecs
                         HintZh="取不到 vanilla 驻军 PartySizeLimit 时使用的硬上限兜底。必须 ≥ 驻军保底头数。",
                         HintEn="Hard-cap fallback used when the vanilla garrison PartySizeLimit cannot be read. Must be >= the minimum garrison floor.",
                         Min=0, Max=2000, Discrete=true, Step=1, Def=400, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="TownAdequateVanillaAnchorRatio",
+                        LabelZh="价值函数：城镇充足目标 vanilla 锚定比例", LabelEn="Value function: town adequate vanilla anchor ratio",
+                        HintZh="城镇充足目标的下限锚定：充足目标不低于 vanilla 驻军容量（PartySizeLimit）× 此比例。公式基数对普通城镇偏低时由此兜底。0 = 关闭锚定。仅城镇生效，城堡不受影响。",
+                        HintEn="Lower-bound anchor for a town's adequate target: it will not drop below the vanilla garrison capacity (PartySizeLimit) × this ratio, backstopping the formula base for ordinary towns. 0 disables the anchor. Towns only — castles are unaffected.",
+                        Min=0.0, Max=1.0, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
                 },
             },
         };

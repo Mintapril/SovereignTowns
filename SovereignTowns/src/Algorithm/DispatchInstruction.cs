@@ -28,15 +28,20 @@ public sealed class InPlaceRecruitInstruction : DispatchInstruction
 
 public sealed class RecruiterPartyInstruction : DispatchInstruction
 {
-    public RecruiterPartyInstruction(Town town, Settlement returnSettlement, GenericTroopRole role, int count)
+    public RecruiterPartyInstruction(
+        Town town, Settlement returnSettlement, Settlement targetVillage, GenericTroopRole role, int count)
         : base(role, count)
     {
         Town = town;
         ReturnSettlement = returnSettlement;
+        TargetVillage = targetVillage;
     }
 
     public Town Town { get; }
     public Settlement ReturnSettlement { get; }
+
+    /// <summary>MCMF 选定的招募目标村。CapitalLogisticsManager 按 role 把多条指令的目标村打包成征兵队行程。</summary>
+    public Settlement TargetVillage { get; }
 }
 
 public sealed class PrisonerConvertInstruction : DispatchInstruction

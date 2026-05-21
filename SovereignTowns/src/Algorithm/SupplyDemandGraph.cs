@@ -5,6 +5,7 @@ using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Parties;
+using SovereignTowns.Recruitment;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -299,6 +300,7 @@ public static class SupplyDemandGraph
         foreach (var demand in demands.Values)
             graph.AddEdge(unmetNode, demand.NodeId, demand.Demand, Thresholds.McmfUnmetCost);
 
+        var inFlightVillages = CollectInFlightRecruiterVillages(manager.OwnerClan);
         foreach (var state in states)
         {
             if (state.Settlement.IsUnderSiege) continue;
@@ -311,8 +313,15 @@ public static class SupplyDemandGraph
             if (state.IsOtherOwnedBranch) continue;
 
             AddCharacterSources(graph, sources, ref nextNodeId, superSource, SourceKind.InPlace, state.Settlement, state.Town, EnumerateVolunteerTroops(state.Settlement));
+
+            // 首府：per-village 招募源。MCMF 直接在全图候选村里挑"兵种 + 距离"最优的村,
+            // 取代旧的"首府直属村聚合成单一 Village 源"。Decode 出 RecruiterPartyInstruction.TargetVillage。
             if (state.IsCapital)
-                AddCharacterSources(graph, sources, ref nextNodeId, superSource, SourceKind.Village, state.Settlement, state.Town, EnumerateVillageVolunteerTroops(state.Town));
+            {
+                foreach (var village in EnumerateRecruitmentVillages(state.Town, manager.OwnerClan, inFlightVillages))
+                    AddCharacterSources(graph, sources, ref nextNodeId, superSource, SourceKind.Village,
+                        village, state.Town, EnumerateVolunteerTroops(village));
+            }
         }
 
         foreach (var source in sources.Values)
@@ -670,54 +679,134 @@ public static class SupplyDemandGraph
         }
     }
 
-    private static IEnumerable<CharacterObject?> EnumerateVillageVolunteerTroops(Town town)
+    /// <summary>
+    /// 招募候选村:全图 village,过滤(active / 非围城 / 非 Raided·Looted / 与 clan 非交战 /
+    /// 非招募冷却 / 非在飞征兵队目标),按距首府距离升序取 Top-RecruiterVillageCandidateCap。
+    /// 取代旧的"仅首府直属村"枚举 —— 让 MCMF 能把远处稀有兵种所在村纳入图。
+    /// </summary>
+    private static List<Settlement> EnumerateRecruitmentVillages(
+        Town capitalTown, Clan? clan, HashSet<Settlement> excludeVillages)
     {
-        var villages = town.Villages;
-        if (villages == null) yield break;
-
-        foreach (var village in villages)
+        var result = new List<Settlement>();
+        try
         {
-            var settlement = village?.Settlement;
-            if (settlement == null || !settlement.IsActive) continue;
-            foreach (var character in EnumerateVolunteerTroops(settlement))
-                yield return character;
+            var capitalSettlement = capitalTown?.Settlement;
+            if (capitalSettlement == null) return result;
+            var capitalFaction = capitalSettlement.MapFaction;
+            var capitalPos = capitalSettlement.GetPosition2D;
+            int cap = Math.Max(4, Thresholds.RecruiterVillageCandidateCap);
+
+            var all = Settlement.All;
+            if (all == null) return result;
+
+            var scored = new List<(Settlement Village, float Dist)>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                var s = all[i];
+                if (s == null || !s.IsVillage || !s.IsActive) continue;
+                if (s.IsUnderSiege) continue;
+                if (excludeVillages.Contains(s)) continue;
+                if (RecruitmentCooldown.IsOnCooldown(s)) continue;
+
+                var v = s.Village;
+                if (v != null && (v.VillageState == Village.VillageStates.BeingRaided
+                                  || v.VillageState == Village.VillageStates.Looted)) continue;
+
+                var f = s.MapFaction;
+                if (f == null) continue;
+                if (f != capitalFaction)
+                {
+                    if (capitalFaction == null) continue;
+                    if (capitalFaction.IsAtWarWith(f)) continue;
+                }
+
+                scored.Add((s, (s.GetPosition2D - capitalPos).Length));
+            }
+
+            scored.Sort(static (a, b) => a.Dist.CompareTo(b.Dist));
+            int take = Math.Min(cap, scored.Count);
+            for (int i = 0; i < take; i++) result.Add(scored[i].Village);
         }
+        catch (Exception ex)
+        {
+            Logger.Error("SupplyDemandGraph.EnumerateRecruitmentVillages failed", ex);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// 本 clan 在飞征兵队当前及之后尚未访问的目标村集合。这些村已被服务,排除出本轮招募图,
+    /// 防止下一 daily MCMF 重复派队去同一个村。
+    /// </summary>
+    private static HashSet<Settlement> CollectInFlightRecruiterVillages(Clan? clan)
+    {
+        var set = new HashSet<Settlement>();
+        if (clan == null) return set;
+        try
+        {
+            var parties = MobileParty.AllCustomParties;
+            if (parties == null) return set;
+            foreach (var party in parties)
+            {
+                if (party == null || !party.IsActive) continue;
+                if (!(party.PartyComponent is StRecruiterPartyComponent recruiter)) continue;
+                if (recruiter.HomeSettlementOrNull?.OwnerClan != clan) continue;
+                foreach (var v in recruiter.PendingVillages)
+                    if (v != null) set.Add(v);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("SupplyDemandGraph.CollectInFlightRecruiterVillages failed", ex);
+        }
+        return set;
     }
 
     private static bool CanConnect(SourceDef source, DemandDef demand)
     {
         if (source.Settlement.IsUnderSiege || demand.State.Settlement.IsUnderSiege) return false;
 
-        // 非首府 demand：任意兵种皆可补，但 InPlace/Village 只能补本城（招募官只回首府）。
+        // 非首府 demand：Garrison 跨城调拨，InPlace 仅本城。
+        // Village（征兵队）只把兵带回首府，从不直接补给非首府 → 不连。
         if (!demand.State.IsCapital)
         {
             switch (source.Kind)
             {
                 case SourceKind.InPlace:
-                case SourceKind.Village:
                     return source.Settlement == demand.State.Settlement;
                 case SourceKind.Garrison:
                     return source.Settlement != demand.State.Settlement;
+                case SourceKind.Village:
                 default:
                     return false;
             }
         }
 
-        // 首府路径（含 capital 招募 stockpile）保持原行为
+        // 首府 demand（含 capital 招募 stockpile）：先要求 role 匹配。
         if (source.Bucket.Role != demand.Role) return false;
 
         if (demand.IsRecruitmentStockpile)
         {
-            return demand.State.IsCapital
-                && source.Settlement == demand.State.Settlement
-                && (source.Kind == SourceKind.InPlace || source.Kind == SourceKind.Village);
+            // stockpile 只收"招募来源"：本城 InPlace + 该首府的任一候选村 Village。
+            switch (source.Kind)
+            {
+                case SourceKind.InPlace:
+                    return source.Settlement == demand.State.Settlement;
+                case SourceKind.Village:
+                    // per-village source：Town 字段为该村归属的首府 town；归属同一首府即可连。
+                    return source.Town == demand.State.Town;
+                default:
+                    return false;
+            }
         }
 
         switch (source.Kind)
         {
             case SourceKind.InPlace:
-            case SourceKind.Village:
                 return source.Settlement == demand.State.Settlement;
+            case SourceKind.Village:
+                // per-village source：村本身不必等于首府,归属同一首府即可连。
+                return source.Town == demand.State.Town;
             case SourceKind.Garrison:
                 return source.Settlement != demand.State.Settlement;
             default:
@@ -739,7 +828,9 @@ public static class SupplyDemandGraph
         int penalty = demand.State.IsCapital
             ? MatchPolicy.MatchPenalty(source.Bucket, demand.State.CapitalRule!, Thresholds.McmfHardPenalty, Thresholds.McmfTierPenalty)
             : 0;
-        float distance = source.Kind == SourceKind.Garrison
+        // Village（征兵队远征该村再带回首府）与 Garrison（跨城调拨）都计真实地图距离;
+        // InPlace 原地招募距离 0。Village 距离 = 候选村 → 首府,即征兵队单程跋涉。
+        float distance = (source.Kind == SourceKind.Garrison || source.Kind == SourceKind.Village)
             ? Distance(source.Settlement, demand.State.Settlement)
             : 0f;
         return MatchPolicy.EdgeCost(distance, overhead, penalty, demand.DeficitRatio, Thresholds.McmfLeniency);
@@ -784,8 +875,10 @@ public static class SupplyDemandGraph
                     instructions.Add(new InPlaceRecruitInstruction(source.Settlement, role, count));
                     break;
                 case SourceKind.Village:
-                    if (source.Town != null)
-                        instructions.Add(new RecruiterPartyInstruction(source.Town, source.Settlement, role, count));
+                    // source.Town = 首府 town；source.Settlement = MCMF 选定的目标村。
+                    if (source.Town?.Settlement != null)
+                        instructions.Add(new RecruiterPartyInstruction(
+                            source.Town, source.Town.Settlement, source.Settlement, role, count));
                     break;
                 case SourceKind.Garrison:
                     instructions.Add(new TransferPartyInstruction(source.Settlement, demand.State.Settlement, role, count));
@@ -819,7 +912,7 @@ public static class SupplyDemandGraph
             case InPlaceRecruitInstruction x:
                 return $"InPlace settlement='{x.Settlement?.StringId}' role={x.Role} count={x.Count}";
             case RecruiterPartyInstruction x:
-                return $"Recruiter town='{x.Town?.Settlement?.StringId}' return='{x.ReturnSettlement?.StringId}' role={x.Role} count={x.Count}";
+                return $"Recruiter town='{x.Town?.Settlement?.StringId}' village='{x.TargetVillage?.StringId}' return='{x.ReturnSettlement?.StringId}' role={x.Role} count={x.Count}";
             case PrisonerConvertInstruction x:
                 return $"Prison settlement='{x.Settlement?.StringId}' role={x.Role} count={x.Count}";
             case TransferPartyInstruction x:

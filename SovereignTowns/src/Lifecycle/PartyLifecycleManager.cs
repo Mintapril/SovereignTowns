@@ -390,8 +390,7 @@ public sealed class PartyLifecycleManager
                 Logger.Info($"UntrackParty: '{PartyNameFormatter.SafeName(party)}' removed (remaining={_tracked.Count})");
             }
 
-            // B7.26：通知所有 clan scheduler 该 party 已销毁，清掉瞬态字典里的条目（防 MBGUID 复用脏数据）。
-            // B16.4a P1-8：RecruiterScheduler 同步加入通知，否则 _lastStopChangedAt / _lastSeenLocation 内存泄漏。
+            // B7.26：通知所有 clan 巡逻调度器该 party 已销毁，清掉瞬态字典里的条目（防 MBGUID 复用脏数据）。
             try
             {
                 var reg = SovereignTowns.Capital.CapitalRegistry.Instance;
@@ -401,8 +400,6 @@ public sealed class PartyLifecycleManager
                     {
                         try { mgr?.PatrolScheduler?.NotifyPartyDestroyed(party); }
                         catch (Exception ex) { Logger.Warn("PatrolScheduler NotifyPartyDestroyed (per-mgr) failed", ex); }
-                        try { mgr?.RecruiterScheduler?.NotifyPartyDestroyed(party); }
-                        catch (Exception ex) { Logger.Warn("RecruiterScheduler NotifyPartyDestroyed (per-mgr) failed", ex); }
                     }
                 }
             }

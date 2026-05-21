@@ -29,7 +29,11 @@ public sealed class StrategyTabVM : ViewModel
     [DataSourceProperty] public string ResetGroupLabel { get; }
 
     // ── 分组芯片 + 当前分组的行 ──
+    // VisibleGroups 是逻辑用的全量列表；Row1/Row2 是分两行渲染用的视图（prefab 实际绑定这两个）。
+    // Gauntlet ListPanel 不支持换行，单行 7-8 个 chip 会被「显示高级参数」按钮挤出 / 遮住。
     [DataSourceProperty] public MBBindingList<SettingsGroupVM> VisibleGroups { get; } = new MBBindingList<SettingsGroupVM>();
+    [DataSourceProperty] public MBBindingList<SettingsGroupVM> VisibleGroupsRow1 { get; } = new MBBindingList<SettingsGroupVM>();
+    [DataSourceProperty] public MBBindingList<SettingsGroupVM> VisibleGroupsRow2 { get; } = new MBBindingList<SettingsGroupVM>();
     [DataSourceProperty] public MBBindingList<SliderRowVM> ActiveSliders { get; } = new MBBindingList<SliderRowVM>();
     [DataSourceProperty] public MBBindingList<ToggleRowVM> ActiveToggles { get; } = new MBBindingList<ToggleRowVM>();
 
@@ -113,6 +117,14 @@ public sealed class StrategyTabVM : ViewModel
 
             VisibleGroups.Add(vm);
         }
+
+        // 拆成两行：前半 → Row1，后半 → Row2。Row1/Row2 与 VisibleGroups 共享同一批
+        // SettingsGroupVM 实例，SetActiveGroup 改 IsActive 时两行高亮自动同步。
+        VisibleGroupsRow1.Clear();
+        VisibleGroupsRow2.Clear();
+        int rowSplit = (VisibleGroups.Count + 1) / 2;
+        for (int i = 0; i < VisibleGroups.Count; i++)
+            (i < rowSplit ? VisibleGroupsRow1 : VisibleGroupsRow2).Add(VisibleGroups[i]);
 
         // 决定激活分组：保持当前 key（若仍可见），否则回落第一个。
         SettingsGroupVM target = null;

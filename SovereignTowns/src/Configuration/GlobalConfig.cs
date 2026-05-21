@@ -43,12 +43,6 @@ public sealed class GlobalConfig
     public ClanPatrolConfig ClanPatrol { get; set; } = new ClanPatrolConfig();
 
     /// <summary>
-    /// B7.27：全氏族征兵调度配置。由 ClanRecruiterScheduler 消费。
-    /// 旧配置文件无此字段 → ConfigurationManager.TryLoadFromDisk 反序列化后 ??= 兜底默认值。
-    /// </summary>
-    public ClanRecruiterConfig ClanRecruiter { get; set; } = new ClanRecruiterConfig();
-
-    /// <summary>
     /// 把原先散落在各 Manager 内的"人数 / 比例"硬编码常量统一抽出来，让玩家在网页面板调。
     /// 默认值保持与改造前一致 — 不调整面板的玩家不会感知差别。
     /// </summary>
@@ -69,7 +63,6 @@ public sealed class GlobalConfig
         BranchDefaults = BranchRule.CreateDefault(),
         EnabledFeatures = new EnabledFeatures(),
         ClanPatrol = new ClanPatrolConfig(),
-        ClanRecruiter = new ClanRecruiterConfig(),
         Thresholds = new PartyThresholds(),
         BuildingBonus = new BuildingBonusConfig(),
         FiscalAutonomy = new FiscalAutonomyConfig(),
@@ -162,21 +155,6 @@ public sealed class ClanPatrolConfig
 }
 
 /// <summary>
-/// 全氏族征兵调度配置（B7.27）。与 ClanPatrolConfig 同构。
-/// </summary>
-public sealed class ClanRecruiterConfig
-{
-    /// <summary>ETA 估算的余量小时。</summary>
-    public float EtaBufferHours { get; set; } = 1.0f;
-
-    /// <summary>同一村庄的最小回访间隔（防多支征兵队反复同点）。</summary>
-    public float MinVisitGapHours { get; set; } = 4.0f;
-
-    /// <summary>距离评分权重（小时/Vec2 unit）。</summary>
-    public float DistanceWeightHoursPerTile { get; set; } = 0.5f;
-}
-
-/// <summary>
 /// 队伍创建和调度阈值。所有人数阈值均使用实际驻军（Town.GarrisonParty，不含民兵）
 /// 的比例派生，避免大城与小城共用固定人数造成调度失真。
 /// </summary>
@@ -209,6 +187,12 @@ public sealed class PartyThresholds
 
     /// <summary>本趟实际招募人数（不含护卫）达到此值即返航。默认 50。</summary>
     public int RecruiterReturnRecruitedCount { get; set; } = 50;
+
+    /// <summary>MCMF 招募图每个首府纳入的候选村数:取距首府最近的 K 个合格村
+    /// (非围城 / 非交战 / 非冷却 / 非在飞征兵队目标)作为 per-village source。默认 250 —— 原版
+    /// 全图约 210 个村,默认即"全图可达村全部纳入";征兵队实际跋涉多远由边的距离费用 +
+    /// McmfUnmetCost 决定,不靠此 cap。范围 [4, 300]:调低纯为限制超大 mod 地图的 MCMF 求解规模。</summary>
+    public int RecruiterVillageCandidateCap { get; set; } = 250;
 
     // ── 调拨 / 调度（CapitalLogisticsManager） ─────────────────────────────
     /// <summary>预计驻军低于 DesiredTarget × 此比例 → 视为危急缺口。原硬编码 36/150 ≈ 0.24。</summary>
@@ -301,9 +285,6 @@ public sealed class PartyThresholds
 
     // T1 重整 2026-05-18：4 类 ST 队伍 seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，
     // 不再可配置；删除 RecruiterSeedGold / SallySeedGold / TransferSeedGold 三字段（H7/H8 历史项）。
-
-    /// <summary>H9：RecruitmentPlanner 每轮候选村庄数。原硬编码 8。范围 [1, 50]。</summary>
-    public int RecruitmentCandidateBatchSize { get; set; } = 8;
 
     // ── MCMF solver（SupplyDemandGraph）──────────────────────────────────
     /// <summary>兵种 role 不符或 exact template 不在升级树上的硬罚。默认 1000。</summary>

@@ -55,9 +55,6 @@ public sealed class CapitalManager
     /// <summary>本氏族的巡逻调度器（B7.26）。与 manager 同生命周期。</summary>
     private readonly ClanPatrolScheduler _patrolScheduler;
 
-    /// <summary>本氏族的征兵调度器（B7.27）。与 manager 同生命周期。</summary>
-    private readonly ClanRecruiterScheduler _recruiterScheduler;
-
     /// <summary>本氏族的金库（余额 + 7 日开销环）。经 SyncData st_treasuries_json 持久化。</summary>
     private ClanTreasury _treasury = new ClanTreasury();
 
@@ -66,7 +63,6 @@ public sealed class CapitalManager
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
         _clan = clan ?? throw new ArgumentNullException(nameof(clan));
         _patrolScheduler = new ClanPatrolScheduler(_clan);
-        _recruiterScheduler = new ClanRecruiterScheduler(_clan);
     }
 
     /// <summary>本 manager 服务的氏族（不可变）。</summary>
@@ -77,9 +73,6 @@ public sealed class CapitalManager
 
     /// <summary>本氏族的巡逻调度器（B7.26 全氏族巡逻）。永不为 null。</summary>
     public ClanPatrolScheduler PatrolScheduler => _patrolScheduler;
-
-    /// <summary>本氏族的征兵调度器（B7.27）。永不为 null。</summary>
-    public ClanRecruiterScheduler RecruiterScheduler => _recruiterScheduler;
 
     /// <summary>本氏族的金库（余额 + 7 日开销环）。永不为 null。</summary>
     public ClanTreasury Treasury => _treasury;

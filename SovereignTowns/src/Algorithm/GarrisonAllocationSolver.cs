@@ -18,6 +18,12 @@ public sealed class GarrisonAllocationResult
 {
     public Dictionary<Settlement, int> Target { get; } = new();
     public Dictionary<Settlement, string> Breakdown { get; } = new();
+
+    /// <summary>本次分配所用的氏族驻军工资预算(金币/日)。看板 / feed 决策叙述用。</summary>
+    public long Budget { get; set; }
+
+    /// <summary>预算可供养的满级士兵头数(Budget / 满级单兵工资)。</summary>
+    public int BudgetTroopCap { get; set; }
 }
 
 /// <summary>
@@ -84,6 +90,9 @@ public static class GarrisonAllocationSolver
             int wagePerTroop = Math.Max(1, WagePerTroopAtMaxTier(manager, towns));
             long clanWageBudget = ClanWageBudget(manager, towns, cfg, wagePerTroop);
             int budgetCap = (int)Math.Min(int.MaxValue, clanWageBudget / wagePerTroop);
+            // 预算口径在 budgetCap<=0 提前返回前就发布,看板 / feed 能展示"预算不足"态。
+            result.Budget = clanWageBudget;
+            result.BudgetTroopCap = budgetCap;
             if (budgetCap <= 0) return result;
 
             var graph = new MinCostFlow();
@@ -170,7 +179,9 @@ public static class GarrisonAllocationSolver
 
     /// <summary>
     /// 氏族工资预算:GarrisonWageBudgetRatio × Σ(每城税+关税)。村庄收入排除(易被劫,保守)。
-    /// 若 clan 处于战争 且 金库余额 &gt; 0 → 取 max(常规预算, Σ ConfigTargetHeads×wagePerTroop)。
+    /// 若 clan 处于战争 且 金库余额 &gt; 0 → 取 max(常规预算, Σ adequate×wagePerTroop) ——
+    /// 战时始终保证能养满每城"充足"(adequate)驻军,与 Solve 主循环的 floor/hardCap/adequate
+    /// 口径完全一致;不再受 manual-mode 的 TargetTotalCount/TargetPower 旋钮污染。
     /// 任何失败 → 返回 0(分配将退化为不养兵,安全)。
     /// </summary>
     private static long ClanWageBudget(CapitalManager manager, List<Town> towns, FiscalAutonomyConfig cfg, int wagePerTroop)
@@ -205,10 +216,20 @@ public static class GarrisonAllocationSolver
             if (ratio < 0f) ratio = 0f;
             long regular = (long)Math.Round(sustainable * ratio);
 
-            // 战时上调:clan 与任意势力交战 且 金库有余额 → 取 max(常规, 配置目标全额工资)。
+            // 战时上调:clan 与任意势力交战 且 金库有余额 → 取 max(常规, 全额充足驻军工资)。
+            // configFull 用各城 adequate 头数(与 Solve 主循环同一 floor/hardCap/adequate 口径),
+            // 确保战时预算恰好够养满价值层 —— 而不是被 manual-mode 旋钮间接放大或卡死。
             if (IsClanAtWar(clan) && manager.Treasury != null && manager.Treasury.Balance > 0)
             {
-                long configFull = ConfigTargetHeads(towns) * (long)Math.Max(1, wagePerTroop);
+                long fullGarrisonHeads = 0;
+                foreach (var t in towns)
+                {
+                    if (t?.Settlement == null) continue;
+                    int floor = Math.Max(0, cfg.MinGarrisonFloor);
+                    int hardCap = HardCapFor(t, cfg);
+                    fullGarrisonHeads += AdequateFor(t, cfg, floor, hardCap);
+                }
+                long configFull = fullGarrisonHeads * (long)Math.Max(1, wagePerTroop);
                 return Math.Max(regular, configFull);
             }
             return regular;
@@ -218,42 +239,6 @@ public static class GarrisonAllocationSolver
             Logger.Error("GarrisonAllocationSolver.ClanWageBudget failed", ex);
             return 0;
         }
-    }
-
-    /// <summary>
-    /// 配置目标头数总和(战时上限用)。首府用 TownGarrisonRule.TargetTotalCount × 风险乘数。
-    /// 非首府用 BranchRule.TargetPower —— 注意 TargetPower 是 vanilla 军事力量(military-power)口径,
-    /// 不是头数:一个中 tier 兵的 power ≈ 头数的 3~5×。这里把 TargetPower 直接当头数累加,会使战时上限
-    /// 高估非首府贡献约 3~5×。此高估是有意为之 —— 战时上限本就是一个刻意宽松的上界(只在 clan 交战且
-    /// 金库有余额时启用),宁可放宽也不卡死战时驻军;真正的每城目标仍由分配 MCMF 按价值层解出。
-    /// </summary>
-    private static long ConfigTargetHeads(List<Town> towns)
-    {
-        long sum = 0;
-        foreach (var t in towns)
-        {
-            if (t == null) continue;
-            try
-            {
-                if (t.IsTown)
-                {
-                    var rule = ConfigurationManager.GetRuleFor(t) ?? TownGarrisonRule.CreateDefault();
-                    var risk = RiskAssessmentService.Assess(t.Settlement);
-                    float mul = risk.Level >= RiskLevel.High ? rule.WartimeMultiplier : rule.PeacetimeMultiplier;
-                    sum += Math.Max(0, (long)Math.Round(rule.TargetTotalCount * mul));
-                }
-                else
-                {
-                    var branch = ConfigurationManager.GetBranchRuleFor(t) ?? BranchRule.CreateDefault();
-                    sum += Math.Max(0, branch.TargetPower);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error($"GarrisonAllocationSolver.ConfigTargetHeads failed for '{t?.Settlement?.StringId}'", ex);
-            }
-        }
-        return sum;
     }
 
     /// <summary>clan 是否与任意势力交战。FactionHelper.GetStances + IsAtWarWith(DefaultClanFinanceModel 同套路)。</summary>
@@ -334,6 +319,9 @@ public static class GarrisonAllocationSolver
     /// <summary>
     /// adequate(S):clamp(AdequateBase + Prosperity/AdequateProsperityDivisor
     ///   + round(NearbyLandThreatIntensity × AdequateThreatWeight), floor, hardCap)。
+    /// 城镇额外下限锚定:adequate 不低于 round(hardCap × TownAdequateVanillaAnchorRatio) ——
+    /// hardCap 即 vanilla 驻军 PartySizeLimit,公式基线对普通城镇偏低时用 vanilla 容量兜底。
+    /// 城堡不参与锚定(t.IsTown==false 时跳过)。
     /// 任何失败 → 返回 clamp(floor, hardCap) 的下界(floor)。
     /// </summary>
     private static int AdequateFor(Town t, FiscalAutonomyConfig cfg, int floor, int hardCap)
@@ -355,6 +343,16 @@ public static class GarrisonAllocationSolver
                         + (float)Math.Round(threatIntensity * cfg.AdequateThreatWeight);
 
             int adequate = (int)Math.Round(raw);
+
+            // 城镇 adequate 下限锚定到 vanilla 容量的一部分(城堡跳过)。anchor ≤ hardCap(比例 ≤ 1),
+            // 故不会与下面的 hardCap 上限冲突;若 anchor < floor 仍由 floor 兜底。
+            if (t!.IsTown)
+            {
+                float anchorRatio = Math.Max(0f, cfg.TownAdequateVanillaAnchorRatio);
+                int anchor = (int)Math.Round(hardCap * anchorRatio);
+                if (adequate < anchor) adequate = anchor;
+            }
+
             if (adequate < floor) adequate = floor;
             if (adequate > hardCap) adequate = hardCap;
             return adequate;

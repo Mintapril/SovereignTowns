@@ -544,7 +544,6 @@ public static class ConfigurationManager
             parsed.BranchDefaults ??= BranchRule.CreateDefault();
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
-            parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.Thresholds ??= new PartyThresholds();
             parsed.BuildingBonus ??= new BuildingBonusConfig();
             parsed.FiscalAutonomy ??= new FiscalAutonomyConfig();
@@ -702,12 +701,8 @@ public static class ConfigurationManager
         {
             return false;
         }
-        // Issue：ClanPatrol / ClanRecruiter 之前缺校验，负数 / NaN 会进 scheduler。
+        // Issue：ClanPatrol 之前缺校验，负数 / NaN 会进 scheduler。
         if (config.ClanPatrol != null && !ValidateClanPatrol(config.ClanPatrol, out reason))
-        {
-            return false;
-        }
-        if (config.ClanRecruiter != null && !ValidateClanRecruiter(config.ClanRecruiter, out reason))
         {
             return false;
         }
@@ -736,18 +731,6 @@ public static class ConfigurationManager
         { reason = $"ClanPatrol.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
         if (!IsNonNegativeFloat(c.SupportEtaThresholdHours) || c.SupportEtaThresholdHours > 168f)
         { reason = $"ClanPatrol.SupportEtaThresholdHours invalid ({c.SupportEtaThresholdHours}); [0, 168]"; return false; }
-        reason = "";
-        return true;
-    }
-
-    private static bool ValidateClanRecruiter(ClanRecruiterConfig c, out string reason)
-    {
-        if (!IsNonNegativeFloat(c.EtaBufferHours) || c.EtaBufferHours > 168f)
-        { reason = $"ClanRecruiter.EtaBufferHours invalid ({c.EtaBufferHours}); [0, 168]"; return false; }
-        if (!IsNonNegativeFloat(c.MinVisitGapHours) || c.MinVisitGapHours > 720f)
-        { reason = $"ClanRecruiter.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"; return false; }
-        if (!IsNonNegativeFloat(c.DistanceWeightHoursPerTile) || c.DistanceWeightHoursPerTile > 100f)
-        { reason = $"ClanRecruiter.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
         reason = "";
         return true;
     }
@@ -902,8 +885,8 @@ public static class ConfigurationManager
         if (t.AutoUpgradeMaxPerCall < 1 || t.AutoUpgradeMaxPerCall > 500)
         { reason = $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"; return false; }
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
-        if (t.RecruitmentCandidateBatchSize < 1 || t.RecruitmentCandidateBatchSize > 50)
-        { reason = $"Thresholds.RecruitmentCandidateBatchSize invalid ({t.RecruitmentCandidateBatchSize}); [1, 50]"; return false; }
+        if (t.RecruiterVillageCandidateCap < 4 || t.RecruiterVillageCandidateCap > 300)
+        { reason = $"Thresholds.RecruiterVillageCandidateCap invalid ({t.RecruiterVillageCandidateCap}); [4, 300]"; return false; }
         if (t.McmfHardPenalty < 0 || t.McmfHardPenalty > 10000)
         { reason = $"Thresholds.McmfHardPenalty invalid ({t.McmfHardPenalty}); [0, 10000]"; return false; }
         if (t.McmfTierPenalty < 0 || t.McmfTierPenalty > 10000)

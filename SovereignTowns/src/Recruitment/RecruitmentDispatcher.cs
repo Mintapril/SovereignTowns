@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
+using SovereignTowns.Evaluators;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
@@ -29,12 +31,7 @@ namespace SovereignTowns.Recruitment;
 public sealed class RecruitmentDispatcher
 {
     private const string PartyKind = PartyLifecycleManager.KindRecruiter;
-    // H9/H10 (DeepSeek audit 2026-05-18)：常量改读 PartyThresholds。
     // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold 配置项。
-    private const int CandidateBatchSizeDefault = 8;
-
-    private static int CandidateBatchSize
-        => ConfigurationManager.Current?.Thresholds?.RecruitmentCandidateBatchSize ?? CandidateBatchSizeDefault;
 
     private static float EscortRatio
         => ConfigurationManager.Current?.Thresholds?.RecruiterEscortRatio ?? 0.10f;
@@ -49,14 +46,25 @@ public sealed class RecruitmentDispatcher
     }
 
     /// <summary>
-    /// 由 CapitalLogisticsManager 请求派出征兵队。仅在 <paramref name="homeTown"/> 是该 clan 当前首府时派遣。
+    /// 由 CapitalLogisticsManager 请求派出一支定向征兵队。仅在 <paramref name="homeTown"/> 是该 clan
+    /// 当前首府时派遣。<paramref name="itinerary"/> 是 MCMF 选定的多站村庄行程（已按地理最近邻排序），
+    /// <paramref name="role"/> 是定向招募兵种，<paramref name="tripTarget"/> 是本趟招募人数目标。
     /// </summary>
-    public bool TryDispatchRecruiter(Town homeTown, int requestedMagnitude, string reason)
+    public bool TryDispatchRecruiter(
+        Town homeTown, IReadOnlyList<Settlement> itinerary,
+        GenericTroopRole role, int tripTarget, string reason)
     {
         try
         {
             if (homeTown?.Settlement == null) return false;
-            if (requestedMagnitude <= 0) return false;
+
+            Settlement? firstStop = null;
+            int stops = itinerary?.Count ?? 0;
+            for (int i = 0; i < stops; i++)
+            {
+                if (itinerary![i] != null) { firstStop = itinerary[i]; break; }
+            }
+            if (firstStop == null) return false;
 
             if (!ConfigurationManager.Current.EnabledFeatures.AutoRecruitment)
             {
@@ -125,18 +133,6 @@ public sealed class RecruitmentDispatcher
                 Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 已达征兵队上限，跳过");
                 return false;
             }
-
-            var candidates = RecruitmentPlanner.RankCandidates(
-                homeTown,
-                maxResults: CandidateBatchSize,
-                excludeSettlements: null,
-                matchingRule: rule);
-            if (candidates.Count == 0)
-            {
-                Logger.Warn($"  RecruitmentDispatcher: '{homeTown.Name}' 无可招募村庄候选 — 周边 village notable 没有符合规则 (Tier {rule.MinTier}-{rule.MaxTier} / 比例非零兵种) 的兵。考虑放宽 MinTier。");
-                return false;
-            }
-            var target = candidates[0];
 
             // B17.4 A3：空 garrison floor — 0 兵裸车遭遇即没。
             // 模型默认 RecruiterMinHomeGarrison=0（用户明确"不要 floor"），fallback 与模型对齐。
@@ -207,42 +203,27 @@ public sealed class RecruitmentDispatcher
 
             _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);
 
-            // 出发首站：设 _assignedTarget + SetMoveGoToSettlement + 转 Travelling 阶段。
-            // 后续状态机由 StRecruiterPartyComponent.OnHourlyTickCore 接管。
+            // 出发首站 + 装载 MCMF 行程：后续状态机由 StRecruiterPartyComponent.OnHourlyTickCore 接管。
             try
             {
                 if (party.PartyComponent is StRecruiterPartyComponent rp)
                 {
-                    rp.SetAssignedTarget(target.VillageSettlement);
-                    party.SetMoveGoToSettlement(target.VillageSettlement, MobileParty.NavigationType.Default, false);
+                    rp.SetItinerary(itinerary, tripTarget);
+                    rp.SetAssignedRole(role);
+                    rp.SetAssignedTarget(firstStop);
+                    party.SetMoveGoToSettlement(firstStop, MobileParty.NavigationType.Default, false);
                     rp.TransitionTo(StRecruiterPartyComponent.RecruiterPhase.Travelling);
                 }
             }
             catch (Exception ex) { Logger.Error("initial dispatch SetMove failed", ex); }
 
-            // B7.27：通知 scheduler 首站已选。
-            try
-            {
-                var dispatchCapitalMgr = _capitalRegistry?.GetForSettlement(homeTown.Settlement);
-                if (dispatchCapitalMgr != null)
-                {
-                    dispatchCapitalMgr.RecruiterScheduler.RecordVisit(homeTown.Settlement);
-                    float etaHours = ((party.GetPosition2D - target.VillageSettlement.GetPosition2D).Length) / Math.Max(party.Speed, 0.1f);
-                    dispatchCapitalMgr.RecruiterScheduler.PreemptiveBook(target.VillageSettlement, party, etaHours);
-                }
-            }
-            catch (Exception schedEx)
-            {
-                Logger.Warn("RecruiterScheduler first-hop bookkeeping failed: " + schedEx.Message);
-            }
-
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchRecruiter",
-                inputSummary: $"home={homeTown.Settlement.StringId} requested={requestedMagnitude} candidates={candidates.Count} target={target.VillageSettlement.StringId} escort={escortActual}",
-                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"target\":\"{target.VillageSettlement.StringId}\",\"priority\":{target.PriorityScore:F2},\"estimatedTroops\":{target.EstimatedAvailableTroops},\"escort\":{escortActual},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
+                inputSummary: $"home={homeTown.Settlement.StringId} role={role} tripTarget={tripTarget} stops={stops} first={firstStop.StringId} escort={escortActual}",
+                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"role\":\"{role}\",\"tripTarget\":{tripTarget},\"stops\":{stops},\"first\":\"{firstStop.StringId}\",\"escort\":{escortActual},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
                 accepted: true);
 
-            Logger.Info($"  RecruitmentDispatcher: 派出征兵队 '{homeTown.Name}' → '{target.VillageSettlement.Name}' (priority={target.PriorityScore:F1}, escort={escortActual})");
+            Logger.Info($"  RecruitmentDispatcher: 派出征兵队 '{homeTown.Name}' → role={role} 行程 {stops} 站，首站 '{firstStop.Name}' (escort={escortActual})");
             return true;
         }
         catch (Exception ex)

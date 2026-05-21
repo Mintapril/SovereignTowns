@@ -141,17 +141,6 @@
                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
                           </Children>
                         </ButtonWidget>
-                        <ButtonWidget DoNotPassEventsToChildren="true"
-                                      Command.Click="ExecuteSelectTab6" IsSelected="@IsTab6Active"
-                                      UpdateChildrenStates="true"
-                                      WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                      SuggestedHeight="52" MarginBottom="7" Brush="Header.Tab.Center">
-                          <Children>
-                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                        Brush="Clan.TabControl.Text" Text="@Tab6Label"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-                          </Children>
-                        </ButtonWidget>
 
                         <!-- 活动日志 -->
                         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginTop="6">
@@ -313,12 +302,25 @@
                                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                    StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="6">
                                           <Children>
-                                            <ListPanel DataSource="{VisibleGroups}"
-                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                       StackLayout.LayoutMethod="HorizontalLeftToRight">
-                                              <ItemTemplate>
-                                                <STCPChip />
-                                              </ItemTemplate>
+                                            <!-- chip 分两行：Gauntlet ListPanel 不换行,单行放不下 7-8 个组 -->
+                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
+                                              <Children>
+                                                <ListPanel DataSource="{VisibleGroupsRow1}"
+                                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                                  <ItemTemplate>
+                                                    <STCPChip />
+                                                  </ItemTemplate>
+                                                </ListPanel>
+                                                <ListPanel DataSource="{VisibleGroupsRow2}"
+                                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="HorizontalLeftToRight" MarginTop="2">
+                                                  <ItemTemplate>
+                                                    <STCPChip />
+                                                  </ItemTemplate>
+                                                </ListPanel>
+                                              </Children>
                                             </ListPanel>
                                             <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteToggleAdvanced"
                                                           WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
@@ -881,21 +883,21 @@
                                   </Children>
                                 </Widget>
 
-                                <!-- ════ Tab 5：财务 ════ -->
+                                <!-- ════ Tab 5：状态一览（看板，默认页）════ -->
                                 <Widget IsVisible="@IsTab5Active"
                                         WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                                   <Children>
-                                    <Widget DataSource="{FinanceTab}"
+                                    <Widget DataSource="{ActivityTab}"
                                             WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
                                       <Children>
                                         <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                         ClipRect="FinClip" InnerPanel="FinClip\FinIn"
-                                                         VerticalScrollbar="..\FinBar" AutoHideScrollBars="true">
+                                                         ClipRect="ActClip" InnerPanel="ActClip\ActIn"
+                                                         VerticalScrollbar="..\ActBar" AutoHideScrollBars="true">
                                           <Children>
-                                            <Widget Id="FinClip" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                            <Widget Id="ActClip" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                                                     ClipContents="true">
                                               <Children>
-                                                <ListPanel Id="FinIn"
+                                                <ListPanel Id="ActIn"
                                                            WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                            VerticalAlignment="Top" StackLayout.LayoutMethod="VerticalBottomToTop"
                                                            MarginRight="14">
@@ -906,117 +908,14 @@
                                                     <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                 Brush="SPOptions.Slider.Value.Text" Text="@Intro"
                                                                 MarginTop="6" MarginBottom="10" />
-                                                    <TextWidget IsVisible="@HasError"
-                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.OptionName.Text" Text="@ErrorText" MarginBottom="8" />
 
-                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                               StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="10">
-                                                      <Children>
-                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                MarginRight="8">
-                                                          <Children>
-                                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                                    Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
-                                                            <ListPanel DataSource="{TodayTable}"
-                                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
-                                                              <Children>
-                                                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                            Brush="SPOptions.OptionName.Text" Text="@Title"
-                                                                            HorizontalAlignment="Center" MarginTop="8" MarginBottom="4" />
-                                                                <ListPanel DataSource="{Rows}"
-                                                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
-                                                                           MarginLeft="10" MarginRight="10" MarginBottom="8">
-                                                                  <ItemTemplate>
-                                                                    <STCPFinanceRow />
-                                                                  </ItemTemplate>
-                                                                </ListPanel>
-                                                              </Children>
-                                                            </ListPanel>
-                                                          </Children>
-                                                        </Widget>
-                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                MarginRight="8">
-                                                          <Children>
-                                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                                    Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
-                                                            <ListPanel DataSource="{WeekTable}"
-                                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
-                                                              <Children>
-                                                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                            Brush="SPOptions.OptionName.Text" Text="@Title"
-                                                                            HorizontalAlignment="Center" MarginTop="8" MarginBottom="4" />
-                                                                <ListPanel DataSource="{Rows}"
-                                                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
-                                                                           MarginLeft="10" MarginRight="10" MarginBottom="8">
-                                                                  <ItemTemplate>
-                                                                    <STCPFinanceRow />
-                                                                  </ItemTemplate>
-                                                                </ListPanel>
-                                                              </Children>
-                                                            </ListPanel>
-                                                          </Children>
-                                                        </Widget>
-                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren">
-                                                          <Children>
-                                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                                    Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
-                                                            <ListPanel DataSource="{AllTimeTable}"
-                                                                       WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                       StackLayout.LayoutMethod="VerticalBottomToTop">
-                                                              <Children>
-                                                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                            Brush="SPOptions.OptionName.Text" Text="@Title"
-                                                                            HorizontalAlignment="Center" MarginTop="8" MarginBottom="4" />
-                                                                <ListPanel DataSource="{Rows}"
-                                                                           WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                           StackLayout.LayoutMethod="VerticalBottomToTop"
-                                                                           MarginLeft="10" MarginRight="10" MarginBottom="8">
-                                                                  <ItemTemplate>
-                                                                    <STCPFinanceRow />
-                                                                  </ItemTemplate>
-                                                                </ListPanel>
-                                                              </Children>
-                                                            </ListPanel>
-                                                          </Children>
-                                                        </Widget>
-                                                      </Children>
-                                                    </ListPanel>
-
+                                                    <!-- 氏族调度概览 -->
                                                     <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.OptionName.Text" Text="@RecentTitle" MarginBottom="4" />
-                                                    <ListPanel IsVisible="@HasRecent" DataSource="{RecentEntries}"
-                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                               StackLayout.LayoutMethod="VerticalBottomToTop">
-                                                      <ItemTemplate>
-                                                        <STCPFinanceRow />
-                                                      </ItemTemplate>
-                                                    </ListPanel>
-                                                    <TextWidget IsVisible="@HasNoRecent"
-                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.Slider.Value.Text" Text="@EmptyRecentText" />
-
-                                                    <!-- ════ 财政自治视图（金库 / 单城 P&amp;L / 手动模式评估） ════ -->
-                                                    <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                                                 SuggestedHeight="9" Brush="SPOptions.CollapserLine"
-                                                                 MarginTop="14" MarginBottom="8" />
-                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="Clan.TabControl.Text" Text="@FiscalTitle"
-                                                                HorizontalAlignment="Center" MarginBottom="8" />
-
+                                                                Brush="SPOptions.OptionName.Text" Text="@ClanTitle" MarginBottom="4" />
                                                     <TextWidget IsVisible="@HasNoFiscal"
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.Slider.Value.Text" Text="@EmptyFiscalText" />
-
-                                                    <!-- 金库摘要 -->
-                                                    <TextWidget IsVisible="@HasFiscal"
-                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.OptionName.Text" Text="@TreasuryTitle" MarginBottom="4" />
-                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{TreasuryRows}"
+                                                                Brush="SPOptions.Slider.Value.Text" Text="@EmptyFiscalText" MarginBottom="10" />
+                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{ClanRows}"
                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                StackLayout.LayoutMethod="VerticalBottomToTop" MarginBottom="10">
                                                       <ItemTemplate>
@@ -1024,11 +923,11 @@
                                                       </ItemTemplate>
                                                     </ListPanel>
 
-                                                    <!-- 单城 P&L -->
+                                                    <!-- 各领地状态 -->
                                                     <TextWidget IsVisible="@HasFiscal"
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.OptionName.Text" Text="@PnlTitle" MarginBottom="4" />
-                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{PnlRows}"
+                                                                Brush="SPOptions.OptionName.Text" Text="@HoldingsTitle" MarginBottom="4" />
+                                                    <ListPanel IsVisible="@HasFiscal" DataSource="{HoldingRows}"
                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                StackLayout.LayoutMethod="VerticalBottomToTop" MarginBottom="10">
                                                       <ItemTemplate>
@@ -1036,104 +935,49 @@
                                                       </ItemTemplate>
                                                     </ListPanel>
 
-                                                    <!-- 手动模式评估 -->
-                                                    <TextWidget IsVisible="@ShowAssessment"
+                                                    <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                 SuggestedHeight="9" Brush="SPOptions.CollapserLine" MarginBottom="6" />
+
+                                                    <!-- 今日概况:5 格统计 -->
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.OptionName.Text" Text="@TodayLabel" MarginBottom="4" />
+                                                    <ListPanel DataSource="{Stats}"
+                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="64"
+                                                               StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="10">
+                                                      <ItemTemplate>
+                                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                                MarginLeft="3" MarginRight="3">
+                                                          <Children>
+                                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                                    Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
+                                                            <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                       StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
+                                                              <Children>
+                                                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                            Brush="Clan.NameTitle.Text" Text="@Value"
+                                                                            HorizontalAlignment="Center" />
+                                                                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                            Brush="SPOptions.Slider.Value.Text" Text="@Caption"
+                                                                            HorizontalAlignment="Center" MarginTop="2" />
+                                                              </Children>
+                                                            </ListPanel>
+                                                          </Children>
+                                                        </Widget>
+                                                      </ItemTemplate>
+                                                    </ListPanel>
+
+                                                    <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                                                 SuggestedHeight="9" Brush="SPOptions.CollapserLine" MarginBottom="6" />
+
+                                                    <!-- 近期动态 -->
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.OptionName.Text" Text="@FeedTitle" MarginBottom="4" />
+                                                    <TextWidget IsVisible="@IsEmpty"
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.OptionName.Text" Text="@AssessmentTitle" MarginBottom="4" />
-                                                    <TextWidget IsVisible="@ShowAssessment"
-                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.Slider.Value.Text" Text="@AssessmentIntro" MarginBottom="6" />
-                                                    <ListPanel IsVisible="@ShowAssessment" DataSource="{AssessmentRows}"
+                                                                Brush="SPOptions.Slider.Value.Text" Text="@EmptyText" MarginBottom="8" />
+                                                    <ListPanel DataSource="{Feed}"
                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                StackLayout.LayoutMethod="VerticalBottomToTop">
-                                                      <ItemTemplate>
-                                                        <STCPFinanceRow />
-                                                      </ItemTemplate>
-                                                    </ListPanel>
-
-                                                  </Children>
-                                                </ListPanel>
-                                              </Children>
-                                            </Widget>
-                                          </Children>
-                                        </ScrollablePanel>
-                                        <ScrollbarWidget Id="FinBar" WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
-                                                         SuggestedWidth="10" HorizontalAlignment="Right"
-                                                         AlignmentAxis="Vertical" Handle="FinBarHandle" MinValue="0" MaxValue="100">
-                                          <Children>
-                                            <Widget Id="FinBarHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                                                    SuggestedWidth="10" SuggestedHeight="28" HorizontalAlignment="Center"
-                                                    Sprite="BlankWhiteSquare_9" Color="#a88547FF" />
-                                          </Children>
-                                        </ScrollbarWidget>
-                                      </Children>
-                                    </Widget>
-                                  </Children>
-                                </Widget>
-
-                                <!-- ════ Tab 6：运行动态 ════ -->
-                                <Widget IsVisible="@IsTab6Active"
-                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
-                                  <Children>
-                                    <ListPanel DataSource="{ActivityTab}"
-                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                               StackLayout.LayoutMethod="VerticalBottomToTop">
-                                      <Children>
-
-                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="Clan.TabControl.Text" Text="@Title" HorizontalAlignment="Center" />
-                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="SPOptions.Slider.Value.Text" Text="@Intro"
-                                                    MarginTop="6" MarginBottom="10" />
-
-                                        <!-- 今日概况:5 格统计 -->
-                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="SPOptions.OptionName.Text" Text="@TodayLabel" MarginBottom="4" />
-                                        <ListPanel DataSource="{Stats}"
-                                                   WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="64"
-                                                   StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="10">
-                                          <ItemTemplate>
-                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                    MarginLeft="3" MarginRight="3">
-                                              <Children>
-                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                        Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
-                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                           StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
-                                                  <Children>
-                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="Clan.NameTitle.Text" Text="@Value"
-                                                                HorizontalAlignment="Center" />
-                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                Brush="SPOptions.Slider.Value.Text" Text="@Caption"
-                                                                HorizontalAlignment="Center" MarginTop="2" />
-                                                  </Children>
-                                                </ListPanel>
-                                              </Children>
-                                            </Widget>
-                                          </ItemTemplate>
-                                        </ListPanel>
-
-                                        <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                                     SuggestedHeight="9" Brush="SPOptions.CollapserLine" MarginBottom="6" />
-
-                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="SPOptions.OptionName.Text" Text="@FeedTitle" MarginBottom="4" />
-
-                                        <!-- 近期动态流(可滚动)/ 空状态 -->
-                                        <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
-                                          <Children>
-                                            <ScrollablePanel WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                             ClipRect="ActClip" InnerPanel="ActClip\ActIn"
-                                                             VerticalScrollbar="..\ActBar" AutoHideScrollBars="true">
-                                              <Children>
-                                                <Widget Id="ActClip" WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                                        ClipContents="true">
-                                                  <Children>
-                                                    <ListPanel Id="ActIn" DataSource="{Feed}"
-                                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                               VerticalAlignment="Top" StackLayout.LayoutMethod="VerticalBottomToTop"
-                                                               MarginRight="12">
                                                       <ItemTemplate>
                                                         <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                                    SuggestedHeight="30"
@@ -1160,28 +1004,24 @@
                                                         </ListPanel>
                                                       </ItemTemplate>
                                                     </ListPanel>
-                                                  </Children>
-                                                </Widget>
-                                              </Children>
-                                            </ScrollablePanel>
-                                            <ScrollbarWidget Id="ActBar" WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
-                                                             SuggestedWidth="10" HorizontalAlignment="Right"
-                                                             AlignmentAxis="Vertical" Handle="ActBarHandle" MinValue="0" MaxValue="100">
-                                              <Children>
-                                                <Widget Id="ActBarHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                                                        SuggestedWidth="10" SuggestedHeight="28" HorizontalAlignment="Center"
-                                                        Sprite="BlankWhiteSquare_9" Color="#a88547FF" />
-                                              </Children>
-                                            </ScrollbarWidget>
-                                            <TextWidget IsVisible="@IsEmpty"
-                                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                        Brush="SPOptions.Slider.Value.Text" Text="@EmptyText"
-                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                          </Children>
-                                        </Widget>
 
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                          </Children>
+                                        </ScrollablePanel>
+                                        <ScrollbarWidget Id="ActBar" WidthSizePolicy="Fixed" HeightSizePolicy="StretchToParent"
+                                                         SuggestedWidth="10" HorizontalAlignment="Right"
+                                                         AlignmentAxis="Vertical" Handle="ActBarHandle" MinValue="0" MaxValue="100">
+                                          <Children>
+                                            <Widget Id="ActBarHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
+                                                    SuggestedWidth="10" SuggestedHeight="28" HorizontalAlignment="Center"
+                                                    Sprite="BlankWhiteSquare_9" Color="#a88547FF" />
+                                          </Children>
+                                        </ScrollbarWidget>
                                       </Children>
-                                    </ListPanel>
+                                    </Widget>
                                   </Children>
                                 </Widget>
 
