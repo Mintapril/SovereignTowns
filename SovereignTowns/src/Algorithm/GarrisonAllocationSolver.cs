@@ -1,0 +1,400 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Helpers;
+using SovereignTowns.Capital;
+using SovereignTowns.Configuration;
+using SovereignTowns.Evaluators;
+using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Settlements;
+using TaleWorlds.Core;
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
+using Logger = SovereignTowns.Logging.Logger;
+
+namespace SovereignTowns.Algorithm;
+
+/// <summary>Pass A 分配结果:每定居点目标头数 + 价值分解(日志/评估用)。</summary>
+public sealed class GarrisonAllocationResult
+{
+    public Dictionary<Settlement, int> Target { get; } = new();
+    public Dictionary<Settlement, string> Breakdown { get; } = new();
+}
+
+/// <summary>
+/// 中央驻军调度器 Pass A:分配 MCMF。把氏族工资预算按"防御价值"分配到各城/堡。
+/// 单商品(头数)、凸费用层、复用 MinCostFlow。设计文档 central-garrison-dispatcher §3-§4。
+///
+/// 注意 — 费用偏移变换(advisor 复核):MinCostFlow.AddEdge 拒绝负费用
+/// (cost &lt; 0 抛 ArgumentOutOfRangeException)。设计文档 §3.1 用负费用表达价值层,
+/// 这里改用 <see cref="CostOffset"/> 偏移成非负:
+///   价值层(floor/core)  cost = CostOffset - round(value)   —— 价值越高费用越低,MCMF 越偏好
+///   budgetNode→unspent  cost = CostOffset                  —— 比任何正价值层贵,比 surplus 便宜
+///   surplus 层          cost = CostOffset + SurplusEdgeCost —— 严格劣于"留着不花"(设计 §3.1 关键修正)
+/// 决策与设计文档语义完全一致;只是 TotalCost 数值不再有意义(EdgeFlows 解码不受影响)。
+/// </summary>
+public static class GarrisonAllocationSolver
+{
+    /// <summary>
+    /// 费用偏移常量。须 ≥ 任何价值层可能取到的最大 value,使 CostOffset - round(value) 恒 ≥ 0。
+    /// 上界估计:ValueFloorBase(默认 1000,可调) × threat_max(8) × strategic_max(1.3×1.5≈1.95) ≈ 15600;
+    /// 配置可调高 ValueFloorBase,取 1_000_000 留足裕量。clamp 在 BuildCost 内兜底,理论上不会触发。
+    /// </summary>
+    private const int CostOffset = 1_000_000;
+
+    public static GarrisonAllocationResult Solve(CapitalManager manager)
+    {
+        var result = new GarrisonAllocationResult();
+        try
+        {
+            var clan = manager?.OwnerClan;
+            if (clan == null) return result;
+            var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+
+            var towns = clan.Fiefs.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList();
+            if (towns.Count == 0) return result;
+
+            int wagePerTroop = Math.Max(1, WagePerTroopAtMaxTier(towns));
+            long clanWageBudget = ClanWageBudget(manager, towns, cfg, wagePerTroop);
+            int budgetCap = (int)Math.Min(int.MaxValue, clanWageBudget / wagePerTroop);
+            if (budgetCap <= 0) return result;
+
+            var graph = new MinCostFlow();
+            int next = 1;
+            int superSource = next++, budgetNode = next++, unspentNode = next++, superSink = next++;
+            graph.AddEdge(superSource, budgetNode, budgetCap, 0);
+            // 未花掉的预算出口:费用 = CostOffset。任何正价值层(cost < CostOffset)都比它便宜 → 优先填;
+            // surplus 层(cost > CostOffset)比它贵 → MCMF 严格偏好"留着不花"而非过度驻军。
+            graph.AddEdge(budgetNode, unspentNode, budgetCap, CostOffset);
+            graph.AddEdge(unspentNode, superSink, budgetCap, 0);
+
+            var tierOwner = new Dictionary<int, Settlement>();
+            foreach (var t in towns)
+            {
+                var s = t.Settlement;
+                int floor = Math.Max(0, cfg.MinGarrisonFloor);
+                int hardCap = HardCapFor(t, cfg);
+                int adequate = AdequateFor(t, cfg, floor, hardCap);
+                float threat = ThreatWeight(s);
+                float strat = StrategicWeight(s, manager);
+
+                if (floor > 0)
+                {
+                    int n = next++; tierOwner[n] = s;
+                    int cost = BuildCost(cfg.ValueFloorBase * threat * strat);
+                    graph.AddEdge(budgetNode, n, floor, cost);
+                    graph.AddEdge(n, superSink, floor, 0);
+                }
+                int coreSpan = Math.Max(0, adequate - floor);
+                if (coreSpan > 0)
+                {
+                    int K = Math.Max(1, cfg.CoreTierCount);
+                    for (int k = 0; k < K; k++)
+                    {
+                        int cap = (coreSpan * (k + 1) / K) - (coreSpan * k / K);
+                        if (cap <= 0) continue;
+                        // diminishing: 在 core 段从 1.0 线性降到 0.2(取每子层中点)。
+                        float dim = 1.0f - 0.8f * ((k + 0.5f) / K);
+                        int cost = BuildCost(cfg.ValueCoreBase * dim * threat * strat);
+                        int n = next++; tierOwner[n] = s;
+                        graph.AddEdge(budgetNode, n, cap, cost);
+                        graph.AddEdge(n, superSink, cap, 0);
+                    }
+                }
+                int surplusSpan = Math.Max(0, hardCap - adequate);
+                if (surplusSpan > 0)
+                {
+                    int n = next++; tierOwner[n] = s;
+                    // surplus 层费用严格 > CostOffset(留着不花),MCMF 仅在所有价值层填满后才会用。
+                    int surplusCost = CostOffset + Math.Max(1, cfg.SurplusEdgeCost);
+                    graph.AddEdge(budgetNode, n, surplusSpan, surplusCost);
+                    graph.AddEdge(n, superSink, surplusSpan, 0);
+                }
+                result.Breakdown[s] = $"threat={threat:F1} strat={strat:F2} floor={floor} adequate={adequate} hardCap={hardCap}";
+            }
+
+            var flow = graph.Solve(superSource, superSink);
+            foreach (var t in towns) result.Target[t.Settlement] = 0;
+            foreach (var kv in flow.EdgeFlows)
+            {
+                if (kv.Value <= 0) continue;
+                if (tierOwner.TryGetValue(kv.Key.To, out var s))
+                    result.Target[s] = result.Target.TryGetValue(s, out var c) ? c + kv.Value : kv.Value;
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GarrisonAllocationSolver.Solve failed", ex);
+            return result;
+        }
+    }
+
+    /// <summary>把 float 价值映射成非负 MCMF 费用:价值越高费用越低。clamp 到 [0, CostOffset]。</summary>
+    private static int BuildCost(float value)
+    {
+        int v = (int)Math.Round(value);
+        if (v < 0) v = 0;
+        if (v > CostOffset) v = CostOffset;
+        return CostOffset - v;
+    }
+
+    // —— helper 实现(契约见任务说明 + 设计文档 §4-§5) ——
+
+    /// <summary>
+    /// 氏族工资预算:GarrisonWageBudgetRatio × Σ(每城税+关税)。村庄收入排除(易被劫,保守)。
+    /// 若 clan 处于战争 且 金库余额 &gt; 0 → 取 max(常规预算, Σ ConfigTargetHeads×wagePerTroop)。
+    /// 任何失败 → 返回 0(分配将退化为不养兵,安全)。
+    /// </summary>
+    private static long ClanWageBudget(CapitalManager manager, List<Town> towns, FiscalAutonomyConfig cfg, int wagePerTroop)
+    {
+        try
+        {
+            var clan = manager?.OwnerClan;
+            if (clan == null) return 0;
+
+            // 全限定:本项目存在 SovereignTowns.Campaign 子命名空间,裸 Campaign 在此会被解析成它。
+            long sustainable = 0;
+            var taxModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.SettlementTaxModel;
+            var financeModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.ClanFinanceModel;
+            foreach (var t in towns)
+            {
+                if (t?.Settlement == null) continue;
+                try
+                {
+                    if (taxModel != null)
+                        sustainable += (long)taxModel.CalculateTownTax(t).ResultNumber;
+                    if (financeModel != null)
+                        sustainable += (long)financeModel.CalculateTownIncomeFromTariffs(clan, t, false).ResultNumber;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"GarrisonAllocationSolver.ClanWageBudget income failed for '{t?.Settlement?.StringId}'", ex);
+                }
+            }
+            sustainable = Math.Max(0, sustainable);
+
+            float ratio = cfg.GarrisonWageBudgetRatio;
+            if (ratio < 0f) ratio = 0f;
+            long regular = (long)Math.Round(sustainable * ratio);
+
+            // 战时上调:clan 与任意势力交战 且 金库有余额 → 取 max(常规, 配置目标全额工资)。
+            if (IsClanAtWar(clan) && manager.Treasury != null && manager.Treasury.Balance > 0)
+            {
+                long configFull = ConfigTargetHeads(towns) * (long)Math.Max(1, wagePerTroop);
+                return Math.Max(regular, configFull);
+            }
+            return regular;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GarrisonAllocationSolver.ClanWageBudget failed", ex);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// 配置目标头数总和(战时上限用)。首府用 TownGarrisonRule.TargetTotalCount × 风险乘数;
+    /// 非首府用 BranchRule.TargetPower(power 口径,这里按头数等价直接累加 —— 略偏高,但战时上限本就保守宽松)。
+    /// </summary>
+    private static long ConfigTargetHeads(List<Town> towns)
+    {
+        long sum = 0;
+        foreach (var t in towns)
+        {
+            if (t == null) continue;
+            try
+            {
+                if (t.IsTown)
+                {
+                    var rule = ConfigurationManager.GetRuleFor(t) ?? TownGarrisonRule.CreateDefault();
+                    var risk = RiskAssessmentService.Assess(t.Settlement);
+                    float mul = risk.Level >= RiskLevel.High ? rule.WartimeMultiplier : rule.PeacetimeMultiplier;
+                    sum += Math.Max(0, (long)Math.Round(rule.TargetTotalCount * mul));
+                }
+                else
+                {
+                    var branch = ConfigurationManager.GetBranchRuleFor(t) ?? BranchRule.CreateDefault();
+                    sum += Math.Max(0, branch.TargetPower);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"GarrisonAllocationSolver.ConfigTargetHeads failed for '{t?.Settlement?.StringId}'", ex);
+            }
+        }
+        return sum;
+    }
+
+    /// <summary>clan 是否与任意势力交战。FactionHelper.GetStances + IsAtWarWith(DefaultClanFinanceModel 同套路)。</summary>
+    private static bool IsClanAtWar(Clan clan)
+    {
+        try
+        {
+            var mapFaction = clan?.MapFaction;
+            if (mapFaction == null) return false;
+            var stances = FactionHelper.GetStances(mapFaction);
+            if (stances == null) return false;
+            foreach (var stance in stances)
+            {
+                if (stance == null) continue;
+                var other = stance.Faction1 == mapFaction ? stance.Faction2 : stance.Faction1;
+                if (other != null && mapFaction.IsAtWarWith(other)) return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GarrisonAllocationSolver.IsClanAtWar failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 满级单兵工资 = PartyWageModel.GetCharacterWage(满级 tier 的代表兵种)。
+    /// 满级 tier 取自首府 TownGarrisonRule.MaxTier(取不到默认 5)。
+    /// 代表兵种用 GarrisonPowerEvaluator.MakeStubTroop 的 tier 查找。任何失败 → 返回 1(保守)。
+    /// </summary>
+    private static int WagePerTroopAtMaxTier(List<Town> towns)
+    {
+        try
+        {
+            int maxTier = 5;
+            var capitalTown = towns.FirstOrDefault(t => t != null && t.IsTown);
+            if (capitalTown != null)
+            {
+                var rule = ConfigurationManager.GetRuleFor(capitalTown);
+                if (rule != null && rule.MaxTier > 0) maxTier = rule.MaxTier;
+            }
+
+            // 全限定:见 ClanWageBudget 注释。
+            var wageModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.PartyWageModel;
+            if (wageModel == null) return 1;
+
+            // 代表兵种:优先匹配 tier 的非英雄兵种;MakeStubTroop 找不到时退化为任意非英雄兵。
+            var rep = GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: false)
+                      ?? GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: true);
+            if (rep == null) return 1;
+
+            int wage = wageModel.GetCharacterWage(rep);
+            return Math.Max(1, wage);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GarrisonAllocationSolver.WagePerTroopAtMaxTier failed", ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// adequate(S):clamp(AdequateBase + Prosperity/AdequateProsperityDivisor
+    ///   + round(NearbyLandThreatIntensity × AdequateThreatWeight), floor, hardCap)。
+    /// 任何失败 → 返回 clamp(floor, hardCap) 的下界(floor)。
+    /// </summary>
+    private static int AdequateFor(Town t, FiscalAutonomyConfig cfg, int floor, int hardCap)
+    {
+        try
+        {
+            var s = t?.Settlement;
+            if (s == null) return Math.Max(0, floor);
+
+            float prosperity = 0f;
+            try { prosperity = t!.Prosperity; } catch { prosperity = 0f; }
+
+            float threatIntensity = 0f;
+            try { threatIntensity = s.NearbyLandThreatIntensity; } catch { threatIntensity = 0f; }
+
+            int prosperityDivisor = Math.Max(1, cfg.AdequateProsperityDivisor);
+            float raw = cfg.AdequateBase
+                        + prosperity / prosperityDivisor
+                        + (float)Math.Round(threatIntensity * cfg.AdequateThreatWeight);
+
+            int adequate = (int)Math.Round(raw);
+            if (adequate < floor) adequate = floor;
+            if (adequate > hardCap) adequate = hardCap;
+            return adequate;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"GarrisonAllocationSolver.AdequateFor failed for '{t?.Settlement?.StringId}'", ex);
+            return Math.Max(0, floor);
+        }
+    }
+
+    /// <summary>
+    /// hardCap(S):vanilla 驻军 PartySizeLimit。GarrisonParty 是 MobileParty,其 .Party(PartyBase)
+    /// 暴露 PartySizeLimit。取不到 → cfg.MaxGarrisonHardCap(默认 400)。
+    /// </summary>
+    private static int HardCapFor(Town t, FiscalAutonomyConfig cfg)
+    {
+        int fallback = Math.Max(1, cfg.MaxGarrisonHardCap);
+        try
+        {
+            var garrison = t?.GarrisonParty;
+            int limit = garrison?.Party?.PartySizeLimit ?? 0;
+            return limit > 0 ? limit : fallback;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"GarrisonAllocationSolver.HardCapFor failed for '{t?.Settlement?.StringId}'", ex);
+            return fallback;
+        }
+    }
+
+    /// <summary>threat(S):RiskAssessmentService 风险等级映射 Safe .5 / Low 1 / Medium 2 / High 4 / Critical 8。</summary>
+    private static float ThreatWeight(Settlement s)
+    {
+        try
+        {
+            var level = RiskAssessmentService.Assess(s).Level;
+            switch (level)
+            {
+                case RiskLevel.Safe: return 0.5f;
+                case RiskLevel.Low: return 1.0f;
+                case RiskLevel.Medium: return 2.0f;
+                case RiskLevel.High: return 4.0f;
+                case RiskLevel.Critical: return 8.0f;
+                default: return 1.0f;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"GarrisonAllocationSolver.ThreatWeight failed for '{s?.StringId}'", ex);
+            return 1.0f;
+        }
+    }
+
+    /// <summary>
+    /// strategic(S):(是该 clan 当前首府 ? 1.3 : 1.0) × clamp(Prosperity/4000, 0.5, 1.5)。
+    /// 城堡 / 取不到繁荣度 → 繁荣度项落 0.5 下界。任何失败 → 1.0。
+    /// </summary>
+    private static float StrategicWeight(Settlement s, CapitalManager manager)
+    {
+        try
+        {
+            if (s == null) return 1.0f;
+
+            bool isCapital = false;
+            try
+            {
+                var capital = manager?.GetCapitalSettlement();
+                isCapital = s.IsTown && capital != null && capital == s;
+            }
+            catch { isCapital = false; }
+
+            float prosperity = 0f;
+            try { if (s.IsTown && s.Town != null) prosperity = s.Town.Prosperity; }
+            catch { prosperity = 0f; }
+
+            float prosperityFactor = prosperity / 4000f;
+            if (prosperityFactor < 0.5f) prosperityFactor = 0.5f;
+            if (prosperityFactor > 1.5f) prosperityFactor = 1.5f;
+
+            return (isCapital ? 1.3f : 1.0f) * prosperityFactor;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"GarrisonAllocationSolver.StrategicWeight failed for '{s?.StringId}'", ex);
+            return 1.0f;
+        }
+    }
+}

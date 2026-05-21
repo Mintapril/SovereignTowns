@@ -119,8 +119,11 @@ public static class GarrisonPowerEvaluator
         }
     }
 
-    /// <summary>self-test 用：找一个 vanilla CharacterObject 当探针。若找不到匹配 Tier 的 fallback 第一个 non-hero。</summary>
-    private static CharacterObject? MakeStubTroop(int targetTier, bool mounted)
+    /// <summary>
+    /// self-test 用 + tier→代表兵种查找（GarrisonAllocationSolver 复用）：找一个 vanilla CharacterObject 当探针。
+    /// 若找不到匹配 Tier 的 fallback 第一个 non-hero。
+    /// </summary>
+    internal static CharacterObject? MakeStubTroop(int targetTier, bool mounted)
     {
         foreach (var c in CharacterObject.All)
         {
