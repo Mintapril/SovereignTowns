@@ -36,10 +36,13 @@ public static class GarrisonAllocationSolver
 {
     /// <summary>
     /// 费用偏移常量。须 ≥ 任何价值层可能取到的最大 value,使 CostOffset - round(value) 恒 ≥ 0。
-    /// 上界估计:ValueFloorBase(默认 1000,可调) × threat_max(8) × strategic_max(1.3×1.5≈1.95) ≈ 15600;
-    /// 配置可调高 ValueFloorBase,取 1_000_000 留足裕量。clamp 在 BuildCost 内兜底,理论上不会触发。
+    /// 极端但合法配置下的上界:ValueFloorBase(校验上限 1_000_000) × threat_max(8)
+    /// × strategic_max(1.3×1.5≈1.95) ≈ 15.6M。取 20_000_000 安全高于此上界 —— BuildCost
+    /// 内的 clamp 仅作防御性兜底,正常路径不触发(若触发会把不同 floor 压成同一 cost,丢失排序)。
+    /// 每条 MCMF 边费用 ≤ ~20M、累加几条边仍在 int 范围内;aggregate TotalCost 本就是无意义大数,
+    /// 不影响流的正确性(EdgeFlows 解码与费用绝对值无关)。
     /// </summary>
-    private const int CostOffset = 1_000_000;
+    private const int CostOffset = 20_000_000;
 
     public static GarrisonAllocationResult Solve(CapitalManager manager)
     {
