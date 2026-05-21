@@ -69,6 +69,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     /// </summary>
     private Dictionary<string, string>? _pendingCapitals;
 
+    /// <summary>
+    /// Task 2：SyncData(load) → OnSessionLaunched 之间的暂存：clanStringId → treasury 序列化串。
+    /// </summary>
+    private Dictionary<string, string>? _pendingTreasuries;
+
     public override void RegisterEvents()
     {
         try
@@ -160,6 +165,52 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             Logger.Error("SovereignTowns: SyncData(st_capitals_json) failed", ex);
             _pendingCapitals = null;
         }
+
+        // Task 2：per-clan ClanTreasury (balance + 7-day expense ring) persistence.
+        try
+        {
+            string treasuriesJson = string.Empty;
+            if (dataStore.IsSaving)
+            {
+                try
+                {
+                    var dict = _capitalRegistry?.ExportTreasuries() ?? new Dictionary<string, string>();
+                    treasuriesJson = JsonConvert.SerializeObject(dict);
+                }
+                catch (Exception exSave)
+                {
+                    Logger.Error("SovereignTowns: SyncData treasury export failed; writing empty payload", exSave);
+                    treasuriesJson = string.Empty;
+                }
+            }
+
+            dataStore.SyncData("st_treasuries_json", ref treasuriesJson);
+
+            if (dataStore.IsLoading)
+            {
+                if (!string.IsNullOrEmpty(treasuriesJson))
+                {
+                    try
+                    {
+                        _pendingTreasuries = JsonConvert.DeserializeObject<Dictionary<string, string>>(treasuriesJson);
+                    }
+                    catch (Exception exLoad)
+                    {
+                        Logger.Error("SovereignTowns: failed to parse st_treasuries_json; falling back to empty", exLoad);
+                        _pendingTreasuries = null;
+                    }
+                }
+                else
+                {
+                    _pendingTreasuries = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("SovereignTowns: SyncData(st_treasuries_json) failed", ex);
+            _pendingTreasuries = null;
+        }
     }
 
     private void OnSessionLaunched(CampaignGameStarter campaignGameStarter)
@@ -198,6 +249,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 _capitalRegistry.RestoreCapitals(_pendingCapitals);
                 _pendingCapitals = null;
             }
+            // Task 2：把 SyncData 暂存的 clan→treasury 映射喂给 registry，供 EnsureForClan 注入金库。
+            _capitalRegistry.RestoreTreasuries(_pendingTreasuries);
+            _pendingTreasuries = null;
             _capitalRegistry.Initialize();
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
