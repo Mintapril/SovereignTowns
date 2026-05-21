@@ -54,6 +54,9 @@ public sealed class GlobalConfig
     /// </summary>
     public PartyThresholds Thresholds { get; set; } = new PartyThresholds();
 
+    /// <summary>建筑等级 → 队伍加成系数。军营 / 哨所等级派生各类队伍并发上限与驻军 XP。</summary>
+    public BuildingBonusConfig BuildingBonus { get; set; } = new BuildingBonusConfig();
+
     /// <summary>构造一份纯默认配置（用于首次安装 / 配置丢失回退）。</summary>
     public static GlobalConfig CreateDefault() => new GlobalConfig
     {
@@ -65,6 +68,7 @@ public sealed class GlobalConfig
         ClanPatrol = new ClanPatrolConfig(),
         ClanRecruiter = new ClanRecruiterConfig(),
         Thresholds = new PartyThresholds(),
+        BuildingBonus = new BuildingBonusConfig(),
     };
 }
 

@@ -115,6 +115,7 @@ internal static class WebConfigEndpoints
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.Thresholds ??= new PartyThresholds();
+            parsed.BuildingBonus ??= new BuildingBonusConfig();
             parsed.LastModified ??= "";
 
             // 原子 validate + replace + write。失败时 in-memory 不动。

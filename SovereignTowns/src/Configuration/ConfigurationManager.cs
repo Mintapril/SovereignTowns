@@ -24,7 +24,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 19;
+    public const int CurrentConfigVersion = 20;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -546,6 +546,7 @@ public static class ConfigurationManager
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.ClanRecruiter ??= new ClanRecruiterConfig();
             parsed.Thresholds ??= new PartyThresholds();
+            parsed.BuildingBonus ??= new BuildingBonusConfig();
             parsed.LastModified ??= "";
 
             // B7.25：不再做版本迁移。版本不符即丢弃，由 Initialize() 兜底为默认。
@@ -709,6 +710,10 @@ public static class ConfigurationManager
         {
             return false;
         }
+        if (config.BuildingBonus != null && !ValidateBuildingBonus(config.BuildingBonus, out reason))
+        {
+            return false;
+        }
 
         reason = "";
         return true;
@@ -738,6 +743,32 @@ public static class ConfigurationManager
         { reason = $"ClanRecruiter.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"; return false; }
         if (!IsNonNegativeFloat(c.DistanceWeightHoursPerTile) || c.DistanceWeightHoursPerTile > 100f)
         { reason = $"ClanRecruiter.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
+        reason = "";
+        return true;
+    }
+
+    private static bool ValidateBuildingBonus(BuildingBonusConfig b, out string reason)
+    {
+        foreach (var (name, val, lo, hi) in new (string, int, int, int)[]
+        {
+            ("RecruiterBaseCap",             b.RecruiterBaseCap,             1, 10),
+            ("RecruiterCapPerBarracksLevel", b.RecruiterCapPerBarracksLevel, 0, 5),
+            ("TransferBaseCap",              b.TransferBaseCap,              1, 10),
+            ("TransferCapPerBarracksLevel",  b.TransferCapPerBarracksLevel,  0, 5),
+            ("SallyBaseCap",                 b.SallyBaseCap,                 1, 10),
+            ("SallyCapPerBarracksLevel",     b.SallyCapPerBarracksLevel,     0, 5),
+            ("PatrolBaseCap",                b.PatrolBaseCap,                1, 10),
+            ("PatrolCapPerGuardHouseLevel",  b.PatrolCapPerGuardHouseLevel,  0, 5),
+            ("GarrisonXpBasePerDay",         b.GarrisonXpBasePerDay,         0, 50),
+            ("GarrisonXpPerBarracksLevel",   b.GarrisonXpPerBarracksLevel,   0, 50),
+        })
+        {
+            if (val < lo || val > hi)
+            {
+                reason = $"BuildingBonus.{name} invalid ({val}); [{lo}, {hi}]";
+                return false;
+            }
+        }
         reason = "";
         return true;
     }
