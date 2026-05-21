@@ -276,6 +276,8 @@ public static class PartyEconomyHelper
                     break;
                 }
             }
+            if (totalSpent == 0)
+                Logger.Info($"[ECON-DIAG] BuyHorsesFromSettlement no-mount: settlement='{settlement.Name}' isVillage={settlement.IsVillage} wantUnits={wantUnits} — 无可买坐骑（库存无 mount 物品 / 定价异常 / 资金不足）");
             try { party.ItemRoster.UpdateVersion(); } catch { }
         }
         catch (Exception ex)
