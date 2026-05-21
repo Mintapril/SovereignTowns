@@ -28,6 +28,10 @@ namespace SovereignTowns.Economy;
 /// </summary>
 public static class ModTreasury
 {
+    /// <summary>解析 clan 的 ClanTreasury（通过 CapitalRegistry）；无注册 / 无金库 → null。</summary>
+    private static ClanTreasury? ResolveFor(Clan? clan)
+        => CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+
     /// <summary>
     /// 查询 clan 当前能否承担 amount。与 Charge 语义对齐：
     ///   - 金库余额 ≥ amount → true
@@ -41,7 +45,7 @@ public static class ModTreasury
         {
             if (amount <= 0) return true;
 
-            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+            var treasury = ResolveFor(clan);
             if (treasury != null)
             {
                 if (treasury.CanAfford(amount)) return true;
@@ -74,7 +78,7 @@ public static class ModTreasury
 
         try
         {
-            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+            var treasury = ResolveFor(clan);
 
             if (treasury != null)
             {
@@ -96,15 +100,16 @@ public static class ModTreasury
                     if (hero == null)
                     {
                         Logger.Warn($"ModTreasury: 金库短缺 {shortfall}d 但 Hero.MainHero == null — 拒绝 {category} -{amount}d");
-                        // 回滚：金库已扣到 0，归还 (amount - shortfall)；实际已扣部分无法从无 hero 处取回
-                        // 为避免金库无偿损耗，整体视为失败：credit 归还金库
+                        // 回滚：hero 为 null，差额无法兜底 → 归还金库已扣的 (amount - shortfall)，整体视为失败
                         treasury.Credit(amount - shortfall);
                         return false;
                     }
 
                     try
                     {
-                        hero.ChangeHeroGold(-(int)shortfall);
+                        // checked 包裹收窄转换：shortfall 是 long，溢出抛异常（被外层 catch 接住返 false），
+                        // 避免静默截断错误地给 hero 记一笔异常金额。
+                        hero.ChangeHeroGold(-checked((int)shortfall));
                         Logger.Info($"ModTreasury: {category} -{amount}d clan={clan?.StringId} 金库扣 {amount - shortfall}d + 补贴 {shortfall}d from hero");
                     }
                     catch (Exception ex)
@@ -128,15 +133,15 @@ public static class ModTreasury
             }
 
             // 无金库 → 旧路径（直接扣 Hero.MainHero，受 PauseSpendingWhenBroke 门控）
-            var feat2 = ConfigurationManager.Current?.EnabledFeatures;
-            if (feat2?.PauseSpendingWhenBroke == true && !CanAfford(clan, amount))
+            var feat = ConfigurationManager.Current?.EnabledFeatures;
+            if (feat?.PauseSpendingWhenBroke == true && !CanAfford(clan, amount))
             {
                 Logger.Info($"ModTreasury: 拒绝 {category} -{amount}d 因玩家金币不足 (PauseSpendingWhenBroke=true, no treasury)");
                 return false;
             }
 
-            var hero2 = Hero.MainHero;
-            if (hero2 == null)
+            var mainHero = Hero.MainHero;
+            if (mainHero == null)
             {
                 Logger.Warn($"ModTreasury: 拒绝 {category} -{amount}d 因 Hero.MainHero == null (no treasury)");
                 return false;
@@ -144,7 +149,9 @@ public static class ModTreasury
 
             try
             {
-                hero2.ChangeHeroGold(-amount);
+                // 用 ChangeHeroGold 而非 GiveGoldAction.ApplyBetweenCharacters：后者会把转出额 clamp 到 giver
+                // 当前金币；直接改 Hero.Gold 才能在 PauseSpendingWhenBroke=false 时完整扣款并允许负余额。
+                mainHero.ChangeHeroGold(-amount);
             }
             catch (Exception ex)
             {
@@ -179,7 +186,7 @@ public static class ModTreasury
 
         try
         {
-            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+            var treasury = ResolveFor(clan);
             if (treasury != null)
             {
                 treasury.Credit(amount);
