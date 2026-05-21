@@ -572,9 +572,9 @@ public sealed class PartyLifecycleManager
     private void OnMobilePartyDestroyed(MobileParty party, PartyBase? destroyerParty)
     {
         if (party is null) return;
-        if (!_tracked.ContainsKey(party)) return;
         try
         {
+            if (!_tracked.ContainsKey(party)) return;
             Logger.Info($"OnMobilePartyDestroyed: '{PartyNameFormatter.SafeName(party)}' — auto-untracking");
             UntrackParty(party);
         }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Audit;
@@ -195,20 +196,13 @@ public static class DecisionAuditLogger
         return text.Substring(start, end - start);
     }
 
-    /// <summary>极简 JSON 整数提取:`"key":N`。失败返 0(不抛)。</summary>
+    /// <summary>从 decisionJson 取整数字段。解析失败 / 字段缺失返 0(不抛)。</summary>
     private static int ExtractInt(string json, string key)
     {
         try
         {
             if (string.IsNullOrEmpty(json)) return 0;
-            string needle = "\"" + key + "\":";
-            int idx = json.IndexOf(needle, StringComparison.Ordinal);
-            if (idx < 0) return 0;
-            int start = idx + needle.Length;
-            int end = start;
-            while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '-')) end++;
-            if (end <= start) return 0;
-            return int.TryParse(json.Substring(start, end - start), out var v) ? v : 0;
+            return JObject.Parse(json).Value<int?>(key) ?? 0;
         }
         catch { return 0; }
     }

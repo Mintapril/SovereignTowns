@@ -270,17 +270,21 @@ public static class SupplyDemandGraph
                 foreach (var role in MatchPolicy.Roles)
                 {
                     if (!MatchPolicy.AllowsRole(capitalState.CapitalRule!, role)) continue;
+                    // 按首府规则的兵种比例把分支总缺口拆到各 role。否则每个 role 各囤一份
+                    // totalBranchDemand，4 个 role 合计会让首府囤兵到 4× 实际分支需求。
+                    int roleStockpile = MatchPolicy.DesiredCount(capitalState.CapitalRule!, role, totalBranchDemand);
+                    if (roleStockpile <= 0) continue;
                     int demandNode = nextNodeId++;
                     var def = new DemandDef(
                         demandNode,
                         capitalState,
                         role,
-                        desired: totalBranchDemand,
+                        desired: roleStockpile,
                         current: 0,
-                        demand: totalBranchDemand,
+                        demand: roleStockpile,
                         isRecruitmentStockpile: true);
                     demands[demandNode] = def;
-                    graph.AddEdge(demandNode, superSink, totalBranchDemand, 0);
+                    graph.AddEdge(demandNode, superSink, roleStockpile, 0);
                 }
             }
         }

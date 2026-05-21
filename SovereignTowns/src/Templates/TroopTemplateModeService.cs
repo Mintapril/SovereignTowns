@@ -72,7 +72,7 @@ public static class TroopTemplateModeService
     }
 
     /// <summary>
-    /// 过滤兵种是否可作为模板/匹配候选。除原有规则（hero / 非 soldier / 非 regular / militia 关键字 /
+    /// 过滤兵种是否可作为模板/匹配候选。除原有规则（hero / 非 soldier / 非 regular / 民兵兵种 /
     /// 贵族开关）外，新增以下隐藏 / 不可招募过滤：
     /// <list type="bullet">
     ///   <item><c>HiddenInEncyclopedia</c>：DRM 等 mod 通过 XML 标记隐藏 vanilla 兵种的标准做法。</item>
@@ -105,8 +105,12 @@ public static class TroopTemplateModeService
                 }
                 if (!allowed) return false;
             }
-            if (!string.IsNullOrEmpty(troop.StringId)
-                && troop.StringId.IndexOf("militia", StringComparison.OrdinalIgnoreCase) >= 0)
+            // RBM 安全：用文化的民兵兵种槽做对象身份判定，不依赖 stringId 子串匹配
+            // （RBM 等 mod 会改 stringId，子串匹配会漏判）。culture 在上方已非 null。
+            if (troop == culture.MeleeMilitiaTroop
+                || troop == culture.RangedMilitiaTroop
+                || troop == culture.MeleeEliteMilitiaTroop
+                || troop == culture.RangedEliteMilitiaTroop)
             {
                 return false;
             }
