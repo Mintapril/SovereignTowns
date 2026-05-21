@@ -385,6 +385,12 @@ public static class ControlPanelSpecs
                         HintEn="Real hours accumulated since a stuck state was first detected; past this value the party is teleported to the capital gate; 0 = off.",
                         Min=0, Max=168, Discrete=false, Step=1, Def=24, Advanced=true },
 
+                    new SpecEntry { Root="Thresholds", Key="PatrolMaxLifetimeHours",
+                        LabelZh="巡逻队：最长存活小时（兜底）", LabelEn="Patrol: maximum lifetime hours (failsafe)",
+                        HintZh="巡逻队从创建起累计此小时后强制回家解散，用于防御极端异常场景；0 关闭兜底（接受终身巡逻）。720 = 30 天",
+                        HintEn="A patrol party is forced home and disbanded after this many hours since creation, as a failsafe against extreme edge cases; 0 disables the failsafe (accepting lifelong patrols). 720 = 30 days.",
+                        Min=0, Max=720, Discrete=false, Step=1, Def=720, Advanced=true },
+
                     new SpecEntry { Root="Thresholds", Key="IdleHoursBeforeForceReturn",
                         LabelZh="生命周期：空闲遣返小时", LabelEn="Lifecycle: idle hours before forced return",
                         HintZh="本 Mod 队伍空闲此时长（游戏内小时）后强制遣返回首府（必须 ≥ 1）",

@@ -262,6 +262,7 @@ public static class WebConfigServer
                 case "GET" when path == "/api/troops":      WebConfigEndpoints.GetTroops(ctx); return;
                 case "GET" when path == "/api/settlements": WebConfigEndpoints.GetSettlements(ctx); return;
                 case "GET" when path == "/api/status":      WebConfigEndpoints.GetStatus(ctx); return;
+                case "GET" when path == "/api/specs":       WebConfigEndpoints.GetSpecs(ctx); return;
                 case "POST" when path == "/api/reload":     WebConfigEndpoints.PostReload(ctx); return;
             }
 

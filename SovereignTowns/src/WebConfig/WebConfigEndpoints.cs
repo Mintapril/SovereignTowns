@@ -321,6 +321,68 @@ internal static class WebConfigEndpoints
         }
     }
 
+    /// <summary>
+    /// GET /api/specs → 配置旋钮元数据（单一来源 <see cref="SovereignTowns.Ui.ControlPanel.ControlPanelSpecs"/>）。
+    /// WebUI 的策略参数页直接消费此响应，不再硬编码 *Specs 数组。
+    /// 字段名按 WebUI 渲染循环期望的 camelCase 输出（root/key/labelZh/labelEn/hintZh/hintEn/
+    /// min/max/step/discrete/def/adv，bool 旋钮额外带 type:"bool"）。
+    /// 本地化保持双语原样下发 —— WebUI 在渲染时按当前语言取 *Zh / *En，语言切换不需重拉。
+    /// </summary>
+    public static void GetSpecs(HttpListenerContext ctx)
+    {
+        try
+        {
+            var groups = new List<object>();
+            foreach (var g in SovereignTowns.Ui.ControlPanel.ControlPanelSpecs.AllGroups)
+            {
+                var specs = new List<object>();
+                foreach (var s in g.Specs)
+                {
+                    // bool 旋钮：def 必须以 JSON true/false 下发，否则 resetSpec 写回 1.0/0.0
+                    // 到 C# bool 字段，PUT /api/config 反序列化会失败。
+                    object def = s.IsBool
+                        ? (object)(s.Def.HasValue && s.Def.Value != 0.0)
+                        : (s.Def.HasValue ? (object)s.Def.Value : null);
+
+                    specs.Add(new
+                    {
+                        root = s.Root ?? "",
+                        key = s.Key,
+                        labelZh = s.LabelZh,
+                        labelEn = s.LabelEn,
+                        hintZh = s.HintZh,
+                        hintEn = s.HintEn,
+                        type = s.IsBool ? "bool" : null,
+                        min = s.Min,
+                        max = s.Max,
+                        step = s.Step,
+                        discrete = s.Discrete,
+                        def,
+                        adv = s.Advanced,
+                    });
+                }
+
+                groups.Add(new
+                {
+                    key = g.Key,
+                    labelZh = g.LabelZh,
+                    labelEn = g.LabelEn,
+                    hintZh = g.HintZh,
+                    hintEn = g.HintEn,
+                    adv = g.Advanced,
+                    specs,
+                });
+            }
+
+            WebConfigServer.WriteJson(ctx, 200, new { groups });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("GetSpecs threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
     // ---------------- helpers ----------------
 
     private static string? _uiLang;

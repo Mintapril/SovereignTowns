@@ -1088,6 +1088,11 @@
         status: null,
         troops: [],
         settlements: [],
+        // 策略参数旋钮元数据 —— 由 GET /api/specs 在 init() 时填充。
+        // 单一来源是 C# ControlPanelSpecs.AllGroups；WebUI 不再硬编码 *Specs 数组。
+        // 每个 group: { key, labelZh, labelEn, hintZh, hintEn, adv, specs:[...] }
+        // 每个 spec:  { root, key, labelZh, labelEn, hintZh, hintEn, type?, min, max, step, discrete, def?, adv }
+        specGroups: [],
         warning: '',
         success: '',          // 绿色成功提示（保存成功等），show 后定时自动清空
         _successTimer: null,
@@ -1128,17 +1133,6 @@
           ];
         },
 
-        get budgetSpecs() {
-          const t = this.tr.bind(this);
-          return [
-          { key: 'TargetTotalCount', label: t('目标驻军总数', 'Target garrison size'), hint: t('驻军应维持的兵员数', 'The number of troops a garrison should maintain.'), min: 50, max: 500, discrete: true, def: 150 },
-          { key: 'MinimumDefenderRatio', label: t('最少防守比例', 'Minimum defender ratio'), hint: t('仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限', 'Constrains sally-forth only: a sally party will not pull the actual garrison below this fraction. Recruiter parties, cross-town transfers and recruitment pacing are not bound by it.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.20 },
-          { key: 'BudgetLimit', label: t('招募预算基准', 'Recruitment budget baseline'), hint: t('外派征兵队单次到村招募预算；自动升级预算也按此派生', 'Per-trip village recruitment budget for a dispatched recruiter party; the auto-upgrade budget is derived from it too.'), min: 0, max: 50000, discrete: true, def: 5000 },
-          { key: 'WartimeMultiplier', label: t('高威胁目标乘数', 'High-threat target multiplier'), hint: t('城镇威胁评估达到 High/Critical 时的目标人数倍数', 'Target headcount multiplier when the town threat assessment reaches High/Critical.'), min: 0.5, max: 2.0, discrete: false, def: 1.5 },
-          { key: 'PeacetimeMultiplier', label: t('常态目标乘数', 'Normal target multiplier'), hint: t('城镇威胁评估低于 High 时的目标人数倍数', 'Target headcount multiplier when the town threat assessment is below High.'), min: 0.5, max: 2.0, discrete: false, def: 1.0 },
-          ];
-        },
-
         get troopRatioSpecs() {
           const t = this.tr.bind(this);
           return [
@@ -1160,221 +1154,38 @@
           ];
         },
 
-        get resourceSpecs() {
-          const t = this.tr.bind(this);
-          return [
-          { key: 'FoodSafetyThreshold', root: 'GlobalDefaults', label: t('食物安全阈值', 'Food safety threshold'), hint: t('Town.FoodChange 低于此值暂停招募', 'Pause recruitment when Town.FoodChange drops below this value.'), min: -50, max: 50, discrete: false, step: 0.5, def: -2.0 },
-          { key: 'VillageCooldownHours', root: '', label: t('村庄招募冷却', 'Village recruitment cooldown'), hint: t('同一村庄被招过后多少小时不再候选 (12–240)', 'How many hours a village stays out of the candidate pool after being recruited from (12–240).'), min: 12, max: 240, discrete: true, def: 72 },
-          ];
-        },
-
-        // 原先散落在 PatrolDispatcher / RecruitmentDispatcher / CapitalLogisticsManager / SallyDispatcher 内的阈值。
-        // 人数阈值统一按当前实际驻军比例派生；面板调整后下次决策时生效（无须重启）。
-        // def = 出厂默认值（与 C# 配置类一致），用于「恢复默认」；adv = 开发者级旋钮，默认折叠。
-        get thresholdSpecs() {
-          const t = this.tr.bind(this);
-          return [
-          { key: 'PartyReturnSizeRatio', root: 'Thresholds', label: t('通用：回城解散兵员比例', 'General: return-and-disband size ratio'), hint: t('本 Mod 除调拨外的部队当前兵员 / 出发兵员 低于此值则回首府解散', 'A mod party (other than transfer parties) returns to the capital and disbands when its current headcount / starting headcount falls below this value.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.5 },
-          { key: 'PartyReturnWoundedRatio', root: 'Thresholds', label: t('通用：回城解散受伤比例', 'General: return-and-disband wounded ratio'), hint: t('本 Mod 除调拨外的部队当前受伤兵员 / 全部兵员 高于此值则回首府解散', 'A mod party (other than transfer parties) returns to the capital and disbands when its wounded / total headcount rises above this value.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.3 },
-          { key: 'PatrolReserveAfterCreationRatio', root: 'Thresholds', label: t('巡逻队：创建后保留比例', 'Patrol: garrison reserve after creation'), hint: t('创建巡逻队后首府至少保留实际驻军 × 此比例', 'After creating a patrol party, the capital keeps at least actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.8 },
-          { key: 'PatrolTroopBatchRatio', root: 'Thresholds', label: t('巡逻队：每次抽兵比例', 'Patrol: troops drawn per batch'), hint: t('新建巡逻队时从首府实际驻军抽走的比例', 'Fraction of the capital actual garrison drawn when creating a new patrol party.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.10 },
-          { key: 'PatrolMinDispatchSize', root: 'Thresholds', label: t('巡逻队：最少出发人数', 'Patrol: minimum dispatch size'), hint: t('按比例算出的人数低于此值时延迟创建，等驻军积攒到能一次抽够人为止。避免小驻军派出 1-3 人巡逻队送死；0 = 不限制', 'If the ratio-derived headcount is below this value, creation is delayed until the garrison has grown enough to draw a full batch at once. Prevents a small garrison from sending a 1-3-man patrol to its death; 0 = no limit.'), min: 0, max: 500, discrete: true, def: 50 },
-          { key: 'RecruiterEscortRatio', root: 'Thresholds', label: t('征兵队：护卫比例', 'Recruiter: escort ratio'), hint: t('派出征兵队时从首府驻军抽取的护卫比例', 'Fraction of the capital garrison taken as escort when dispatching a recruiter party.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.10 },
-          { key: 'RecruiterReturnRecruitedCount', root: 'Thresholds', label: t('征兵队：招募返航人数', 'Recruiter: recruited count to return'), hint: t('本趟实际招募人数（不含护卫）达到此值即返航', 'The recruiter party returns once it has actually recruited this many troops this trip (escort not counted).'), min: 1, max: 500, discrete: true, def: 50 },
-          { key: 'TransferCriticalProjectedRatio', root: 'Thresholds', label: t('调拨：危急驻军比例', 'Transfer: critical garrison ratio'), hint: t('预计驻军低于目标驻军 × 此比例时视为危急', 'A settlement is treated as critical when its projected garrison falls below target garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.24 },
-          { key: 'TransferRatio', root: 'Thresholds', label: t('调拨：源城抽取比例', 'Transfer: source extraction ratio'), hint: t('从源城驻军中按此比例抽取', 'Fraction drawn from the source settlement garrison.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
-          { key: 'TransferMaxTroopsPerTaskRatio', root: 'Thresholds', label: t('调拨：单次上限比例', 'Transfer: per-task cap ratio'), hint: t('单次调拨最多搬运源城实际驻军 × 此比例', 'A single transfer moves at most source actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.67 },
-          { key: 'TransferMinTroopRatio', root: 'Thresholds', label: t('调拨：单次下限比例', 'Transfer: per-task floor ratio'), hint: t('算出的调拨人数低于源城实际驻军 × 此比例则放弃', 'The transfer is abandoned if the computed headcount is below source actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.13 },
-          { key: 'RecruitmentMinDemandRatio', root: 'Thresholds', label: t('征兵：派遣缺口比例', 'Recruitment: dispatch demand ratio'), hint: t('剩余缺口低于首府实际驻军 × 此比例不再派征兵队', 'No more recruiter parties are dispatched once the remaining shortfall is below capital actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.07 },
-          { key: 'SallyExtractionRatio', root: 'Thresholds', label: t('主动出击：驻军上限比例', 'Sally: garrison cap ratio'), hint: t('主动出击人数不会超过当前实际驻军 × 此比例', 'A sally never takes more than current actual garrison × this fraction.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.60 },
-          { key: 'SallyTargetPartySizeMultiplier', root: 'Thresholds', label: t('主动出击：目标兵力倍数', 'Sally: target strength multiplier'), hint: t('出击队目标人数 = 敌方目标部队人数 × 此倍数', 'Sally party target headcount = enemy target party headcount × this multiplier.'), min: 0, max: 5, discrete: false, step: 0.25, def: 2.0 },
-          { key: 'SallyCreateMinPartyCount', root: 'Thresholds', label: t('主动出击：创建下限人数', 'Sally: minimum creation size'), hint: t('计算后得到的出击队人数低于此值时不出击', 'No sally is launched if the computed sally party headcount is below this value.'), min: 1, max: 500, discrete: true, def: 30 },
-          // B17.4 新增阈值（min/max 与 ValidateThresholds 后端上下界对齐）
-          { key: 'RecruiterMinHomeGarrison', root: 'Thresholds', label: t('征兵队：首府最低驻军', 'Recruiter: minimum home garrison'), hint: t('派征兵队前首府实际驻军必须 ≥ 此值；0 = 关闭限制，允许 0 兵裸车', 'Before a recruiter party is dispatched, the capital actual garrison must be >= this value; 0 = no limit, allowing a bare 0-troop dispatch.'), min: 0, max: 500, discrete: true, def: 0 },
-          { key: 'PartyPrisonerCap', root: 'Thresholds', label: t('通用：俘虏上限', 'General: prisoner cap'), hint: t('所有本 Mod 部队（征兵/调拨/巡逻/出击）俘虏上限，超过后每游戏内小时随机释放非英雄俘虏；0 = 关闭', 'Prisoner cap for all mod parties (recruiter/transfer/patrol/sally); above it, non-hero prisoners are released at random each in-game hour; 0 = off.'), min: 0, max: 500, discrete: true, def: 30 },
-          { key: 'StuckTeleportHours', root: 'Thresholds', label: t('通用：卡死瞬移阈值（真实小时）', 'General: stuck-teleport threshold (real hours)'), adv: true, hint: t('首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭', 'Real hours accumulated since a stuck state was first detected; past this value the party is teleported to the capital gate; 0 = off.'), min: 0, max: 168, discrete: false, step: 1, def: 24 },
-          { key: 'PatrolMaxLifetimeHours', root: 'Thresholds', label: t('巡逻队：最长存活小时（兜底）', 'Patrol: maximum lifetime hours (failsafe)'), adv: true, hint: t('巡逻队从创建起累计此小时后强制回家解散，用于防御极端异常场景；0 关闭兜底（接受终身巡逻）。720 = 30 天', 'A patrol party is forced home and disbanded after this many hours since creation, as a failsafe against extreme edge cases; 0 disables the failsafe (accepting lifelong patrols). 720 = 30 days.'), min: 0, max: 720, discrete: false, step: 1, def: 720 },
-          // DeepSeek audit 2026-05-18 新增 (R1/R2/R3/R4/H7-H10)
-          { key: 'IdleHoursBeforeForceReturn', root: 'Thresholds', label: t('生命周期：空闲遣返小时', 'Lifecycle: idle hours before forced return'), hint: t('本 Mod 队伍空闲此时长（游戏内小时）后强制遣返回首府（必须 ≥ 1）', 'A mod party idle for this long (in-game hours) is forced to return to the capital (must be >= 1).'), min: 1, max: 720, discrete: true, def: 24 },
-          { key: 'IdleHoursBeforeDisband', root: 'Thresholds', label: t('生命周期：空闲解散小时', 'Lifecycle: idle hours before disband'), hint: t('本 Mod 队伍空闲此时长（游戏内小时）后直接解散（必须 ≥ 遣返小时）', 'A mod party idle for this long (in-game hours) is disbanded outright (must be >= the forced-return hours).'), min: 1, max: 720, discrete: true, def: 36 },
-          { key: 'SallyDetectionRadius', root: 'Thresholds', label: t('主动出击：搜索半径', 'Sally: detection radius'), hint: t('主动出击在城周围搜索敌方目标的地图半径', 'Map radius within which a sally searches for enemy targets around the settlement.'), min: 10, max: 500, discrete: false, step: 5, def: 50 },
-          { key: 'SallyCooldownHours', root: 'Thresholds', label: t('主动出击：冷却小时', 'Sally: cooldown hours'), hint: t('上次出击结束后的冷却时长（游戏内小时）', 'Cooldown after the previous sally ends (in-game hours).'), min: 0, max: 168, discrete: false, step: 1, def: 24 },
-          { key: 'SallyMinSustainedTicks', root: 'Thresholds', label: t('主动出击：连续可见小时数', 'Sally: sustained-visibility hours'), hint: t('敌方需在视野内连续存在 N 个游戏内小时才触发出击，避免一进检测圈就冲', 'The enemy must stay continuously visible for N in-game hours before a sally triggers, so a sally is not launched the instant a target enters the detection ring.'), min: 1, max: 48, discrete: true, def: 3 },
-          { key: 'TransferCapacityWeight', root: 'Thresholds', label: t('调拨：容量评分权重', 'Transfer: capacity scoring weight'), adv: true, hint: t('调拨评分中按源城可用容量加权，调大利好高容量源', 'Weight given to the source settlement available capacity in transfer scoring; higher favours high-capacity sources.'), min: 0, max: 1, discrete: false, step: 0.01, def: 0.05 },
-          { key: 'TransferBranchToBranchPenalty', root: 'Thresholds', label: t('调拨：非首府互调惩罚', 'Transfer: branch-to-branch penalty'), adv: true, hint: t('两座非首府之间的调拨在评分中减去此值（值越大越避免）', 'This value is subtracted in scoring for a transfer between two branch settlements (higher = more strongly avoided).'), min: 0, max: 100, discrete: false, step: 1, def: 25 },
-          { key: 'TransferCapitalSourcePenalty', root: 'Thresholds', label: t('调拨：首府出兵惩罚', 'Transfer: capital-as-source penalty'), adv: true, hint: t('从首府向非首府调兵时评分加上此值（值越大越保留首府兵力）', 'This value is added in scoring when transferring from the capital to a branch (higher = more strongly preserves capital strength).'), min: 0, max: 100, discrete: false, step: 1, def: 10 },
-          { key: 'AutoUpgradeMinTierRatio', root: 'Thresholds', label: t('升级：触发 Tier 比例', 'Upgrade: trigger low-tier ratio'), hint: t('T1+T2 兵占总兵比例 ≥ 此值时尝试升级', 'An upgrade is attempted when T1+T2 troops make up at least this fraction of the total.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.30 },
-          { key: 'AutoUpgradeMinBudget', root: 'Thresholds', label: t('升级：单次最低预算', 'Upgrade: minimum budget per call'), hint: t('实际预算 = max(招募预算基准 / 4, 此值)', 'Effective budget = max(recruitment budget baseline / 4, this value).'), min: 0, max: 50000, discrete: true, def: 500 },
-          { key: 'AutoUpgradeMaxPerCall', root: 'Thresholds', label: t('升级：单次最大升级数', 'Upgrade: max upgrades per call'), hint: t('单次升级最多升 N 个兵', 'At most N troops are upgraded per call.'), min: 1, max: 500, discrete: true, def: 20 },
-          // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，不再可配置；
-          // 移除 RecruiterSeedGold / SallySeedGold spec。
-          { key: 'RecruitmentCandidateBatchSize', root: 'Thresholds', label: t('征兵：每轮候选村庄数', 'Recruitment: candidate villages per round'), adv: true, hint: t('征兵规划每轮评估的候选村庄数', 'Number of candidate villages evaluated per recruitment-planning round.'), min: 1, max: 50, discrete: true, def: 8 },
-          // MCMF solver — 供需图调度器内部参数，全部 adv
-          { key: 'McmfHardPenalty', root: 'Thresholds', label: t('MCMF：硬不匹配罚分', 'MCMF: hard-mismatch penalty'), adv: true, hint: t('兵种 role 不符或精确模板不在升级树上的硬罚分', 'Hard penalty when a troop role mismatches or an exact-template troop is not on the upgrade tree.'), min: 0, max: 10000, discrete: true, def: 1000 },
-          { key: 'McmfTierPenalty', root: 'Thresholds', label: t('MCMF：Tier 差距罚分', 'MCMF: tier-gap penalty'), adv: true, hint: t('每差 1 个 Tier 的匹配罚分', 'Matching penalty per tier of difference.'), min: 0, max: 10000, discrete: true, def: 50 },
-          { key: 'McmfLeniency', root: 'Thresholds', label: t('MCMF：缺口宽容度', 'MCMF: shortfall leniency'), adv: true, hint: t('缺口越大越降低匹配罚分；0 = 严格，1 = 最大宽容', 'A larger shortfall lowers the matching penalty; 0 = strict, 1 = maximum leniency.'), min: 0, max: 1, discrete: false, step: 0.05, def: 0.8 },
-          { key: 'McmfUnmetCost', root: 'Thresholds', label: t('MCMF：未满足成本', 'MCMF: unmet-demand cost'), adv: true, hint: t('需求未满足的成本；低于极差路线时会选择暂不派遣', 'Cost of leaving demand unmet; when this is below a very poor route, the solver chooses not to dispatch for now.'), min: 0, max: 10000, discrete: true, def: 2000 },
-          { key: 'McmfRecruiterOverhead', root: 'Thresholds', label: t('MCMF：征兵队固定成本', 'MCMF: recruiter party overhead'), adv: true, hint: t('派出一支征兵队的固定成本', 'Fixed cost of dispatching one recruiter party.'), min: 0, max: 10000, discrete: true, def: 100 },
-          { key: 'McmfTransferOverhead', root: 'Thresholds', label: t('MCMF：调拨队固定成本', 'MCMF: transfer party overhead'), adv: true, hint: t('派出一支调拨队的固定成本', 'Fixed cost of dispatching one transfer party.'), min: 0, max: 10000, discrete: true, def: 50 },
-          // ClanPatrol scheduler (H17) — 巡逻调度内部参数，全部 adv
-          { key: 'EtaBufferHours', root: 'ClanPatrol', label: t('巡逻调度：ETA 缓冲', 'Patrol scheduling: ETA buffer'), adv: true, hint: t('站点预占时长 = 预计到达时间 + 此值', 'Stop reservation duration = estimated time of arrival + this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
-          { key: 'StuckTimeoutHours', root: 'ClanPatrol', label: t('巡逻调度：卡死超时', 'Patrol scheduling: stuck timeout'), adv: true, hint: t('单段路超过此时长视为卡死，强制重选下一站', 'A single leg exceeding this duration is treated as stuck, forcing reselection of the next stop.'), min: 1, max: 720, discrete: false, step: 1, def: 12 },
-          { key: 'MinVisitGapHours', root: 'ClanPatrol', label: t('巡逻调度：回访间隔', 'Patrol scheduling: revisit gap'), adv: true, hint: t('同一定居点的最小回访间隔', 'Minimum gap before revisiting the same settlement.'), min: 0, max: 720, discrete: false, step: 1, def: 4 },
-          // ClanPatrol.AvoidRaidedVillages 是 bool，由 settingsGroups 的巡逻调拨二级菜单渲染。
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanPatrol', label: t('巡逻调度：距离评分权重', 'Patrol scheduling: distance scoring weight'), adv: true, hint: t('站点评分中距离项的权重，值越大越偏好近处', 'Weight of the distance term in stop scoring; higher favours nearer stops.'), min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
-          { key: 'SupportEtaThresholdHours', root: 'ClanPatrol', label: t('巡逻调度：支援 ETA 阈值', 'Patrol scheduling: support ETA threshold'), adv: true, hint: t('巡逻队预计到达时间 ≤ 此值时转去支援主动出击', 'A patrol party diverts to support a sally when its ETA is <= this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 2.0 },
-          // ClanRecruiter scheduler (H17) — 征兵调度内部参数，全部 adv
-          { key: 'EtaBufferHours', root: 'ClanRecruiter', label: t('征兵调度：ETA 缓冲', 'Recruiter scheduling: ETA buffer'), adv: true, hint: t('站点预占时长 = 预计到达时间 + 此值', 'Stop reservation duration = estimated time of arrival + this value.'), min: 0, max: 168, discrete: false, step: 0.5, def: 1.0 },
-          { key: 'MinVisitGapHours', root: 'ClanRecruiter', label: t('征兵调度：回访间隔', 'Recruiter scheduling: revisit gap'), adv: true, hint: t('同一村庄的最小回访间隔', 'Minimum gap before revisiting the same village.'), min: 0, max: 720, discrete: false, step: 1, def: 4 },
-          { key: 'DistanceWeightHoursPerTile', root: 'ClanRecruiter', label: t('征兵调度：距离评分权重', 'Recruiter scheduling: distance scoring weight'), adv: true, hint: t('站点评分中距离项的权重，值越大越偏好近处', 'Weight of the distance term in stop scoring; higher favours nearer stops.'), min: 0, max: 100, discrete: false, step: 0.1, def: 0.5 },
-          ];
-        },
-
-        get buildingBonusSpecs() {
-          const t = this.tr.bind(this);
-          return [
-          { key: 'RecruiterBaseCap', root: 'BuildingBonus', label: t('征兵队：上限基础值', 'Recruiter: base cap'), hint: t('征兵队并发上限的基础值（军营 0 级时的上限）', 'Base value of the recruiter concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
-          { key: 'RecruiterCapPerBarracksLevel', root: 'BuildingBonus', label: t('征兵队：军营每级增量', 'Recruiter: cap per barracks level'), hint: t('军营每升 1 级，征兵队并发上限 +N', 'Each barracks level adds N to the recruiter concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
-          { key: 'TransferBaseCap', root: 'BuildingBonus', label: t('调拨队：上限基础值', 'Transfer: base cap'), hint: t('调拨队并发上限的基础值（军营 0 级时的上限）', 'Base value of the transfer concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
-          { key: 'TransferCapPerBarracksLevel', root: 'BuildingBonus', label: t('调拨队：军营每级增量', 'Transfer: cap per barracks level'), hint: t('军营每升 1 级，调拨队并发上限 +N', 'Each barracks level adds N to the transfer concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
-          { key: 'SallyBaseCap', root: 'BuildingBonus', label: t('出击队：上限基础值', 'Sally: base cap'), hint: t('出击队并发上限的基础值（军营 0 级时的上限）', 'Base value of the sally concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
-          { key: 'SallyCapPerBarracksLevel', root: 'BuildingBonus', label: t('出击队：军营每级增量', 'Sally: cap per barracks level'), hint: t('军营每升 1 级，出击队并发上限 +N', 'Each barracks level adds N to the sally concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
-          { key: 'PatrolBaseCap', root: 'BuildingBonus', label: t('巡逻队：上限基础值', 'Patrol: base cap'), hint: t('巡逻队并发上限的基础值（哨所 0 级时的上限）', 'Base value of the patrol concurrent cap (the cap at Guard House level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
-          { key: 'PatrolCapPerGuardHouseLevel', root: 'BuildingBonus', label: t('巡逻队：哨所每级增量', 'Patrol: cap per Guard House level'), hint: t('哨所每升 1 级，巡逻队并发上限 +N', 'Each Guard House level adds N to the patrol concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
-          { key: 'GarrisonXpBasePerDay', root: 'BuildingBonus', label: t('驻军：每日 XP 基础值', 'Garrison: base daily XP'), hint: t('驻军每兵每日 XP 的基础值（军营 0 级时的值）', 'Base per-troop daily garrison XP (the value at barracks level 0).'), min: 0, max: 50, discrete: true, step: 1, def: 5 },
-          { key: 'GarrisonXpPerBarracksLevel', root: 'BuildingBonus', label: t('驻军：军营每级 XP 增量', 'Garrison: daily XP per barracks level'), hint: t('军营每升 1 级，驻军每兵每日 XP +N', 'Each barracks level adds N to per-troop daily garrison XP.'), min: 0, max: 50, discrete: true, step: 1, def: 5 },
-          ];
-        },
-
         // ============ computed ============
-        // 完整分组定义。每个 group 的 specs 已按 showAdvanced 过滤掉 adv 旋钮。
+        // 完整分组定义。spec 元数据由 GET /api/specs 拉取(单一来源 = C# ControlPanelSpecs)，
+        // 此 getter 只负责把 specGroups 的双语字段按当前语言取值，并按 showAdvanced 过滤 adv 旋钮。
         get settingsGroups() {
-          const t = this.tr.bind(this);
-          const budget = this.budgetSpecs.map(s => ({ root: 'GlobalDefaults', ...s }));
-          const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs, ...this.buildingBonusSpecs];
-          const spec = (root, key) => {
-            const normalizedRoot = root || '';
-            const found = all.find(s => (s.root || '') === normalizedRoot && s.key === key);
-            return found ? { ...found, root: normalizedRoot } : null;
-          };
-          const boolSpec = (root, key, label, hint, def, adv) => ({ root, key, label, hint, def, adv, type: 'bool' });
-          // clean：丢掉 null，并在未开启「高级参数」时隐藏 adv 旋钮。
-          const clean = specs => specs.filter(Boolean).filter(s => this.showAdvanced || !s.adv);
-
-          return [
-            {
-              key: 'targets',
-              label: t('目标预算', 'Targets & budget'),
-              hint: t('驻军目标、预算和安全阈值；这些值决定每个领地想维持多少兵以及什么时候暂停招募。', 'Garrison targets, budgets and safety thresholds; these decide how many troops each holding should maintain and when to pause recruitment.'),
-              specs: clean([
-                spec('GlobalDefaults', 'TargetTotalCount'),
-                spec('GlobalDefaults', 'MinimumDefenderRatio'),
-                spec('GlobalDefaults', 'BudgetLimit'),
-                spec('GlobalDefaults', 'WartimeMultiplier'),
-                spec('GlobalDefaults', 'PeacetimeMultiplier'),
-                spec('GlobalDefaults', 'FoodSafetyThreshold'),
-              ]),
-            },
-            {
-              key: 'recruitment',
-              label: t('招募', 'Recruitment'),
-              hint: t('外派征兵队、村庄候选搜索和回访节奏。', 'Dispatched recruiter parties, village candidate search and revisit pacing.'),
-              specs: clean([
-                spec('', 'VillageCooldownHours'),
-                spec('Thresholds', 'RecruitmentMinDemandRatio'),
-                spec('Thresholds', 'RecruiterEscortRatio'),
-                spec('Thresholds', 'RecruiterReturnRecruitedCount'),
-                spec('Thresholds', 'RecruiterMinHomeGarrison'),
-                spec('Thresholds', 'RecruitmentCandidateBatchSize'),
-                spec('ClanRecruiter', 'EtaBufferHours'),
-                spec('ClanRecruiter', 'MinVisitGapHours'),
-                spec('ClanRecruiter', 'DistanceWeightHoursPerTile'),
-              ]),
-            },
-            {
-              key: 'patrol_transfer',
-              label: t('巡逻调拨', 'Patrol & transfer'),
-              hint: t('巡逻队创建、巡逻站点选择、出击支援和领地间兵力调拨。', 'Patrol party creation, patrol stop selection, sally support and inter-holding troop transfers.'),
-              specs: clean([
-                spec('Thresholds', 'PatrolReserveAfterCreationRatio'),
-                spec('Thresholds', 'PatrolTroopBatchRatio'),
-                spec('Thresholds', 'PatrolMinDispatchSize'),
-                boolSpec('ClanPatrol', 'AvoidRaidedVillages', t('巡逻：避开被劫掠村庄', 'Patrol: avoid raided villages'), t('开启后，被劫掠中的村庄不会被选为普通巡逻访问点', 'When on, a village under raid is not chosen as a normal patrol visit stop.'), true, false),
-                spec('ClanPatrol', 'EtaBufferHours'),
-                spec('ClanPatrol', 'StuckTimeoutHours'),
-                spec('ClanPatrol', 'MinVisitGapHours'),
-                spec('ClanPatrol', 'DistanceWeightHoursPerTile'),
-                spec('ClanPatrol', 'SupportEtaThresholdHours'),
-                spec('Thresholds', 'TransferCriticalProjectedRatio'),
-                spec('Thresholds', 'TransferRatio'),
-                spec('Thresholds', 'TransferMaxTroopsPerTaskRatio'),
-                spec('Thresholds', 'TransferMinTroopRatio'),
-                spec('Thresholds', 'TransferCapacityWeight'),
-                spec('Thresholds', 'TransferBranchToBranchPenalty'),
-                spec('Thresholds', 'TransferCapitalSourcePenalty'),
-              ]),
-            },
-            {
-              key: 'sally',
-              label: t('主动出击', 'Sally forth'),
-              hint: t('敌军搜索、出击规模、冷却和持续可见判定。', 'Enemy search, sally size, cooldown and sustained-visibility checks.'),
-              specs: clean([
-                spec('Thresholds', 'SallyDetectionRadius'),
-                spec('Thresholds', 'SallyCooldownHours'),
-                spec('Thresholds', 'SallyMinSustainedTicks'),
-                spec('Thresholds', 'SallyExtractionRatio'),
-                spec('Thresholds', 'SallyTargetPartySizeMultiplier'),
-                spec('Thresholds', 'SallyCreateMinPartyCount'),
-              ]),
-            },
-            {
-              key: 'mcmf',
-              label: t('MCMF 调度', 'MCMF scheduling'),
-              adv: true,
-              hint: t('供需图调度器的匹配罚分、未满足成本和派队固定成本 —— 开发者级旋钮，普通玩家无需调整。', 'Supply-demand graph solver matching penalties, unmet-demand cost and per-party overhead — developer-level knobs, ordinary players need not adjust.'),
-              specs: clean([
-                spec('Thresholds', 'McmfHardPenalty'),
-                spec('Thresholds', 'McmfTierPenalty'),
-                spec('Thresholds', 'McmfLeniency'),
-                spec('Thresholds', 'McmfUnmetCost'),
-                spec('Thresholds', 'McmfRecruiterOverhead'),
-                spec('Thresholds', 'McmfTransferOverhead'),
-              ]),
-            },
-            {
-              key: 'lifecycle',
-              label: t('生命周期升级', 'Lifecycle & upgrade'),
-              hint: t('队伍返航、俘虏上限、卡死保护、空闲解散和驻军升级。', 'Party return, prisoner cap, stuck protection, idle disband and garrison upgrades.'),
-              specs: clean([
-                spec('Thresholds', 'PartyReturnSizeRatio'),
-                spec('Thresholds', 'PartyReturnWoundedRatio'),
-                spec('Thresholds', 'PartyPrisonerCap'),
-                spec('Thresholds', 'StuckTeleportHours'),
-                spec('Thresholds', 'IdleHoursBeforeForceReturn'),
-                spec('Thresholds', 'IdleHoursBeforeDisband'),
-                spec('Thresholds', 'AutoUpgradeMinTierRatio'),
-                spec('Thresholds', 'AutoUpgradeMinBudget'),
-                spec('Thresholds', 'AutoUpgradeMaxPerCall'),
-              ]),
-            },
-            {
-              key: 'building_bonus',
-              label: t('建筑加成', 'Building bonuses'),
-              hint: t('军营等级派生征兵 / 调拨 / 出击队并发上限与驻军每日 XP；哨所等级派生巡逻队并发上限。上限 = 基础值 + 建筑等级 × 每级增量。', 'Barracks level drives recruiter / transfer / sally caps and daily garrison XP; Guard House level drives the patrol cap. Cap = base + building level × per-level increment.'),
-              specs: clean([
-                spec('BuildingBonus', 'RecruiterBaseCap'),
-                spec('BuildingBonus', 'RecruiterCapPerBarracksLevel'),
-                spec('BuildingBonus', 'TransferBaseCap'),
-                spec('BuildingBonus', 'TransferCapPerBarracksLevel'),
-                spec('BuildingBonus', 'SallyBaseCap'),
-                spec('BuildingBonus', 'SallyCapPerBarracksLevel'),
-                spec('BuildingBonus', 'PatrolBaseCap'),
-                spec('BuildingBonus', 'PatrolCapPerGuardHouseLevel'),
-                spec('BuildingBonus', 'GarrisonXpBasePerDay'),
-                spec('BuildingBonus', 'GarrisonXpPerBarracksLevel'),
-              ]),
-            },
-          ];
+          // pickLang：把 *Zh/*En 双语字段映射成当前语言的 label/hint。
+          // 语言切换时本 getter 重新求值 —— 渲染保持响应式（无须重拉 /api/specs）。
+          const pickLang = (zh, en) => this.tr(zh, en);
+          return this.specGroups.map(g => {
+            // clean：未开启「高级参数」时隐藏 adv 旋钮。
+            const specs = g.specs
+              .filter(s => this.showAdvanced || !s.adv)
+              .map(s => ({
+                root: s.root || '',
+                key: s.key,
+                label: pickLang(s.labelZh, s.labelEn),
+                hint: pickLang(s.hintZh, s.hintEn),
+                // type 仅 bool 旋钮带 'bool'；数值旋钮 s.type 为 undefined（端点用
+                // NullValueHandling.Ignore 省略），与渲染模板 s.type !== 'bool' 分支一致。
+                type: s.type,
+                min: s.min, max: s.max, step: s.step,
+                discrete: s.discrete,
+                def: s.def,
+                adv: s.adv,
+              }));
+            return {
+              key: g.key,
+              label: pickLang(g.labelZh, g.labelEn),
+              hint: pickLang(g.hintZh, g.hintEn),
+              adv: g.adv,
+              specs,
+            };
+          });
         },
         // 实际渲染用：丢掉空分组（如未开高级参数时 specs 全被过滤掉的 MCMF）。
         get visibleSettingsGroups() {
@@ -1382,7 +1193,9 @@
         },
         get activeSettingsGroupData() {
           const vis = this.visibleSettingsGroups;
-          return vis.find(g => g.key === this.activeSettingsGroup) || vis[0];
+          // 兜底 { specs: [] }：specGroups 在 init() 拉取完成前为空，渲染模板
+          // x-for="s in activeSettingsGroupData.specs" 未做可选链 —— 空对象避免崩溃。
+          return vis.find(g => g.key === this.activeSettingsGroup) || vis[0] || { specs: [] };
         },
         get troopSum() {
           if (!this.config) return 0;
@@ -1474,7 +1287,7 @@
           this.warning = '';
           await Promise.all([
             this.fetchConfig(), this.fetchStatus(), this.fetchTroops(),
-            this.fetchSettlements(),
+            this.fetchSettlements(), this.fetchSpecs(),
           ]);
         },
 
@@ -1495,7 +1308,7 @@
           }
           await Promise.all([
             this.fetchConfig(), this.fetchStatus(), this.fetchTroops(),
-            this.fetchSettlements(),
+            this.fetchSettlements(), this.fetchSpecs(),
           ]);
         },
 
@@ -1540,6 +1353,20 @@
         async fetchStatus()      { const r = await this.http('GET', '/api/status');             this.status = r.ok ? r.body : null; this.applyLang(); },
         async fetchTroops()      { const r = await this.http('GET', '/api/troops');             this.troops = r.ok ? (r.body.troops || []) : []; },
         async fetchSettlements() { const r = await this.http('GET', '/api/settlements');        this.settlements = r.ok ? (r.body.settlements || []) : []; },
+
+        // fetchSpecs：拉取策略参数旋钮元数据（单一来源 = C# ControlPanelSpecs）。
+        // 失败时 specGroups 保持 []，settingsGroups → [] → 策略参数页空白而非崩溃。
+        async fetchSpecs() {
+          const r = await this.http('GET', '/api/specs');
+          if (r.ok && Array.isArray(r.body?.groups)) {
+            this.specGroups = r.body.groups;
+          } else {
+            this.specGroups = [];
+            this.log(this.tr(
+              `参数元数据读取失败 ${r.status}: ${r.body?.message || '?'}`,
+              `Spec metadata load failed ${r.status}: ${r.body?.message || '?'}`), 'err');
+          }
+        },
 
         async loadFinance() {
           // Mirrors loadConfig/loadSettlements: uses the shared http() helper (X-ST-Token header).
