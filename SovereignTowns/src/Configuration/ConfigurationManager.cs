@@ -781,21 +781,29 @@ public static class ConfigurationManager
     private static bool ValidateFiscalAutonomy(FiscalAutonomyConfig f, out string reason)
     {
         if (f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
-        { reason = $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1,1.0]"; return false; }
+        { reason = $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1, 1.0]"; return false; }
         if (f.TreasuryBufferDays < 0 || f.TreasuryBufferDays > 120)
-        { reason = $"FiscalAutonomy.TreasuryBufferDays invalid ({f.TreasuryBufferDays}); [0,120]"; return false; }
+        { reason = $"FiscalAutonomy.TreasuryBufferDays invalid ({f.TreasuryBufferDays}); [0, 120]"; return false; }
         if (f.MinGarrisonFloor < 0 || f.MinGarrisonFloor > 500)
-        { reason = $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0,500]"; return false; }
+        { reason = $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0, 500]"; return false; }
         if (f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
-        { reason = $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0,3.0]"; return false; }
+        { reason = $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0, 3.0]"; return false; }
         if (f.SurplusEdgeCost < 1 || f.SurplusEdgeCost > 1000)
-        { reason = $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1,1000]"; return false; }
+        { reason = $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1, 1000]"; return false; }
         if (f.CoreTierCount < 1 || f.CoreTierCount > 20)
-        { reason = $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1,20]"; return false; }
+        { reason = $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1, 20]"; return false; }
+        if (f.AdequateProsperityDivisor < 1 || f.AdequateProsperityDivisor > 1000)
+        { reason = $"FiscalAutonomy.AdequateProsperityDivisor invalid ({f.AdequateProsperityDivisor}); [1, 1000]"; return false; }
+        if (f.AdequateThreatWeight < 0 || f.AdequateThreatWeight > 1000)
+        { reason = $"FiscalAutonomy.AdequateThreatWeight invalid ({f.AdequateThreatWeight}); [0, 1000]"; return false; }
         if (f.MaxGarrisonHardCap < f.MinGarrisonFloor || f.MaxGarrisonHardCap > 2000)
-        { reason = $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor,2000]"; return false; }
+        { reason = $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor, 2000]"; return false; }
         if (f.AdequateBase < f.MinGarrisonFloor || f.AdequateBase > f.MaxGarrisonHardCap)
-        { reason = $"FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor,MaxGarrisonHardCap]"; return false; }
+        { reason = $"FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor, MaxGarrisonHardCap]"; return false; }
+        if (f.ValueCoreBase < 1 || f.ValueCoreBase > 100000)
+        { reason = $"FiscalAutonomy.ValueCoreBase invalid ({f.ValueCoreBase}); [1, 100000]"; return false; }
+        if (f.ValueFloorBase < 1 || f.ValueFloorBase > 1000000)
+        { reason = $"FiscalAutonomy.ValueFloorBase invalid ({f.ValueFloorBase}); [1, 1000000]"; return false; }
         if (f.ValueFloorBase <= f.ValueCoreBase)
         { reason = $"FiscalAutonomy.ValueFloorBase must exceed ValueCoreBase (floor must dominate core)"; return false; }
         reason = "";
