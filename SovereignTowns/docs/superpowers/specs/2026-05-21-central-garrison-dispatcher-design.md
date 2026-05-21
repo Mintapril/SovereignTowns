@@ -90,7 +90,7 @@ Pass B  路由 MCMF (SupplyDemandGraph, 现有)
 
 | 层 | 头数区间 | 边费用 |
 |---|---|---|
-| **floor** | `0 .. MinGarrisonFloor` | `-(FLOOR_BASE × threat(S) × strategic(S))`，`FLOOR_BASE` 大（默认 1000），保证任何 floor 都压过任何 core；预算极紧时 floor 之间仍按 threat×strategic 排序 |
+| **floor** | `0 .. MinGarrisonFloor` | `-(FLOOR_BASE × threat(S) × strategic(S))`。`FLOOR_BASE ≫ CORE_BASE`(默认 1000 vs 100)→ **同一定居点内** floor 永远压过该点 core。**跨定居点不保证**:floor 与 core 同样按 threat×strategic 加权,故高威胁点(如被围攻首府)的 core 子层可排在低威胁点 floor 之前 —— 这是有意的(被围攻点优先吃紧预算)。若要 floor 全局神圣,需把 `FLOOR_BASE` 提到 `CORE_BASE ×(max threat·strategic ÷ min threat·strategic)` 以上 |
 | **core** | `MinGarrisonFloor .. adequate(S)`，离散成 K 个子层（默认 K=5） | 每子层 `-round(coreValue(slice))`，见 §4 |
 | **surplus** | `adequate(S) .. hardCap(S)` | `+SURPLUS_COST`（小正数，默认 +1）—— MCMF 避开 |
 
@@ -129,7 +129,7 @@ adequate(S):  clamp( AdequateBase + Prosperity/AdequateProsperityDivisor + 威�
 说明：
 
 - `threat` 的 Safe=0.5（非 0）—— 即使无威胁的城也给 core 一点价值，不会被分配彻底归零（floor 之上仍愿留少量）。
-- `value` 为 float，作 MCMF 整数费用时 `-round(value)`；floor 用大常数压过全部 core。
+- `value` 为 float;MCMF 要求非负整数费用,实现用费用偏移变换 `cost = CostOffset − round(value)`(高价值 → 低费用,语义等价于负费用;`CostOffset` 取 2e7,远超任何可能 value)。`FLOOR_BASE ≫ CORE_BASE` 只保证 floor 压过**同点** core;跨定居点不保证(见 §3.2)。
 - **城堡天然被照顾到（advisor 重点）**：城堡无税基、自身收入≈0，但边境城堡 `threat(S)` 高 → core 价值高 → 分配 MCMF 从**氏族池子预算**按价值给它一份。这正是贪心瀑布需要靠 `MinGarrisonFloor` + 氏族池子特判才能做到的事，分配 MCMF 自然做到 —— 这是 MCMF 胜过瀑布的最强论据。
 - 已**故意从 v1 排除**的因子（advisor 点 2，防止 scope 膨胀）：`isBorderFief`（需邻接计算，且与 `threat` 部分重叠）、玩家主队位置折减（主队移动频繁 → 目标震荡 → 误触发遣散）。留 v2，需迟滞处理。
 
