@@ -142,12 +142,12 @@ public abstract class StPartyComponent : CustomPartyComponent
         bool shouldCharge = CapitalRegistry.ShouldChargeClan(chargeFromClan);
         if (shouldCharge)
         {
-            if (!ModTreasury.CanAfford(DefaultSeedGold))
+            if (!ModTreasury.CanAfford(chargeFromClan, DefaultSeedGold))
             {
-                Logger.Info($"TrySeedAndBuyInitialFood: 玩家金币不足 (need {DefaultSeedGold}) — {noteContext}");
+                Logger.Info($"TrySeedAndBuyInitialFood: 资金不足 (need {DefaultSeedGold}) — {noteContext}");
                 return false;
             }
-            if (!ModTreasury.Charge(expenseCategory, DefaultSeedGold, noteContext))
+            if (!ModTreasury.Charge(chargeFromClan, expenseCategory, DefaultSeedGold, noteContext))
             {
                 Logger.Info($"TrySeedAndBuyInitialFood: ModTreasury.Charge 拒绝 — {noteContext}");
                 return false;
@@ -627,7 +627,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             {
                 int toRefund = _teamFunds;
                 _teamFunds = 0;
-                Economy.ModTreasury.Refund(GetExpenseCategoryForKind(), toRefund,
+                Economy.ModTreasury.Refund(refundClan, GetExpenseCategoryForKind(), toRefund,
                     $"{GetType().Name}_destroyed home={HomeSettlementOrNull?.StringId ?? "null"}");
                 if (toRefund > 0)
                     Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {toRefund}d via ModTreasury (player clan)");

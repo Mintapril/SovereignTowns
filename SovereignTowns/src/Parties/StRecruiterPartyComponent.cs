@@ -590,9 +590,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 }
                 if (projected >= target) continue;
 
-                if (shouldChargeRecruit && cost > 0 && !ModTreasury.CanAfford(cost))
+                if (shouldChargeRecruit && cost > 0 && !ModTreasury.CanAfford(home.OwnerClan, cost))
                 {
-                    Logger.Info($"  RecruitFromTargetVillage: 玩家金币不足，停止招募（已招 {recruited} 人）");
+                    Logger.Info($"  RecruitFromTargetVillage: 资金不足，停止招募（已招 {recruited} 人）");
                     break;
                 }
 
@@ -611,7 +611,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 // 扣费失败 → rollback 刚加入的兵，避免免费招募
                 if (shouldChargeRecruit && cost > 0)
                 {
-                    if (!ModTreasury.Charge(ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}"))
+                    if (!ModTreasury.Charge(home.OwnerClan, ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}"))
                     {
                         try
                         {

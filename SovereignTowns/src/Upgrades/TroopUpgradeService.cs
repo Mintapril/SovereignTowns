@@ -214,7 +214,7 @@ public static class TroopUpgradeService
                     bool didCharge = false;
                     if (goldCost > 0 && CapitalRegistry.ShouldChargeClan(homeTown.OwnerClan))
                     {
-                        bool charged = ModTreasury.Charge(ExpenseCategory.Upgrade, goldCost, $"upgrade {ch.StringId}->{target.StringId} town={homeTown.Settlement.StringId}");
+                        bool charged = ModTreasury.Charge(homeTown.OwnerClan, ExpenseCategory.Upgrade, goldCost, $"upgrade {ch.StringId}->{target.StringId} town={homeTown.Settlement.StringId}");
                         if (!charged)
                         {
                             skipped++;
@@ -243,7 +243,7 @@ public static class TroopUpgradeService
                         }
                         if (didCharge)
                         {
-                            ModTreasury.Refund(ExpenseCategory.Upgrade, goldCost, $"refund_upgrade_failed {ch.StringId}->{target.StringId}");
+                            ModTreasury.Refund(homeTown.OwnerClan, ExpenseCategory.Upgrade, goldCost, $"refund_upgrade_failed {ch.StringId}->{target.StringId}");
                         }
                         skipped++;
                         continue;

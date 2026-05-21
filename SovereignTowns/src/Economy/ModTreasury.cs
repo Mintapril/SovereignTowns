@@ -1,5 +1,6 @@
 using System;
 using SovereignTowns.Audit;
+using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using TaleWorlds.CampaignSystem;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
@@ -8,21 +9,48 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Economy;
 
 /// <summary>
-/// B7.27：mod 引发的金币开销统一扣钱入口。所有原本"从城金库扣"的路径改走本门面，
-/// 一律扣玩家个人金币（Hero.MainHero），并写 ledger + audit。
+/// B7.27 / Task 4：mod 引发的金币开销统一扣钱入口。
+///
+/// 扣费优先级（玩家路径）：
+///   1) 解析 clan 的 ClanTreasury（通过 CapitalRegistry）。
+///   2) 若金库余额充足 → 全额从金库 Debit，无需碰 Hero.MainHero。
+///   3) 若金库不足：
+///      - PlayerClanSubsidyWhenTreasuryEmpty=true（默认）→ 金库扣到 0，差额从 Hero.MainHero 扣（子弹银行兜底）。
+///      - PlayerClanSubsidyWhenTreasuryEmpty=false → 拒绝扣款（返回 false）。
+///   4) 若 clan 无对应金库（treasury == null）→ 退化为旧路径：直接扣 Hero.MainHero，受 PauseSpendingWhenBroke 门控。
+///
+/// CanAfford 与 Charge 保持语义一致（CanAfford=true 当且仅当 Charge 将成功），
+/// 以避免 shouldCharge && !CanAfford(clan, cost) 短路把补贴路径（subsidy=true）也误判为不可负担。
 ///
 /// 调用契约：
-///   - 派出新小队前先 CanAfford 预检，按 PauseSpendingWhenBroke 策略确认是否允许支出
-///   - Charge 返回 false 时调用方应跳过本次动作（不派遣 / 不升级），不要硬塞
+///   - 所有调用方先 ShouldChargeClan(clan) 判断是否收费，AI clan 免费不应到达此类。
+///   - Charge 返回 false 时调用方应跳过本次动作（不派遣 / 不升级），不要硬塞。
 /// </summary>
 public static class ModTreasury
 {
-    /// <summary>按当前支出策略查询玩家是否允许承担 amount，不扣款。</summary>
-    public static bool CanAfford(int amount)
+    /// <summary>
+    /// 查询 clan 当前能否承担 amount。与 Charge 语义对齐：
+    ///   - 金库余额 ≥ amount → true
+    ///   - 金库余额不足 + subsidy=true → true（Charge 会从 hero 兜底）
+    ///   - 金库余额不足 + subsidy=false → false
+    ///   - treasury == null（无金库）→ 退化旧逻辑：PauseSpendingWhenBroke=false → true；否则 hero.Gold ≥ amount
+    /// </summary>
+    public static bool CanAfford(Clan? clan, int amount)
     {
         try
         {
             if (amount <= 0) return true;
+
+            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+            if (treasury != null)
+            {
+                if (treasury.CanAfford(amount)) return true;
+                // 金库短缺 — 看补贴开关
+                bool subsidy = ConfigurationManager.Current?.FiscalAutonomy?.PlayerClanSubsidyWhenTreasuryEmpty ?? true;
+                return subsidy; // subsidy=true → Charge 会兜底；subsidy=false → 拒绝
+            }
+
+            // 无金库 → 旧路径
             var feat = ConfigurationManager.Current?.EnabledFeatures;
             if (feat?.PauseSpendingWhenBroke == false) return true;
             var hero = Hero.MainHero;
@@ -36,52 +64,100 @@ public static class ModTreasury
     }
 
     /// <summary>
-    /// 从玩家 Hero.MainHero 扣 amount。记 ledger + audit。
+    /// 从 clan 的 ClanTreasury 扣 amount（不足时按补贴策略决定是否从 Hero.MainHero 兜底）。
+    /// 记 ledger + audit。
     /// </summary>
-    /// <returns>true = 扣款成功；false = 玩家金币不足且 PauseSpendingWhenBroke=true，拒绝扣款</returns>
-    public static bool Charge(ExpenseCategory category, int amount, string note)
+    /// <returns>true = 扣款成功；false = 金库不足且补贴关闭（或无 hero 兜底）</returns>
+    public static bool Charge(Clan? clan, ExpenseCategory category, int amount, string note)
     {
         if (amount <= 0) return true;
 
         try
         {
-            // 软门控：玩家金币不足且开关开启 → 拒绝扣款
-            var feat = ConfigurationManager.Current?.EnabledFeatures;
-            if (feat?.PauseSpendingWhenBroke == true && !CanAfford(amount))
+            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+
+            if (treasury != null)
             {
-                Logger.Info($"ModTreasury: 拒绝 {category} -{amount}d 因玩家金币不足 (PauseSpendingWhenBroke=true)");
+                bool subsidy = ConfigurationManager.Current?.FiscalAutonomy?.PlayerClanSubsidyWhenTreasuryEmpty ?? true;
+
+                if (!treasury.CanAfford(amount) && !subsidy)
+                {
+                    Logger.Info($"ModTreasury: 拒绝 {category} -{amount}d clan={clan?.StringId} 因金库余额不足且 PlayerClanSubsidyWhenTreasuryEmpty=false");
+                    return false;
+                }
+
+                // Debit 金库（不足时扣到 0，返回 shortfall）
+                long shortfall = treasury.Debit(amount);
+
+                if (shortfall > 0)
+                {
+                    // 补贴：从 Hero.MainHero 扣差额
+                    var hero = Hero.MainHero;
+                    if (hero == null)
+                    {
+                        Logger.Warn($"ModTreasury: 金库短缺 {shortfall}d 但 Hero.MainHero == null — 拒绝 {category} -{amount}d");
+                        // 回滚：金库已扣到 0，归还 (amount - shortfall)；实际已扣部分无法从无 hero 处取回
+                        // 为避免金库无偿损耗，整体视为失败：credit 归还金库
+                        treasury.Credit(amount - shortfall);
+                        return false;
+                    }
+
+                    try
+                    {
+                        hero.ChangeHeroGold(-(int)shortfall);
+                        Logger.Info($"ModTreasury: {category} -{amount}d clan={clan?.StringId} 金库扣 {amount - shortfall}d + 补贴 {shortfall}d from hero");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error($"ModTreasury: hero.ChangeHeroGold(-{shortfall}) failed for {category}", ex);
+                        // 部分失败：金库已扣，hero 扣失败。归还金库的已扣部分，整体返回 false。
+                        treasury.Credit(amount - shortfall);
+                        return false;
+                    }
+                }
+
+                // 记账（全额 amount，不拆分补贴与金库部分）
+                string auditNote = shortfall > 0 ? $"{note} subsidy={shortfall}" : note;
+                ModExpenseLedger.Record(category, amount, auditNote);
+                DecisionAuditLogger.LogRule(
+                    decisionType: "mod_expense",
+                    inputSummary: $"category={category} amount={amount} clan={clan?.StringId} shortfall={shortfall} note={note}",
+                    decisionJson: $"{{\"category\":\"{category}\",\"amount\":{amount},\"shortfall\":{shortfall},\"note\":\"{EscapeJson(auditNote ?? "")}\"}}",
+                    accepted: true);
+                return true;
+            }
+
+            // 无金库 → 旧路径（直接扣 Hero.MainHero，受 PauseSpendingWhenBroke 门控）
+            var feat2 = ConfigurationManager.Current?.EnabledFeatures;
+            if (feat2?.PauseSpendingWhenBroke == true && !CanAfford(clan, amount))
+            {
+                Logger.Info($"ModTreasury: 拒绝 {category} -{amount}d 因玩家金币不足 (PauseSpendingWhenBroke=true, no treasury)");
                 return false;
             }
 
-            var hero = Hero.MainHero;
-            if (hero == null)
+            var hero2 = Hero.MainHero;
+            if (hero2 == null)
             {
-                Logger.Warn($"ModTreasury: 拒绝 {category} -{amount}d 因 Hero.MainHero == null");
+                Logger.Warn($"ModTreasury: 拒绝 {category} -{amount}d 因 Hero.MainHero == null (no treasury)");
                 return false;
             }
 
             try
             {
-                // v1.3.15 GiveGoldAction.ApplyBetweenCharacters 会把转出金额 clamp 到 giver 当前金币。
-                // 这里直接改 Hero.Gold，才能在 PauseSpendingWhenBroke=false 时完整扣款并允许负余额。
-                hero.ChangeHeroGold(-amount);
+                hero2.ChangeHeroGold(-amount);
             }
             catch (Exception ex)
             {
-                Logger.Error($"ModTreasury: ChangeHeroGold failed for {category} -{amount}d", ex);
+                Logger.Error($"ModTreasury: ChangeHeroGold failed for {category} -{amount}d (no treasury)", ex);
                 return false;
             }
 
-            // 记账
             ModExpenseLedger.Record(category, amount, note);
-
-            // 审计
             DecisionAuditLogger.LogRule(
                 decisionType: "mod_expense",
                 inputSummary: $"category={category} amount={amount} note={note}",
                 decisionJson: $"{{\"category\":\"{category}\",\"amount\":{amount},\"note\":\"{EscapeJson(note ?? "")}\"}}",
                 accepted: true);
-
             return true;
         }
         catch (Exception ex)
@@ -92,21 +168,36 @@ public static class ModTreasury
     }
 
     /// <summary>
-    /// 把先前 <see cref="Charge"/> 已扣的金币退回 Hero.MainHero。专为"扣款 → 后续步骤失败 → 回滚"
-    /// 路径准备（recruiter / sally 创建失败时撤销 seed cost）。
+    /// 把先前 <see cref="Charge"/> 已扣的金币退回 clan 的 ClanTreasury（若有）或 Hero.MainHero（旧路径）。
+    /// 专为"扣款 → 后续步骤失败 → 回滚"路径准备。
     /// 记 ledger（负 amount 即"退款"）+ audit；amount &lt;= 0 时 no-op 并返回 true。
     /// AI clan 路径不应调用 Refund —— 它们也没走 Charge。
     /// </summary>
-    public static bool Refund(ExpenseCategory category, int amount, string note)
+    public static bool Refund(Clan? clan, ExpenseCategory category, int amount, string note)
     {
         if (amount <= 0) return true;
 
         try
         {
+            var treasury = CapitalRegistry.Instance?.GetForClan(clan)?.Treasury;
+            if (treasury != null)
+            {
+                treasury.Credit(amount);
+
+                ModExpenseLedger.Record(category, -amount, "refund:" + note);
+                DecisionAuditLogger.LogRule(
+                    decisionType: "mod_refund",
+                    inputSummary: $"category={category} amount={amount} clan={clan?.StringId} note={note}",
+                    decisionJson: $"{{\"category\":\"{category}\",\"amount\":{amount},\"note\":\"{EscapeJson(note ?? "")}\"}}",
+                    accepted: true);
+                return true;
+            }
+
+            // 无金库 → 旧路径：退回 Hero.MainHero
             var hero = Hero.MainHero;
             if (hero == null)
             {
-                Logger.Warn($"ModTreasury.Refund: Hero.MainHero == null; cannot refund {category} +{amount}d");
+                Logger.Warn($"ModTreasury.Refund: Hero.MainHero == null; cannot refund {category} +{amount}d (no treasury)");
                 return false;
             }
 
@@ -117,15 +208,12 @@ public static class ModTreasury
                 return false;
             }
 
-            // 负 amount 写入 ledger 以便报告看到"今日 -1000 + refund 1000 = 净 0"
             ModExpenseLedger.Record(category, -amount, "refund:" + note);
-
             DecisionAuditLogger.LogRule(
                 decisionType: "mod_refund",
                 inputSummary: $"category={category} amount={amount} note={note}",
                 decisionJson: $"{{\"category\":\"{category}\",\"amount\":{amount},\"note\":\"{EscapeJson(note ?? "")}\"}}",
                 accepted: true);
-
             return true;
         }
         catch (Exception ex)

@@ -173,13 +173,13 @@ public static class CapitalInPlaceRecruiter
                     // 这次的扣费（外部审计仍有记录），不会出现"扣费过 + 兵没进 garrison"的反向漏洞，
                     // 因为 AddToCounts 失败时会 continue 跳过 volunteerTypes 清零 + recruited++。
                     bool shouldCharge = SovereignTowns.Capital.CapitalRegistry.ShouldChargeClan(capital.OwnerClan);
-                    if (shouldCharge && !ModTreasury.CanAfford(5))
+                    if (shouldCharge && !ModTreasury.CanAfford(capital.OwnerClan, 5))
                     {
-                        Logger.Info($"CapitalInPlace '{capital.Name}': 玩家金币不足 — 终止本次招募（已招 {recruited} 人）");
+                        Logger.Info($"CapitalInPlace '{capital.Name}': 资金不足 — 终止本次招募（已招 {recruited} 人）");
                         return recruited;
                     }
 
-                    if (shouldCharge && !ModTreasury.Charge(ExpenseCategory.RecruiterWage, 5, $"in_place capital={capital.StringId} troop={troop.StringId}"))
+                    if (shouldCharge && !ModTreasury.Charge(capital.OwnerClan, ExpenseCategory.RecruiterWage, 5, $"in_place capital={capital.StringId} troop={troop.StringId}"))
                     {
                         Logger.Info($"CapitalInPlace '{capital.Name}': ModTreasury.Charge 失败 — 终止本次招募（已招 {recruited} 人）");
                         return recruited;

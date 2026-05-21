@@ -125,8 +125,8 @@ public static class BranchInPlaceRecruiter
                 if (memberRoster.TotalManCount + 1 > partySizeLimit) break;
                 if (GarrisonPowerEvaluator.ComputeRosterPower(memberRoster) >= desiredPower) break;
 
-                if (shouldCharge && !ModTreasury.CanAfford(5)) break;
-                if (shouldCharge && !ModTreasury.Charge(ExpenseCategory.RecruiterWage, 5, $"branch_in_place branch={branch.StringId} troop={troop.StringId}")) break;
+                if (shouldCharge && !ModTreasury.CanAfford(branch.OwnerClan, 5)) break;
+                if (shouldCharge && !ModTreasury.Charge(branch.OwnerClan, ExpenseCategory.RecruiterWage, 5, $"branch_in_place branch={branch.StringId} troop={troop.StringId}")) break;
 
                 try { memberRoster.AddToCounts(troop, 1, false, 0, 0); }
                 catch (Exception ex)
