@@ -23,7 +23,8 @@ namespace SovereignTowns.Models;
 /// </summary>
 public sealed class STClanFinanceModel : DefaultClanFinanceModel
 {
-    private static readonly TextObject _line = new TextObject("主权城镇金库结算");
+    private static readonly TextObject TreasuryLine =
+        new TextObject("{=ST_ClanFinanceSettlement}Sovereign Towns treasury settlement");
 
     public override ExplainedNumber CalculateClanGoldChange(
         Clan clan, bool includeDescriptions = false, bool applyWithdrawals = false, bool includeDetails = false)
@@ -40,7 +41,16 @@ public sealed class STClanFinanceModel : DefaultClanFinanceModel
             handle = default;
         }
 
-        var en = base.CalculateClanGoldChange(clan, includeDescriptions, applyWithdrawals, includeDetails);
+        ExplainedNumber en;
+        try
+        {
+            en = base.CalculateClanGoldChange(clan, includeDescriptions, applyWithdrawals, includeDetails);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("STClanFinanceModel base.CalculateClanGoldChange failed", ex);
+            return new ExplainedNumber(0f, includeDescriptions, null);
+        }
 
         // ── base 之后:用快照值做金库结算并调整 en ──
         try
@@ -73,7 +83,7 @@ public sealed class STClanFinanceModel : DefaultClanFinanceModel
             //   +wage    撤掉 base 扣的军饷(base 减了 wage,这里加回)
             //   +overflow 把金库缓冲上限以上的溢出返还家族金币
             //   -shortfall 金库余额不足以付军饷的欠款由家族金币兜底
-            en.Add(-income + wage + overflow - shortfall, _line);
+            en.Add(-income + wage + overflow - shortfall, TreasuryLine);
         }
         catch (Exception ex)
         {
