@@ -181,6 +181,9 @@ public sealed class StTransferPartyComponent : StPartyComponent
     {
         int delivered = PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(self, target, "StTransferPartyComponent.DeliverAndDisband");
         Logger.Info($"StTransferParty '{self.Name}': 注入 {delivered} 名兵员到 '{target?.Name}' 驻军，解散队伍");
+        // 解散前清算：把队伍物资（含出发时买的马）卖回 target，收益入队伍资金、随后退还首府所有者。
+        try { if (target != null) SellAllItemsAtSettlement(self, target); }
+        catch (System.Exception ex) { Logger.Warn($"StTransferPartyComponent.DeliverAndDisband liquidation failed: {ex.Message}"); }
         PartyMergeService.Instance.DisbandAndUntrack(self, "StTransferPartyComponent.DeliverAndDisband");
     }
 

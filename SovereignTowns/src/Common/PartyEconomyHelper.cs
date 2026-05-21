@@ -193,6 +193,98 @@ public static class PartyEconomyHelper
         return totalSpent;
     }
 
+    /// <summary>用 teamFunds 在 settlement 内购买松散坐骑，让无马步兵骑乘以提升大地图移速。
+    /// 目标数量 = party.Party.NumberOfMenWithoutHorse − 已有松散坐骑数（每名无马步兵 1 匹即满速，
+    /// 多买会进畜群反而减速）。资金不足按可买数量买；返回实际花费。
+    /// 坐骑判定：item.HasHorseComponent &amp;&amp; HorseComponent.IsMount。town / village 定价同 BuyFoodFromSettlement。</summary>
+    public static int BuyHorsesFromSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    {
+        if (party?.ItemRoster == null || settlement == null || teamFunds <= 0) return 0;
+
+        Town? pricingTown;
+        PartyBase? counterparty;
+        ItemRoster? settlementInv;
+        if (settlement.Town != null)
+        {
+            pricingTown = settlement.Town;
+            var settlementOwner = ((SettlementComponent)pricingTown).Owner;
+            counterparty = settlementOwner;
+            settlementInv = settlementOwner?.ItemRoster;
+        }
+        else if (settlement.IsVillage)
+        {
+            pricingTown = settlement.Village?.Bound?.Town;
+            counterparty = settlement.Party;
+            settlementInv = counterparty?.ItemRoster;
+            if (pricingTown == null) return 0;
+        }
+        else
+        {
+            return 0;
+        }
+        if (counterparty == null || settlementInv == null) return 0;
+
+        int wantUnits;
+        try
+        {
+            int footmen = party.Party?.NumberOfMenWithoutHorse ?? 0;
+            int existingMounts = party.ItemRoster.NumberOfMounts;
+            wantUnits = footmen - existingMounts;
+        }
+        catch
+        {
+            return 0;
+        }
+        if (wantUnits <= 0) return 0;
+
+        int totalSpent = 0;
+        try
+        {
+            while (wantUnits > 0 && teamFunds > 0)
+            {
+                int bestIdx = -1;
+                int bestPricePerUnit = int.MaxValue;
+                for (int i = 0; i < settlementInv.Count; i++)
+                {
+                    var item = settlementInv.GetItemAtIndex(i);
+                    if (item == null || !item.HasHorseComponent || item.HorseComponent == null || !item.HorseComponent.IsMount) continue;
+                    var elem = settlementInv.GetElementCopyAtIndex(i);
+                    if (elem.Amount <= 0) continue;
+                    int price = pricingTown.GetItemPrice(elem.EquipmentElement, party, isSelling: false);
+                    if (price <= 0 || price >= bestPricePerUnit) continue;
+                    bestIdx = i;
+                    bestPricePerUnit = price;
+                }
+                if (bestIdx < 0) break;
+                var bestElem = settlementInv.GetElementCopyAtIndex(bestIdx);
+                int affordable = teamFunds / bestPricePerUnit;
+                int actual = Math.Min(Math.Min(wantUnits, bestElem.Amount), affordable);
+                if (actual <= 0) break;
+                int chunkCost = actual * bestPricePerUnit;
+                try
+                {
+                    SellItemsAction.Apply(counterparty, party.Party, bestElem, actual, settlement);
+                    teamFunds -= chunkCost;
+                    totalSpent += chunkCost;
+                    wantUnits -= actual;
+                    var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
+                    Logger.Info($"PartyEconomyHelper.BuyHorsesFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
+                }
+                catch (Exception apEx)
+                {
+                    Logger.Warn($"PartyEconomyHelper.BuyHorsesFromSettlement SellItemsAction failed", apEx);
+                    break;
+                }
+            }
+            try { party.ItemRoster.UpdateVersion(); } catch { }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.BuyHorsesFromSettlement threw", ex);
+        }
+        return totalSpent;
+    }
+
     /// <summary>把 party.ItemRoster 中所有非食物物品卖给 settlement：用 vanilla SellItemsAction 真实转 + 用 settlement.GetItemPrice 算价。
     /// 收益加到 teamFunds。settlement.Gold 不动（与 vanilla caravan 同模式 — SellItemsAction 不自动转金币）。返回总收益。</summary>
     public static int SellLootToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)

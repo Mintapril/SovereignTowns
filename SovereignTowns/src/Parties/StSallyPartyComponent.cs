@@ -225,6 +225,9 @@ public sealed class StSallyPartyComponent : StPartyComponent
         }
         int transferred = PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(self, home, "StSallyPartyComponent.OnArrivedHome");
         Logger.Info($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' merged {transferred} troops into '{home.Name}', destroying");
+        // 解散前清算：把队伍物资（含出发时买的马）卖回 home。
+        try { SellAllItemsAtSettlement(self, home); }
+        catch (System.Exception ex) { Logger.Warn($"StSallyPartyComponent.OnArrivedHome liquidation failed: {ex.Message}"); }
         NotifyDispatcherEnded();
         PartyMergeService.Instance.DestroyAndUntrack(self, "StSallyPartyComponent.OnArrivedHome", deferIfInMapEvent: true);
     }

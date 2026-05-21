@@ -89,6 +89,10 @@ public abstract class StPartyComponent : CustomPartyComponent
     public int BuyFoodAtSettlement(MobileParty self, Settlement settlement, float days)
         => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days, ref _teamFunds);
 
+    /// <summary>在 settlement 内用队伍资金购买松散坐骑（让无马步兵骑乘提升大地图移速）。返回花费。</summary>
+    public int BuyHorsesAtSettlement(MobileParty self, Settlement settlement)
+        => PartyEconomyHelper.BuyHorsesFromSettlement(self, settlement, ref _teamFunds);
+
     /// <summary>把战利品（非食物 item）卖给 settlement，金额加入队伍资金。返回收益。</summary>
     public int SellLootAtSettlement(MobileParty self, Settlement settlement)
         => PartyEconomyHelper.SellLootToSettlement(self, settlement, ref _teamFunds);
@@ -162,6 +166,9 @@ public abstract class StPartyComponent : CustomPartyComponent
             Logger.Info($"{component.GetType().Name}: '{PartyNameFormatter.SafeName(party)}' 出发地 '{origin.Name?.ToString() ?? origin.StringId}' 食物缺货 (BuyFood=0) — 取消派遣 ({noteContext})");
             return false;
         }
+        // 出门前买马：让无马步兵骑乘，避免大地图移速被拖慢。best-effort，买不到不取消派遣。
+        try { component.BuyHorsesAtSettlement(party, origin); }
+        catch (Exception horseEx) { Logger.Warn($"TrySeedAndBuyInitialFood: BuyHorses failed — {horseEx.Message}"); }
         return true;
     }
 
@@ -459,7 +466,7 @@ public abstract class StPartyComponent : CustomPartyComponent
     }
 
     /// <summary>2026-05-18 v4：解散前最终清算 wrapper — 把 ItemRoster 所有物品（含食物）卖给 settlement，加到 _teamFunds。</summary>
-    private int SellAllItemsAtSettlement(MobileParty self, Settlement settlement)
+    protected int SellAllItemsAtSettlement(MobileParty self, Settlement settlement)
         => PartyEconomyHelper.SellAllItemsToSettlement(self, settlement, ref _teamFunds);
 
     /// <summary>
