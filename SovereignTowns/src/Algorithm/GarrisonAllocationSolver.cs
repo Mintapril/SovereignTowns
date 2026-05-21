@@ -44,6 +44,31 @@ public static class GarrisonAllocationSolver
     /// </summary>
     private const int CostOffset = 20_000_000;
 
+    // —— 价值函数常量(参与 CostOffset 安全不变式;见 §4) ——
+
+    /// <summary>core 段 diminishing 斜降的总幅度。最低子层价值 = 1.0 − CoreDimRange = 0.2。</summary>
+    private const float CoreDimRange = 0.8f;
+
+    /// <summary>core 子层取样的中点偏移:第 k 子层用 (k + CoreDimMidpoint) / K 作为归一化位置。</summary>
+    private const float CoreDimMidpoint = 0.5f;
+
+    /// <summary>strategic(S) 的繁荣度归一化除数:Prosperity / ProsperityNormalizer 再 clamp 到 [0.5,1.5]。</summary>
+    private const float ProsperityNormalizer = 4000f;
+
+    /// <summary>
+    /// 首府在 strategic(S) 中的加成系数(非首府为 1.0)。
+    /// 注意:此值参与 CostOffset 上界推导 —— strategic_max = CapitalStrategicBonus × 1.5(繁荣度 clamp 上界),
+    /// 与 ValueFloorBase_max × threat_max 相乘得 ~15.6M(见 CostOffset 文档)。
+    /// </summary>
+    private const float CapitalStrategicBonus = 1.3f;
+
+    /// <summary>threat(S) 风险等级映射值。参与 CostOffset 上界推导的 threat_max == ThreatWeightCritical。</summary>
+    private const float ThreatWeightSafe = 0.5f;
+    private const float ThreatWeightLow = 1.0f;
+    private const float ThreatWeightMedium = 2.0f;
+    private const float ThreatWeightHigh = 4.0f;
+    private const float ThreatWeightCritical = 8.0f;
+
     public static GarrisonAllocationResult Solve(CapitalManager manager)
     {
         var result = new GarrisonAllocationResult();
@@ -95,8 +120,8 @@ public static class GarrisonAllocationSolver
                     {
                         int cap = (coreSpan * (k + 1) / K) - (coreSpan * k / K);
                         if (cap <= 0) continue;
-                        // diminishing: 在 core 段从 1.0 线性降到 0.2(取每子层中点)。
-                        float dim = 1.0f - 0.8f * ((k + 0.5f) / K);
+                        // diminishing: 在 core 段从 1.0 线性降到 1.0−CoreDimRange=0.2(取每子层中点)。
+                        float dim = 1.0f - CoreDimRange * ((k + CoreDimMidpoint) / K);
                         int cost = BuildCost(cfg.ValueCoreBase * dim * threat * strat);
                         int n = next++; tierOwner[n] = s;
                         graph.AddEdge(budgetNode, n, cap, cost);
@@ -196,8 +221,11 @@ public static class GarrisonAllocationSolver
     }
 
     /// <summary>
-    /// 配置目标头数总和(战时上限用)。首府用 TownGarrisonRule.TargetTotalCount × 风险乘数;
-    /// 非首府用 BranchRule.TargetPower(power 口径,这里按头数等价直接累加 —— 略偏高,但战时上限本就保守宽松)。
+    /// 配置目标头数总和(战时上限用)。首府用 TownGarrisonRule.TargetTotalCount × 风险乘数。
+    /// 非首府用 BranchRule.TargetPower —— 注意 TargetPower 是 vanilla 军事力量(military-power)口径,
+    /// 不是头数:一个中 tier 兵的 power ≈ 头数的 3~5×。这里把 TargetPower 直接当头数累加,会使战时上限
+    /// 高估非首府贡献约 3~5×。此高估是有意为之 —— 战时上限本就是一个刻意宽松的上界(只在 clan 交战且
+    /// 金库有余额时启用),宁可放宽也不卡死战时驻军;真正的每城目标仍由分配 MCMF 按价值层解出。
     /// </summary>
     private static long ConfigTargetHeads(List<Town> towns)
     {
@@ -264,7 +292,15 @@ public static class GarrisonAllocationSolver
             int maxTier = 5;
             // 首府优先;无首府(刚失守等)退化为 clan.Fiefs 里第一个 town。
             Town? capitalTown = null;
-            try { capitalTown = manager?.GetCapital(); } catch { capitalTown = null; }
+            try
+            {
+                capitalTown = manager?.GetCapital();
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"GarrisonAllocationSolver.WagePerTroopAtMaxTier: GetCapital threw, falling back to first town: {ex.Message}");
+                capitalTown = null;
+            }
             if (capitalTown == null)
                 capitalTown = towns.FirstOrDefault(t => t != null && t.IsTown);
             if (capitalTown != null)
@@ -355,23 +391,23 @@ public static class GarrisonAllocationSolver
             var level = RiskAssessmentService.Assess(s).Level;
             switch (level)
             {
-                case RiskLevel.Safe: return 0.5f;
-                case RiskLevel.Low: return 1.0f;
-                case RiskLevel.Medium: return 2.0f;
-                case RiskLevel.High: return 4.0f;
-                case RiskLevel.Critical: return 8.0f;
-                default: return 1.0f;
+                case RiskLevel.Safe: return ThreatWeightSafe;
+                case RiskLevel.Low: return ThreatWeightLow;
+                case RiskLevel.Medium: return ThreatWeightMedium;
+                case RiskLevel.High: return ThreatWeightHigh;
+                case RiskLevel.Critical: return ThreatWeightCritical;
+                default: return ThreatWeightLow;
             }
         }
         catch (Exception ex)
         {
             Logger.Error($"GarrisonAllocationSolver.ThreatWeight failed for '{s?.StringId}'", ex);
-            return 1.0f;
+            return ThreatWeightLow;
         }
     }
 
     /// <summary>
-    /// strategic(S):(是该 clan 当前首府 ? 1.3 : 1.0) × clamp(Prosperity/4000, 0.5, 1.5)。
+    /// strategic(S):(是该 clan 当前首府 ? CapitalStrategicBonus : 1.0) × clamp(Prosperity/ProsperityNormalizer, 0.5, 1.5)。
     /// 城堡 / 取不到繁荣度 → 繁荣度项落 0.5 下界。任何失败 → 1.0。
     /// </summary>
     private static float StrategicWeight(Settlement s, CapitalManager manager)
@@ -392,11 +428,11 @@ public static class GarrisonAllocationSolver
             try { if (s.IsTown && s.Town != null) prosperity = s.Town.Prosperity; }
             catch { prosperity = 0f; }
 
-            float prosperityFactor = prosperity / 4000f;
+            float prosperityFactor = prosperity / ProsperityNormalizer;
             if (prosperityFactor < 0.5f) prosperityFactor = 0.5f;
             if (prosperityFactor > 1.5f) prosperityFactor = 1.5f;
 
-            return (isCapital ? 1.3f : 1.0f) * prosperityFactor;
+            return (isCapital ? CapitalStrategicBonus : 1.0f) * prosperityFactor;
         }
         catch (Exception ex)
         {
