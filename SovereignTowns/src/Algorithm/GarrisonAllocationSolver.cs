@@ -53,7 +53,7 @@ public static class GarrisonAllocationSolver
             var towns = clan.Fiefs.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList();
             if (towns.Count == 0) return result;
 
-            int wagePerTroop = Math.Max(1, WagePerTroopAtMaxTier(towns));
+            int wagePerTroop = Math.Max(1, WagePerTroopAtMaxTier(manager, towns));
             long clanWageBudget = ClanWageBudget(manager, towns, cfg, wagePerTroop);
             int budgetCap = (int)Math.Min(int.MaxValue, clanWageBudget / wagePerTroop);
             if (budgetCap <= 0) return result;
@@ -254,12 +254,16 @@ public static class GarrisonAllocationSolver
     /// 满级 tier 取自首府 TownGarrisonRule.MaxTier(取不到默认 5)。
     /// 代表兵种用 GarrisonPowerEvaluator.MakeStubTroop 的 tier 查找。任何失败 → 返回 1(保守)。
     /// </summary>
-    private static int WagePerTroopAtMaxTier(List<Town> towns)
+    private static int WagePerTroopAtMaxTier(CapitalManager manager, List<Town> towns)
     {
         try
         {
             int maxTier = 5;
-            var capitalTown = towns.FirstOrDefault(t => t != null && t.IsTown);
+            // 首府优先;无首府(刚失守等)退化为 clan.Fiefs 里第一个 town。
+            Town? capitalTown = null;
+            try { capitalTown = manager?.GetCapital(); } catch { capitalTown = null; }
+            if (capitalTown == null)
+                capitalTown = towns.FirstOrDefault(t => t != null && t.IsTown);
             if (capitalTown != null)
             {
                 var rule = ConfigurationManager.GetRuleFor(capitalTown);
