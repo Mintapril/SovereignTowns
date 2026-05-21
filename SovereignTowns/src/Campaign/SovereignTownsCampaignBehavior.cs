@@ -54,6 +54,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     /// </summary>
     private static Action<string?>? _registeredConfigChangedHandler;
     private SovereignTowns.SettlementManagement.VanillaSuppressionManager? _vanillaSuppression;
+    private SovereignTowns.SettlementManagement.VanillaPatrolSuppressor? _vanillaPatrolSuppressor;
 
     /// <summary>
     /// 大地图左侧常驻「打开控制面板」按钮的 MapView。MapScreen.Instance 在会话早期为 null，
@@ -247,6 +248,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // 时序：必须在 RecruitmentDispatcher 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
             _vanillaSuppression = new SovereignTowns.SettlementManagement.VanillaSuppressionManager();
             _vanillaSuppression.Initialize();
+
+            // 禁用受管氏族定居点的 vanilla 巡逻队（哨所自带巡逻）。
+            _vanillaPatrolSuppressor = new SovereignTowns.SettlementManagement.VanillaPatrolSuppressor();
+            _vanillaPatrolSuppressor.Initialize();
 
             Logger.Info($"OnSessionLaunched: 全部 Manager 就绪 (含 Capital + SallyDispatcher + VanillaSuppression) ConfigVersion={ConfigurationManager.Current.ConfigVersion}");
             Logger.Info($"  features: AutoRecruitment={ConfigurationManager.Current.EnabledFeatures.AutoRecruitment} " +
