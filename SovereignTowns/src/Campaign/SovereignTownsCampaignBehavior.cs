@@ -250,8 +250,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 _pendingCapitals = null;
             }
             // Task 2：把 SyncData 暂存的 clan→treasury 映射喂给 registry，供 EnsureForClan 注入金库。
-            _capitalRegistry.RestoreTreasuries(_pendingTreasuries);
-            _pendingTreasuries = null;
+            if (_pendingTreasuries != null)
+            {
+                _capitalRegistry.RestoreTreasuries(_pendingTreasuries);
+                _pendingTreasuries = null;
+            }
             _capitalRegistry.Initialize();
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
