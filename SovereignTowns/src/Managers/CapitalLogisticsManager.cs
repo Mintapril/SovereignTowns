@@ -87,6 +87,10 @@ public sealed class CapitalLogisticsManager
         bool manualMode = ConfigurationManager.Current?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
         if (manualMode)
             StashAssessments(manager, passA);
+        else
+            // M-1: 自动模式下 Pass A 直接驱动路由,不存在"玩家目标 vs 推荐"差异 —
+            // 清掉该 clan 上一次手动模式残留的 assessment,避免控制面板展示过期数据。
+            ClearAssessments(manager);
 
         var result = RunMcmf(manager, capitalSettlement, passA);
         if (result.SettlementCount == 0)
@@ -329,10 +333,20 @@ public sealed class CapitalLogisticsManager
             if (clan == null || passA == null) return;
             string clanId = clan.StringId ?? "";
 
-            int wagePerTroop = WagePerTroopAtMaxTier(manager);
+            var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+            // I-1: 路由 manual 模式把目标 clamp 到 cfg.MaxGarrisonHardCap(见
+            // SupplyDemandGraph.BuildSettlementStates)。评估面板必须显示路由真实采用的值,
+            // 否则 DailyWageDelta 是虚构数 —— 这里用同一 hardCap 钳制 playerTarget。
+            int hardCap = Math.Max(1, cfg.MaxGarrisonHardCap);
+
+            // I-2: 复用 GarrisonAllocationSolver 的满级工资口径,不再本地重实现。
+            // solver 的 WagePerTroopAtMaxTier(manager, towns) 中 towns 仅作 GetCapital 失败兜底。
+            // manager 在 clan != null 守卫之后必非 null(clan = manager?.OwnerClan)。
+            var fiefList = clan.Fiefs?.Where(t => t != null).ToList() ?? new List<Town>();
+            int wagePerTroop = GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, fiefList);
             var assessments = new List<GarrisonAssessment>(8);
 
-            foreach (var town in clan.Fiefs)
+            foreach (var town in fiefList)
             {
                 if (town?.Settlement == null || !town.Settlement.IsActive) continue;
                 if (!(town.IsTown || town.IsCastle)) continue;
@@ -346,14 +360,16 @@ public sealed class CapitalLogisticsManager
                         var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
                         var risk = RiskAssessmentService.Assess(settlement);
                         float mul = risk.Level >= RiskLevel.High ? rule.WartimeMultiplier : rule.PeacetimeMultiplier;
-                        playerTarget = Math.Max(0, (int)Math.Round(rule.TargetTotalCount * mul));
+                        // ComputeDesiredTarget 同口径:Math.Max(1, round(...)) 再 clamp 到 hardCap。
+                        playerTarget = Math.Min(Math.Max(1, (int)Math.Round(rule.TargetTotalCount * mul)), hardCap);
                     }
                     else
                     {
                         // 城堡:BranchRule.TargetPower 是 power 口径,这里直接当目标头数展示
-                        // (评估值,非路由输入;路由侧自有 power↔头数换算)。
+                        // (评估值,非路由输入;路由侧自有 power↔头数换算)。同样 clamp 到 hardCap
+                        // 避免面板显示超出路由允许的上限。
                         var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
-                        playerTarget = Math.Max(0, branch.TargetPower);
+                        playerTarget = Math.Min(Math.Max(1, branch.TargetPower), hardCap);
                     }
 
                     int recommended = passA.Target.TryGetValue(settlement, out var rec) ? Math.Max(0, rec) : 0;
@@ -373,15 +389,7 @@ public sealed class CapitalLogisticsManager
                 }
             }
 
-            // 复制旧字典 → 替换本 clan 条目 → 整体原子换上(读侧拿到的要么旧字典要么新字典)。
-            // 注意:net472 的 Dictionary 复制构造只接受 IDictionary,IReadOnlyDictionary 须逐项拷贝。
-            var snapshot = new Dictionary<string, IReadOnlyList<GarrisonAssessment>>();
-            var previous = Volatile.Read(ref _latestAssessments);
-            if (previous != null)
-                foreach (var kv in previous)
-                    snapshot[kv.Key] = kv.Value;
-            snapshot[clanId] = assessments;
-            Volatile.Write(ref _latestAssessments, snapshot);
+            ReplaceClanAssessments(clanId, assessments);
         }
         catch (Exception ex)
         {
@@ -390,44 +398,44 @@ public sealed class CapitalLogisticsManager
     }
 
     /// <summary>
-    /// 满级单兵工资 = PartyWageModel.GetCharacterWage(满级 tier 代表兵种)。
-    /// 满级 tier 取自首府 TownGarrisonRule.MaxTier(取不到默认 5)。GarrisonAssessment 的
-    /// DailyWageDelta 用。任何失败 → 返回 1(保守)。逻辑对应 GarrisonAllocationSolver
-    /// 的私有 WagePerTroopAtMaxTier;因 Task 6 只允许改 3 个文件、不暴露 solver 内部,故本地重实现。
+    /// M-1:自动模式下清掉该 clan 残留的手动模式评估,避免控制面板展示过期数据。
+    /// 该 clan 不在 stash 中时是 no-op。
     /// </summary>
-    private static int WagePerTroopAtMaxTier(CapitalManager manager)
+    private static void ClearAssessments(CapitalManager manager)
     {
         try
         {
-            int maxTier = 5;
-            Town? capitalTown = null;
-            try { capitalTown = manager?.GetCapital(); }
-            catch (Exception ex)
-            {
-                Logger.Warn($"CapitalLogisticsManager.WagePerTroopAtMaxTier: GetCapital threw, falling back: {ex.Message}");
-                capitalTown = null;
-            }
-            if (capitalTown == null)
-                capitalTown = manager?.OwnerClan?.Fiefs?.FirstOrDefault(t => t != null && t.IsTown);
-            if (capitalTown != null)
-            {
-                var rule = ConfigurationManager.GetRuleFor(capitalTown);
-                if (rule != null && rule.MaxTier > 0) maxTier = rule.MaxTier;
-            }
-
-            var wageModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.PartyWageModel;
-            if (wageModel == null) return 1;
-
-            var rep = GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: false)
-                      ?? GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: true);
-            if (rep == null) return 1;
-
-            return Math.Max(1, wageModel.GetCharacterWage(rep));
+            string clanId = manager?.OwnerClan?.StringId ?? "";
+            ReplaceClanAssessments(clanId, removeOnly: true);
         }
         catch (Exception ex)
         {
-            Logger.Error("CapitalLogisticsManager.WagePerTroopAtMaxTier failed", ex);
-            return 1;
+            Logger.Error($"CapitalLogisticsManager.ClearAssessments failed (clan={manager?.OwnerClan?.StringId})", ex);
         }
+    }
+
+    /// <summary>
+    /// 复制旧字典 → 替换 / 删除本 clan 条目 → 整体原子换上(读侧拿到的要么旧字典要么新字典)。
+    /// 注意:net472 的 Dictionary 复制构造只接受 IDictionary,IReadOnlyDictionary 须逐项拷贝。
+    /// <paramref name="removeOnly"/> 为 true 时删除该 clan 条目,否则写入 <paramref name="entries"/>。
+    /// </summary>
+    private static void ReplaceClanAssessments(
+        string clanId, List<GarrisonAssessment>? entries = null, bool removeOnly = false)
+    {
+        var snapshot = new Dictionary<string, IReadOnlyList<GarrisonAssessment>>();
+        var previous = Volatile.Read(ref _latestAssessments);
+        if (previous != null)
+            foreach (var kv in previous)
+                snapshot[kv.Key] = kv.Value;
+
+        if (removeOnly)
+        {
+            if (!snapshot.Remove(clanId)) return;  // 无残留 → 无需替换引用
+        }
+        else
+        {
+            snapshot[clanId] = entries ?? new List<GarrisonAssessment>();
+        }
+        Volatile.Write(ref _latestAssessments, snapshot);
     }
 }

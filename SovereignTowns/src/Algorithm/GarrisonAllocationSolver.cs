@@ -284,8 +284,10 @@ public static class GarrisonAllocationSolver
     /// 满级单兵工资 = PartyWageModel.GetCharacterWage(满级 tier 的代表兵种)。
     /// 满级 tier 取自首府 TownGarrisonRule.MaxTier(取不到默认 5)。
     /// 代表兵种用 GarrisonPowerEvaluator.MakeStubTroop 的 tier 查找。任何失败 → 返回 1(保守)。
+    /// internal:CapitalLogisticsManager 的 GarrisonAssessment.DailyWageDelta 复用此口径
+    /// (避免重复实现)。<paramref name="towns"/> 仅作 GetCapital 失败时的首府兜底来源。
     /// </summary>
-    private static int WagePerTroopAtMaxTier(CapitalManager manager, List<Town> towns)
+    internal static int WagePerTroopAtMaxTier(CapitalManager manager, List<Town> towns)
     {
         try
         {
