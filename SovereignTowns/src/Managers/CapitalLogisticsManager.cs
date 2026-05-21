@@ -103,15 +103,15 @@ public sealed class CapitalLogisticsManager
 
         ExecuteMcmfInstructions(manager, result);
 
-        // Task 7 Step 1: peacetime disband-excess.
-        // Must run after MCMF so passA targets are already computed and used for routing.
+        // 和平期遣散超额驻军：必须在 MCMF 之后跑,此时 passA 的每城目标已算出并用于路由。
         DisbandExcessGarrisons(manager, passA);
     }
 
     /// <summary>
-    /// Task 7 Step 1: 和平期遣散超额驻军。
-    /// 对该氏族每个拥有 GarrisonParty 的城/堡，当实际头数 > 可承担目标 × DisbandExcessThreshold 时，
-    /// 通过 TroopTransferHelper.TransferFromGarrison（LowestTierFirst）抽走超额兵员并丢弃（废除）。
+    /// 和平期遣散超额驻军。遍历该氏族的所有 fief(clan.Fiefs),逐城/堡施加跳过门限
+    /// (功能开关 / 手动模式 / 围攻 / 高风险 / 未被 Pass A 分配),对实际头数超过
+    /// 可承担目标 × DisbandExcessThreshold 的城/堡,通过
+    /// TroopTransferHelper.TransferFromGarrison(LowestTierFirst)抽走超额兵员并丢弃(废除)。
     /// </summary>
     private static void DisbandExcessGarrisons(CapitalManager manager, GarrisonAllocationResult passA)
     {
@@ -143,16 +143,19 @@ public sealed class CapitalLogisticsManager
                     var risk = RiskAssessmentService.Assess(settlement);
                     if (risk.Level >= RiskLevel.High) continue;
 
-                    // Gate 5: settlement genuinely absent from Pass A (not a fief the solver saw).
+                    // Gate 5: skip if the solver did not allocate this settlement at all.
                     // The solver pre-seeds Target=0 for every fief, so present-with-0 is NOT skipped
-                    // here — it falls through to the MinGarrisonFloor clamp below.
+                    // here — only a settlement genuinely missing from the result is skipped.
+                    // Present-with-0 falls through to the MinGarrisonFloor clamp below.
                     if (!passA.Target.TryGetValue(settlement, out int affordable)) continue;
 
                     // MinGarrisonFloor is the design's guaranteed minimum garrison (fiscal-autonomy §3.5):
                     // a budget-starved clan whose affordable target came out below the floor keeps the
                     // floor as an accepted subsidy — disband-excess must never breach it. The Math.Max
                     // clamp uniformly handles affordable==0 and any affordable < MinGarrisonFloor.
-                    int effectiveTarget = Math.Max(affordable, Math.Max(0, cfg.MinGarrisonFloor));
+                    int floor = Math.Max(0, cfg.MinGarrisonFloor);
+                    int effectiveTarget = Math.Max(affordable, floor);
+                    // MinGarrisonFloor=0 + affordable=0 → skip rather than disband to 0
                     if (effectiveTarget <= 0) continue;
 
                     int current = GarrisonThresholdMath.ActualGarrisonCount(settlement);

@@ -181,7 +181,7 @@ public static class GarrisonXpInjector
             // 2026-05-12 差距 2 修复：原 TryUpgradeGarrison 仅在 capital-only 路径触发，
             // 导致非首府 town 与所有 castle 累积 XP 却"卡 tier"。XP 注入后立即触发本城升级，
             // 让受管氏族自有的每个城/堡都能正常升级兵种。
-            // Task 7 Step 2: war + dry treasury → pause upgrades (stop pushing tier/wage up).
+            // 战时缓冲耗尽时暂停升级:clan 交战 且 金库余额 <= 0 → 停止推高 tier/工资。
             try
             {
                 bool skipUpgrade = false;
@@ -201,8 +201,8 @@ public static class GarrisonXpInjector
                 }
                 catch (Exception warCheckEx)
                 {
-                    Logger.Error($"GarrisonXpInjector: war-buffer check failed for '{settlement.StringId}'", warCheckEx);
-                    // Fail open: allow upgrade if check errors
+                    // Fail open: allow upgrade if this read-only heuristic check errors.
+                    Logger.Warn($"GarrisonXpInjector: war-buffer check failed for '{settlement.StringId}'", warCheckEx);
                 }
 
                 if (!skipUpgrade)

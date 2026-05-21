@@ -257,6 +257,7 @@ public static class GarrisonAllocationSolver
     }
 
     /// <summary>clan 是否与任意势力交战。FactionHelper.GetStances + IsAtWarWith(DefaultClanFinanceModel 同套路)。</summary>
+    // internal: also called by GarrisonXpInjector (war-buffer upgrade gate).
     internal static bool IsClanAtWar(Clan clan)
     {
         try
