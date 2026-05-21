@@ -1230,12 +1230,28 @@
           ];
         },
 
+        get buildingBonusSpecs() {
+          const t = this.tr.bind(this);
+          return [
+          { key: 'RecruiterBaseCap', root: 'BuildingBonus', label: t('征兵队：上限基础值', 'Recruiter: base cap'), hint: t('征兵队并发上限的基础值（军营 0 级时的上限）', 'Base value of the recruiter concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
+          { key: 'RecruiterCapPerBarracksLevel', root: 'BuildingBonus', label: t('征兵队：军营每级增量', 'Recruiter: cap per barracks level'), hint: t('军营每升 1 级，征兵队并发上限 +N', 'Each barracks level adds N to the recruiter concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
+          { key: 'TransferBaseCap', root: 'BuildingBonus', label: t('调拨队：上限基础值', 'Transfer: base cap'), hint: t('调拨队并发上限的基础值（军营 0 级时的上限）', 'Base value of the transfer concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
+          { key: 'TransferCapPerBarracksLevel', root: 'BuildingBonus', label: t('调拨队：军营每级增量', 'Transfer: cap per barracks level'), hint: t('军营每升 1 级，调拨队并发上限 +N', 'Each barracks level adds N to the transfer concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
+          { key: 'SallyBaseCap', root: 'BuildingBonus', label: t('出击队：上限基础值', 'Sally: base cap'), hint: t('出击队并发上限的基础值（军营 0 级时的上限）', 'Base value of the sally concurrent cap (the cap at barracks level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
+          { key: 'SallyCapPerBarracksLevel', root: 'BuildingBonus', label: t('出击队：军营每级增量', 'Sally: cap per barracks level'), hint: t('军营每升 1 级，出击队并发上限 +N', 'Each barracks level adds N to the sally concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
+          { key: 'PatrolBaseCap', root: 'BuildingBonus', label: t('巡逻队：上限基础值', 'Patrol: base cap'), hint: t('巡逻队并发上限的基础值（哨所 0 级时的上限）', 'Base value of the patrol concurrent cap (the cap at Guard House level 0).'), min: 1, max: 10, discrete: true, step: 1, def: 1 },
+          { key: 'PatrolCapPerGuardHouseLevel', root: 'BuildingBonus', label: t('巡逻队：哨所每级增量', 'Patrol: cap per Guard House level'), hint: t('哨所每升 1 级，巡逻队并发上限 +N', 'Each Guard House level adds N to the patrol concurrent cap.'), min: 0, max: 5, discrete: true, step: 1, def: 1 },
+          { key: 'GarrisonXpBasePerDay', root: 'BuildingBonus', label: t('驻军：每日 XP 基础值', 'Garrison: base daily XP'), hint: t('驻军每兵每日 XP 的基础值（军营 0 级时的值）', 'Base per-troop daily garrison XP (the value at barracks level 0).'), min: 0, max: 50, discrete: true, step: 1, def: 5 },
+          { key: 'GarrisonXpPerBarracksLevel', root: 'BuildingBonus', label: t('驻军：军营每级 XP 增量', 'Garrison: daily XP per barracks level'), hint: t('军营每升 1 级，驻军每兵每日 XP +N', 'Each barracks level adds N to per-troop daily garrison XP.'), min: 0, max: 50, discrete: true, step: 1, def: 5 },
+          ];
+        },
+
         // ============ computed ============
         // 完整分组定义。每个 group 的 specs 已按 showAdvanced 过滤掉 adv 旋钮。
         get settingsGroups() {
           const t = this.tr.bind(this);
           const budget = this.budgetSpecs.map(s => ({ root: 'GlobalDefaults', ...s }));
-          const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs];
+          const all = [...budget, ...this.resourceSpecs, ...this.thresholdSpecs, ...this.buildingBonusSpecs];
           const spec = (root, key) => {
             const normalizedRoot = root || '';
             const found = all.find(s => (s.root || '') === normalizedRoot && s.key === key);
@@ -1339,6 +1355,23 @@
                 spec('Thresholds', 'AutoUpgradeMinTierRatio'),
                 spec('Thresholds', 'AutoUpgradeMinBudget'),
                 spec('Thresholds', 'AutoUpgradeMaxPerCall'),
+              ]),
+            },
+            {
+              key: 'building_bonus',
+              label: t('建筑加成', 'Building bonuses'),
+              hint: t('军营等级派生征兵 / 调拨 / 出击队并发上限与驻军每日 XP；哨所等级派生巡逻队并发上限。上限 = 基础值 + 建筑等级 × 每级增量。', 'Barracks level drives recruiter / transfer / sally caps and daily garrison XP; Guard House level drives the patrol cap. Cap = base + building level × per-level increment.'),
+              specs: clean([
+                spec('BuildingBonus', 'RecruiterBaseCap'),
+                spec('BuildingBonus', 'RecruiterCapPerBarracksLevel'),
+                spec('BuildingBonus', 'TransferBaseCap'),
+                spec('BuildingBonus', 'TransferCapPerBarracksLevel'),
+                spec('BuildingBonus', 'SallyBaseCap'),
+                spec('BuildingBonus', 'SallyCapPerBarracksLevel'),
+                spec('BuildingBonus', 'PatrolBaseCap'),
+                spec('BuildingBonus', 'PatrolCapPerGuardHouseLevel'),
+                spec('BuildingBonus', 'GarrisonXpBasePerDay'),
+                spec('BuildingBonus', 'GarrisonXpPerBarracksLevel'),
               ]),
             },
           ];
@@ -1493,6 +1526,7 @@
             r.body.Thresholds = r.body.Thresholds || {};
             r.body.ClanPatrol = r.body.ClanPatrol || {};
             r.body.ClanRecruiter = r.body.ClanRecruiter || {};
+            r.body.BuildingBonus = r.body.BuildingBonus || {};
             this.config = r.body;
             // 刚从后端拉到的就是当前盘上状态 —— 重置未保存标记。
             this.dirty = false;
