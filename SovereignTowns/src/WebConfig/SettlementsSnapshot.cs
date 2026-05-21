@@ -57,7 +57,8 @@ internal static class SettlementsSnapshot
                 return;
             }
 
-            // Task 9: 发布玩家氏族 StringId 供 FinancialSnapshot / 评估视图的 HTTP 线程使用。
+            // 发布玩家氏族 StringId 供 FinancialSnapshot / 评估视图的 HTTP 线程使用
+            // （HTTP handler 拿不到 vanilla Clan.PlayerClan，须由主线程发布）。
             FinancialSnapshot.SetPlayerClanId(playerClan.StringId ?? "");
 
             var fresh = new List<SettlementInfo>(8);

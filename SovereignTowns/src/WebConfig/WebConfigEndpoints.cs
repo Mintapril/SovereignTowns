@@ -277,7 +277,7 @@ internal static class WebConfigEndpoints
     }
 
     /// <summary>
-    /// GET /api/finance → mod 支出报告（今日/本周/全部 + 近期流水）+ Task 9 财政自治视图
+    /// GET /api/finance → mod 支出报告（今日/本周/全部 + 近期流水）+ 财政自治视图
     /// （玩家氏族金库余额/缓冲上限/日均开销 + 各受管领地单城 P&amp;L）。
     /// 支出报告来自 <see cref="ModExpenseLedger"/>（线程安全 in-memory）；财政视图来自
     /// <see cref="FinancialSnapshot"/>（主线程产出的纯数值快照，HTTP 线程只读）。
@@ -415,7 +415,7 @@ internal static class WebConfigEndpoints
                         discrete = s.Discrete,
                         def,
                         adv = s.Advanced,
-                        // Task 9：条件可见 —— 非空时该旋钮仅在手动驻军目标模式下渲染。
+                        // 条件可见 —— 非空时该旋钮仅在手动驻军目标模式下渲染。
                         requiresManualMode = string.IsNullOrEmpty(s.RequiresManualMode) ? null : s.RequiresManualMode,
                     });
                 }

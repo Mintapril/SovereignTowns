@@ -1013,7 +1013,7 @@
               </table>
             </div>
 
-            <!-- =========== Task 9: 财政自治视图 =========== -->
+            <!-- =========== 财政自治视图（金库 / 单城 P&amp;L / 手动模式评估） =========== -->
             <div class="diamond-divider my-8"></div>
             <h2 class="font-display text-2xl text-gold-100 mb-2 tracking-wide uppercase" x-text="tr('财政自治', 'Fiscal autonomy')"></h2>
             <p class="text-parchment-200 text-sm mb-6" x-text="tr('受管氏族金库与各受管领地的单城盈亏（收入对比驻军工资），数据来自调度器每日评估。', 'The managed clan treasury and per-holding P&amp;L (income vs garrison wage), sourced from the dispatcher’s daily evaluation.')"></p>
@@ -1081,10 +1081,11 @@
               </table>
             </div>
 
-            <!-- 手动驻军目标评估（仅手动模式可见） -->
-            <div x-show="assessment?.manualMode" class="ornate-frame p-5">
+            <!-- 手动驻军目标评估（手动模式可见；加载失败时也显示以承载错误横幅） -->
+            <div x-show="assessment?.manualMode || assessmentError" class="ornate-frame p-5">
               <h3 class="font-display text-gold-200 text-base mb-2 tracking-wide" x-text="tr('手动驻军目标评估', 'Manual garrison target assessment')"></h3>
               <p class="text-parchment-300 text-[13px] mb-3" x-text="tr('对比你设定的目标与调度器推荐值；每日工资差额为正表示你比推荐值多付的工资。', 'Compares your set target with the dispatcher’s recommendation; a positive daily wage delta is the extra wage you pay over the recommendation.')"></p>
+              <div x-show="assessmentError" x-transition class="mb-4 p-3 ornate-frame text-danger-500 text-sm" x-text="assessmentError"></div>
               <div x-show="(assessment?.assessments || []).length === 0" class="text-parchment-400 italic text-sm" x-text="tr('暂无评估数据 —— 调度器尚未在手动模式下运行。', 'No assessment data yet — the dispatcher has not run in manual mode.')"></div>
               <table x-show="(assessment?.assessments || []).length > 0" class="w-full text-sm">
                 <thead>
@@ -1209,7 +1210,7 @@
         financeError: '',
         activity: null,
         activityError: '',
-        assessment: null,       // Task 9: 手动驻军目标评估（/api/assessment）
+        assessment: null,       // 手动驻军目标评估（/api/assessment）
         assessmentError: '',
 
         troopSearch: '',
@@ -1268,7 +1269,7 @@
           // pickLang：把 *Zh/*En 双语字段映射成当前语言的 label/hint。
           // 语言切换时本 getter 重新求值 —— 渲染保持响应式（无须重拉 /api/specs）。
           const pickLang = (zh, en) => this.tr(zh, en);
-          // Task 9：手动驻军目标模式开关 —— 决定带 requiresManualMode 的旋钮是否渲染。
+          // 手动驻军目标模式开关 —— 决定带 requiresManualMode 的旋钮是否渲染。
           const manualMode = !!this.config?.FiscalAutonomy?.AllowManualGarrisonTargets;
           return this.specGroups.map(g => {
             // clean：未开启「高级参数」时隐藏 adv 旋钮；auto 模式下隐藏 requiresManualMode 旋钮。

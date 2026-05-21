@@ -1000,7 +1000,7 @@
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                 Brush="SPOptions.Slider.Value.Text" Text="@EmptyRecentText" />
 
-                                                    <!-- ════ Task 9：财政自治视图 ════ -->
+                                                    <!-- ════ 财政自治视图（金库 / 单城 P&amp;L / 手动模式评估） ════ -->
                                                     <BrushWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
                                                                  SuggestedHeight="9" Brush="SPOptions.CollapserLine"
                                                                  MarginTop="14" MarginBottom="8" />

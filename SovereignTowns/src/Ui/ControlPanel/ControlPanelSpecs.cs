@@ -18,6 +18,13 @@ public sealed class SpecEntry
     /// 条件可见：非空时，此 spec 仅在 <c>GlobalConfig.FiscalAutonomy.AllowManualGarrisonTargets == true</c>
     /// 才在控制面板 / WebUI 渲染（值 "AllowManualGarrisonTargets"）。auto 模式下驻军目标由调度器
     /// (Pass A)决定，手动旋钮无意义 —— 隐藏避免误导。其他值保留供将来扩展。
+    ///
+    /// 注意：手动驻军目标共有两个被门控的旋钮，走两套机制 ——
+    /// (1) <c>GlobalDefaults.TargetTotalCount</c> 在 spec 列表内，由此字段门控（由
+    ///     <see cref="SettingsGroupVM"/> 与 WebUI settingsGroups getter 过滤）；
+    /// (2) <c>BranchDefaults.TargetPower</c> 是 <see cref="BranchesTabVM"/> 的硬编码行，
+    ///     由该 VM 的 <c>ManualMode</c> 标志 + prefab/WebUI 的 IsVisible/x-show 门控。
+    /// 新增第三个手动门控旋钮时，两处都要顾及。
     /// </summary>
     public string RequiresManualMode;
 }

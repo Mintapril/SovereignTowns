@@ -94,7 +94,7 @@ public sealed class CapitalLogisticsManager
             // 清掉该 clan 上一次手动模式残留的 assessment,避免控制面板展示过期数据。
             ClearAssessments(manager);
 
-        // Task 9: 财政自治财务视图快照（金库 + 单城 P&L）。在主线程产出纯数值 DTO，
+        // 财政自治财务视图快照（金库 + 单城 P&L）。在主线程产出纯数值 DTO，
         // 供 /api/finance 与控制面板 FinanceTabVM 跨线程只读消费。
         StashFinancialSnapshot(manager, passA);
 
@@ -549,7 +549,7 @@ public sealed class CapitalLogisticsManager
         Volatile.Write(ref _latestAssessments, snapshot);
     }
 
-    // ── Task 9: 财政自治财务视图快照 ──────────────────────────────────────────
+    // ── 财政自治财务视图快照 ──────────────────────────────────────────────────
 
     /// <summary>一次性 warn 去重：registered ClanFinanceModel 不是 STClanFinanceModel 时只警告一次。</summary>
     private static bool _warnedFinanceModelMissing;
@@ -608,7 +608,8 @@ public sealed class CapitalLogisticsManager
                     long wage = 0;
                     var gp = town.GarrisonParty;
                     if (gp != null && gp.IsActive) wage = Math.Max(0, gp.TotalWage);
-                    int current = Math.Min(gp?.MemberRoster?.TotalManCount ?? 0, 100000);
+                    // 防御性上界 10000，与 SettlementsSnapshot.Refresh 的驻军头数钳制口径一致。
+                    int current = Math.Min(gp?.MemberRoster?.TotalManCount ?? 0, 10000);
                     int recommended = passA != null && passA.Target.TryGetValue(s, out var rec)
                         ? Math.Max(0, rec) : 0;
 

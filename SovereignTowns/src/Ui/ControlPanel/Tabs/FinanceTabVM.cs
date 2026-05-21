@@ -83,7 +83,7 @@ public sealed class FinanceTabVM : ViewModel
     [DataSourceProperty]
     public string EmptyRecentText => ControlPanelLoc.Tr("尚无支出记录", "No spending records yet");
 
-    // ── Task 9: 财政自治视图（金库 + 单城 P&L + 手动模式评估）──
+    // ── 财政自治视图（金库 + 单城 P&L + 手动模式评估）──
 
     [DataSourceProperty] public string FiscalTitle { get; }
     [DataSourceProperty] public string TreasuryTitle { get; }
@@ -205,7 +205,7 @@ public sealed class FinanceTabVM : ViewModel
     }
 
     /// <summary>
-    /// Task 9: 重建财政自治视图（金库摘要 + 单城 P&L + 手动模式评估）。
+    /// 重建财政自治视图（金库摘要 + 单城 P&L + 手动模式评估）。
     /// 数据源为主线程产出的纯数值快照（FinancialSnapshot / LatestAssessments）—— 控制面板
     /// 打开期间游戏已暂停，快照不变；与 WebUI 的 /api/finance + /api/assessment 同源。
     /// </summary>
@@ -239,7 +239,9 @@ public sealed class FinanceTabVM : ViewModel
                     ControlPanelLoc.Tr("净额", "Net")));
                 foreach (var s in cf.Settlements)
                 {
-                    string label = s.Name + " (" + s.RecommendedGarrison + "/" + s.CurrentGarrison + ")";
+                    string castleTag = s.IsCastle ? ControlPanelLoc.Tr(" 〔堡〕", " (castle)") : "";
+                    string label = s.Name + castleTag
+                                   + " (" + s.RecommendedGarrison + "/" + s.CurrentGarrison + ")";
                     _pnlRows.Add(new FinanceRowVM(
                         label,
                         s.Income + "d",
@@ -288,6 +290,11 @@ public sealed class FinanceTabVM : ViewModel
         catch (Exception ex)
         {
             Logger.Error("FinanceTabVM.RefreshFiscal failed", ex);
+            // 与 Refresh 的 catch 一致：失败时给出可见错误信号，而非让财政区块静默空白。
+            HasFiscal = false;
+            ShowAssessment = false;
+            HasError = true;
+            ErrorText = ControlPanelLoc.Tr("财政数据加载失败，请查看日志。", "Failed to load fiscal data — see logs.");
         }
     }
 

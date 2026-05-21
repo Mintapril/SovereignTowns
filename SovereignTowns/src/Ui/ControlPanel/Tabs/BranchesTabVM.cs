@@ -20,6 +20,10 @@ public sealed class BranchesTabVM : ViewModel
     /// <summary>
     /// 目标兵力旋钮仅在「财政自治 → 允许手动驻军目标」开启时可见。
     /// auto 模式下非首府目标由中央调度器（Pass A）按防御价值决定，手动旋钮无意义。
+    ///
+    /// 这是手动驻军目标两套门控机制之一（门控 <c>BranchDefaults.TargetPower</c>）；
+    /// 另一套是 <see cref="SpecEntry.RequiresManualMode"/>（门控 spec 列表内的
+    /// <c>GlobalDefaults.TargetTotalCount</c>）。新增第三个手动门控旋钮时两处都要顾及。
     /// </summary>
     [DataSourceProperty] public bool ManualMode { get; }
     [DataSourceProperty] public bool AutoMode => !ManualMode;
