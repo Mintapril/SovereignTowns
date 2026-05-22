@@ -21,8 +21,10 @@
 - `superSource` / `superSink`。
 - `budgetGate` —— 总驻军预算闸。
 - `bypass` —— "不入驻军"汇集点(不招募 / 被裁量遣散)。
-- `capital-transit` —— 每首府一个;招募兵的中转节点。使单图能正确表达"招募→经首府
-  →转发分支" —— 复合边无法 decode,必须建真实中转节点(advisor 复核要求)。
+- `capital-transit` —— **每首府每 role 一个**(4 个/首府);招募兵的中转节点。使单图能
+  正确表达"招募→经首府→转发分支" —— 复合边无法 decode,必须建真实中转节点。按 role
+  拆分是必需的:transit 汇集多村同 role 招募兵,其出边 `transit(role R) → 首府 R-demand`
+  必须只承载 role R 流;role-blind 的单一 transit 会让 Cav 招募兵填进 Inf 缺口。
 - **demand-tier 节点**:每 (settlement, role, tier)。
   - 首府:role ∈ {Cav,HA,Inf,Rng};tier ∈ {floor, core-1..K, surplus}。
   - 分支:role = 单一占位(头数口径);tier ∈ {floor, core-1..K, surplus}。
@@ -255,10 +257,10 @@ tuning 期停在 ShadowMerged,直到差异都能解释(或新方案系统性更�
 
 | M | 内容 | 交付/验证 |
 |---|---|---|
-| M1 | 合并 solver 骨架:建图 + Solve;parallel-run 三态 + 差异日志 | ShadowMerged 下跑通,不派发 |
-| M2 | decode → 完整对外契约(Target/指令/Breakdown/stats) | 差异日志可读 |
+| M1 | 合并 solver 骨架:建图(含 siege/risk/flag-off 保护边)+ Solve;parallel-run 三态 + 按边语义类别的差异日志 | ShadowMerged 下跑通,不派发 |
+| M2 | decode → 完整对外契约(Target/指令/Breakdown/stats);合并 solver 复用 legacy passA 的预算/wage 输入,避免 ShadowMerged 期双算 | 差异日志可读 |
 | M3 | value 重定标 + EWMA;tuning loop | playtest 比对差异收敛 |
-| M4 | disband 涌现 + Gate 保护边 + 每 tick 遣散上限 | 删 `DisbandExcessGarrisons` |
+| M4 | disband 涌现:两段 bypass(每 tick 遣散上限)+ 保护边/预算闸交互详化 | 删 `DisbandExcessGarrisons` |
 | M5 | manual 模式 shadow Pass A 接线 | assessment 数据正确 |
 | M6 | 切 MergedOnly;删 legacy 路由路径 + stockpile 代码 | ShadowMerged 跑满 ≥1 游戏内季度、差异稳定且条条可解释后才切;终态 |
 

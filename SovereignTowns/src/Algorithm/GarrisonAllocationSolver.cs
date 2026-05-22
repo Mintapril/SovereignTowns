@@ -184,7 +184,8 @@ public static class GarrisonAllocationSolver
     /// 口径完全一致;不再受 manual-mode 的 TargetTotalCount/TargetPower 旋钮污染。
     /// 任何失败 → 返回 0(分配将退化为不养兵,安全)。
     /// </summary>
-    private static long ClanWageBudget(CapitalManager manager, List<Town> towns, FiscalAutonomyConfig cfg, int wagePerTroop)
+    // internal: UnifiedGarrisonSolver(方案2 合并 solver)复用同一预算口径,不重新实现战时底线。
+    internal static long ClanWageBudget(CapitalManager manager, List<Town> towns, FiscalAutonomyConfig cfg, int wagePerTroop)
     {
         try
         {
@@ -324,7 +325,8 @@ public static class GarrisonAllocationSolver
     /// 城堡不参与锚定(t.IsTown==false 时跳过)。
     /// 任何失败 → 返回 clamp(floor, hardCap) 的下界(floor)。
     /// </summary>
-    private static int AdequateFor(Town t, FiscalAutonomyConfig cfg, int floor, int hardCap)
+    // internal: UnifiedGarrisonSolver 复用同一 tier 口径(adequate 头数)。
+    internal static int AdequateFor(Town t, FiscalAutonomyConfig cfg, int floor, int hardCap)
     {
         try
         {
@@ -368,7 +370,8 @@ public static class GarrisonAllocationSolver
     /// hardCap(S):vanilla 驻军 PartySizeLimit。GarrisonParty 是 MobileParty,其 .Party(PartyBase)
     /// 暴露 PartySizeLimit。取不到 → cfg.MaxGarrisonHardCap(默认 400)。
     /// </summary>
-    private static int HardCapFor(Town t, FiscalAutonomyConfig cfg)
+    // internal: UnifiedGarrisonSolver 复用同一 tier 口径(hardCap 头数)。
+    internal static int HardCapFor(Town t, FiscalAutonomyConfig cfg)
     {
         int fallback = Math.Max(1, cfg.MaxGarrisonHardCap);
         try

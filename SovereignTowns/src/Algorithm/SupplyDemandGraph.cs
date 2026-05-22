@@ -635,7 +635,8 @@ public static class SupplyDemandGraph
         graph.AddEdge(superSource, nodeId, bucket.Count, 0);
     }
 
-    private static List<TroopBucket> BucketizeCharacters(IEnumerable<CharacterObject?> characters)
+    // internal: UnifiedGarrisonSolver 复用同一 character→bucket 口径。
+    internal static List<TroopBucket> BucketizeCharacters(IEnumerable<CharacterObject?> characters)
     {
         var byRole = new Dictionary<GenericTroopRole, (int Count, int MinTier, CharacterObject? Representative)>();
         foreach (var character in characters)
@@ -664,7 +665,8 @@ public static class SupplyDemandGraph
         return byRole.Select(kv => new TroopBucket(kv.Key, kv.Value.Count, kv.Value.MinTier, kv.Value.Representative)).ToList();
     }
 
-    private static IEnumerable<CharacterObject?> EnumerateVolunteerTroops(Settlement settlement)
+    // internal: UnifiedGarrisonSolver 复用同一 notable 志愿兵枚举口径。
+    internal static IEnumerable<CharacterObject?> EnumerateVolunteerTroops(Settlement settlement)
     {
         var notables = settlement.Notables;
         if (notables == null) yield break;
@@ -684,7 +686,8 @@ public static class SupplyDemandGraph
     /// 非招募冷却 / 非在飞征兵队目标),按距首府距离升序取 Top-RecruiterVillageCandidateCap。
     /// 取代旧的"仅首府直属村"枚举 —— 让 MCMF 能把远处稀有兵种所在村纳入图。
     /// </summary>
-    private static List<Settlement> EnumerateRecruitmentVillages(
+    // internal: UnifiedGarrisonSolver(方案2 合并 solver)复用同一候选村枚举口径。
+    internal static List<Settlement> EnumerateRecruitmentVillages(
         Town capitalTown, Clan? clan, HashSet<Settlement> excludeVillages)
     {
         var result = new List<Settlement>();
@@ -738,7 +741,8 @@ public static class SupplyDemandGraph
     /// 本 clan 在飞征兵队当前及之后尚未访问的目标村集合。这些村已被服务,排除出本轮招募图,
     /// 防止下一 daily MCMF 重复派队去同一个村。
     /// </summary>
-    private static HashSet<Settlement> CollectInFlightRecruiterVillages(Clan? clan)
+    // internal: UnifiedGarrisonSolver 复用同一在飞征兵队目标村排除口径。
+    internal static HashSet<Settlement> CollectInFlightRecruiterVillages(Clan? clan)
     {
         var set = new HashSet<Settlement>();
         if (clan == null) return set;

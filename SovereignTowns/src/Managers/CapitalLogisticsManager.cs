@@ -115,6 +115,66 @@ public sealed class CapitalLogisticsManager
 
         // 和平期遣散超额驻军：必须在 MCMF 之后跑,此时 passA 的每城目标已算出并用于路由。
         DisbandExcessGarrisons(manager, passA);
+
+        // 方案2 parallel-run:合并 solver 影子运行。必须在 legacy 全套(narrate / stash /
+        // dispatch / disband)跑完之后单独一段 —— 仅求解 + 记差异日志,绝不触碰任何派发或
+        // stash 状态(side-effect 隔离)。LegacyOnly / manual 模式下为 no-op。
+        RunMergedShadow(manager, capitalSettlement, manualMode);
+    }
+
+    /// <summary>
+    /// 方案2(双层 MCMF 合并)parallel-run 影子运行。详见 audits/mcmf-merge-design.md §7。
+    /// <list type="bullet">
+    ///   <item><c>LegacyOnly</c>:no-op(= 合并前行为)。</item>
+    ///   <item>manual 模式:跳过 —— 合并 solver 不喂玩家手动目标,留待 M5 接 shadow Pass A。</item>
+    ///   <item><c>ShadowMerged</c>:跑 <see cref="UnifiedGarrisonSolver"/>,记差异日志,**不派发**。</item>
+    ///   <item><c>MergedOnly</c>:M1 decode 未落地 → 暂等同 ShadowMerged + 一条 warn,M2 接真派发。</item>
+    /// </list>
+    /// 严格只读:仅求解 + Logger,绝不调 Narrate/Stash/dispatcher —— legacy 路径已在本方法
+    /// 调用前全套跑完,此处复用任何 stash 写入都会导致 double-stash。
+    /// </summary>
+    private static void RunMergedShadow(CapitalManager manager, Settlement capitalSettlement, bool manualMode)
+    {
+        try
+        {
+            var mode = ConfigurationManager.Current?.FiscalAutonomy?.MergedSolverMode ?? MergedSolverMode.LegacyOnly;
+            if (mode == MergedSolverMode.LegacyOnly) return;
+
+            if (manualMode)
+            {
+                Logger.Debug($"MERGED-SHADOW skipped (manual mode) clan={manager.OwnerClan?.StringId}");
+                return;
+            }
+
+            if (mode == MergedSolverMode.MergedOnly)
+                Logger.Warn(
+                    $"MERGED-SHADOW: MergedSolverMode=MergedOnly but decode lands M2 — behaving as " +
+                    $"ShadowMerged (legacy dispatched) clan={manager.OwnerClan?.StringId}");
+
+            // 合并 solver 不复刻 EnabledFeatures 开关(保持 solver 纯只读);开关关闭时
+            // merged shadow 仍建模招募/调拨 → 与 legacy 必然分叉,先打一条 warn 免事后误判 bug。
+            var features = ConfigurationManager.Current?.EnabledFeatures;
+            if (features != null && (!features.AutoRecruitment || !features.TroopTransfers))
+                Logger.Warn(
+                    $"MERGED-SHADOW: EnabledFeatures off (AutoRecruitment={features.AutoRecruitment} " +
+                    $"TroopTransfers={features.TroopTransfers}) — shadow flow will diverge from legacy " +
+                    $"clan={manager.OwnerClan?.StringId}");
+
+            var unified = UnifiedGarrisonSolver.Solve(manager, capitalSettlement);
+            if (!unified.Ran)
+            {
+                Logger.Debug($"MERGED-SHADOW did not run (no fiefs / capital mismatch) clan={manager.OwnerClan?.StringId}");
+                return;
+            }
+
+            // M1 差异日志:按边语义类别的流量汇总。Target / 指令级对账留待 M2 decode。
+            // stockpile divergence 是预期的 —— 合并图经 transit 转发分支,legacy 走首府囤兵。
+            Logger.Info("MERGED-SHADOW " + unified.DiffLine(manager.OwnerClan?.StringId ?? "?"));
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.RunMergedShadow failed (clan={manager?.OwnerClan?.StringId})", ex);
+        }
     }
 
     /// <summary>
