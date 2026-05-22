@@ -81,6 +81,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             CampaignEvents.OnSessionLaunchedEvent.AddNonSerializedListener(this, OnSessionLaunched);
             CampaignEvents.OnGameLoadedEvent.AddNonSerializedListener(this, OnGameLoaded);
             CampaignEvents.DailyTickEvent.AddNonSerializedListener(this, OnDailyTick);
+            // 首府后勤评估迁到 HourlyTickEvent + 无状态间隔门控(CapitalLogisticsTickHours,默认 6h)。
+            CampaignEvents.HourlyTickEvent.AddNonSerializedListener(this, OnHourlyTick);
             CampaignEvents.HourlyTickPartyEvent.AddNonSerializedListener(this, OnHourlyTickParty);
             CampaignEvents.HourlyTickSettlementEvent.AddNonSerializedListener(this, OnHourlyTickSettlement);
             // 2026-05-12 审查 B1 修复：HourlyTickSettlement 在城内停留时会跳 tick，
@@ -396,7 +398,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            _capitalLogisticsManager?.EvaluateAll();
 
             // B17.4 A2：每日活动汇总(IG GarrisonDailyBehavior.cs:50-66 借鉴)
             // 顺序固定:read snapshot → display → reset(IG 5 年沉淀,顺序错就重复弹窗 / 漏弹)
@@ -434,6 +435,28 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex)
         {
             Logger.Error("DailyTick failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// 首府后勤评估入口。从 vanilla HourlyTickEvent(Action,无参)进入,用无状态间隔门控:
+    /// CampaignTime 总小时数能被 CapitalLogisticsTickHours 整除时才评估。无状态 →
+    /// 存档 / 读档相位自动对齐,无需持久化计数器。
+    /// </summary>
+    private void OnHourlyTick()
+    {
+        try
+        {
+            int interval = ConfigurationManager.Current?.FiscalAutonomy?.CapitalLogisticsTickHours ?? 6;
+            if (interval < 1) interval = 1;
+            if (interval > 24) interval = 24;
+            if ((long)CampaignTime.Now.ToHours % interval != 0) return;
+            DrainWebConfigSync();
+            _capitalLogisticsManager?.EvaluateAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("OnHourlyTick failed", ex);
         }
     }
 

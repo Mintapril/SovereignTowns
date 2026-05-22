@@ -111,45 +111,53 @@ public sealed class CapitalLogisticsManager
             return;
         }
 
+        // 方案2 派发路由:MergedOnly + 自动模式 → 合并 solver 权威派发,跳过 legacy 路由 + 遣散。
+        // 合并 solver 跑不成(无 fief / 首府不符)则回退 legacy,确保该 tick 仍有调度。
+        // 其余模式(LegacyOnly / ShadowMerged / MergedOnly+manual)走 legacy 派发 + 影子运行。
+        var mergedMode = ConfigurationManager.Current?.FiscalAutonomy?.MergedSolverMode ?? MergedSolverMode.LegacyOnly;
+        if (mergedMode == MergedSolverMode.MergedOnly && !manualMode)
+        {
+            if (RunMergedDispatch(manager, capitalSettlement, passA, result))
+                return;
+            Logger.Warn(
+                $"MERGED-DISPATCH: unified solver did not run — falling back to legacy dispatch this tick " +
+                $"clan={manager.OwnerClan?.StringId}");
+        }
+
         ExecuteMcmfInstructions(manager, result);
 
         // 和平期遣散超额驻军：必须在 MCMF 之后跑,此时 passA 的每城目标已算出并用于路由。
         DisbandExcessGarrisons(manager, passA);
 
-        // 方案2 parallel-run:合并 solver 影子运行。必须在 legacy 全套(narrate / stash /
-        // dispatch / disband)跑完之后单独一段 —— 仅求解 + 记差异日志,绝不触碰任何派发或
-        // stash 状态(side-effect 隔离)。LegacyOnly / manual 模式下为 no-op。
-        RunMergedShadow(manager, capitalSettlement, manualMode);
+        // 方案2 parallel-run:合并 solver 影子运行(ShadowMerged)。必须在 legacy 全套
+        // (narrate / stash / dispatch / disband)跑完之后单独一段 —— 仅求解 + 记差异日志,
+        // 绝不触碰任何派发或 stash 状态(side-effect 隔离)。LegacyOnly / manual 模式下为 no-op。
+        RunMergedShadow(manager, capitalSettlement, manualMode, passA, result);
     }
 
     /// <summary>
-    /// 方案2(双层 MCMF 合并)parallel-run 影子运行。详见 audits/mcmf-merge-design.md §7。
+    /// 方案2(双层 MCMF 合并)parallel-run 影子运行。详见 audits/mcmf-merge-handoff.md §4。
     /// <list type="bullet">
     ///   <item><c>LegacyOnly</c>:no-op(= 合并前行为)。</item>
-    ///   <item>manual 模式:跳过 —— 合并 solver 不喂玩家手动目标,留待 M5 接 shadow Pass A。</item>
     ///   <item><c>ShadowMerged</c>:跑 <see cref="UnifiedGarrisonSolver"/>,记差异日志,**不派发**。</item>
-    ///   <item><c>MergedOnly</c>:M1 decode 未落地 → 暂等同 ShadowMerged + 一条 warn,M2 接真派发。</item>
+    ///   <item>manual 模式(M5):合并 solver 用玩家手动目标作 demand 容量、照常求解,
+    ///     记差异日志、**不派发** —— manual 下 legacy 仍权威派发,merged 仅影子。</item>
     /// </list>
+    /// MergedOnly + 自动模式不经此方法 —— 走 <see cref="RunMergedDispatch"/> 真派发(EvaluateClan
+    /// 已分流);ShadowMerged(auto / manual)与 MergedOnly + manual 模式均经此方法。
     /// 严格只读:仅求解 + Logger,绝不调 Narrate/Stash/dispatcher —— legacy 路径已在本方法
     /// 调用前全套跑完,此处复用任何 stash 写入都会导致 double-stash。
     /// </summary>
-    private static void RunMergedShadow(CapitalManager manager, Settlement capitalSettlement, bool manualMode)
+    private static void RunMergedShadow(
+        CapitalManager manager, Settlement capitalSettlement, bool manualMode,
+        GarrisonAllocationResult passA, SupplyDemandGraphResult legacyResult)
     {
         try
         {
             var mode = ConfigurationManager.Current?.FiscalAutonomy?.MergedSolverMode ?? MergedSolverMode.LegacyOnly;
             if (mode == MergedSolverMode.LegacyOnly) return;
 
-            if (manualMode)
-            {
-                Logger.Debug($"MERGED-SHADOW skipped (manual mode) clan={manager.OwnerClan?.StringId}");
-                return;
-            }
-
-            if (mode == MergedSolverMode.MergedOnly)
-                Logger.Warn(
-                    $"MERGED-SHADOW: MergedSolverMode=MergedOnly but decode lands M2 — behaving as " +
-                    $"ShadowMerged (legacy dispatched) clan={manager.OwnerClan?.StringId}");
+            string clanId = manager.OwnerClan?.StringId ?? "?";
 
             // 合并 solver 不复刻 EnabledFeatures 开关(保持 solver 纯只读);开关关闭时
             // merged shadow 仍建模招募/调拨 → 与 legacy 必然分叉,先打一条 warn 免事后误判 bug。
@@ -157,24 +165,250 @@ public sealed class CapitalLogisticsManager
             if (features != null && (!features.AutoRecruitment || !features.TroopTransfers))
                 Logger.Warn(
                     $"MERGED-SHADOW: EnabledFeatures off (AutoRecruitment={features.AutoRecruitment} " +
-                    $"TroopTransfers={features.TroopTransfers}) — shadow flow will diverge from legacy " +
-                    $"clan={manager.OwnerClan?.StringId}");
+                    $"TroopTransfers={features.TroopTransfers}) — shadow flow will diverge from legacy clan={clanId}");
 
-            var unified = UnifiedGarrisonSolver.Solve(manager, capitalSettlement);
+            // passA 复用:合并 solver 跳过预算 / wage 重算(passA 只读,side-effect 隔离不受影响)。
+            var unified = UnifiedGarrisonSolver.Solve(manager, capitalSettlement, passA);
             if (!unified.Ran)
             {
-                Logger.Debug($"MERGED-SHADOW did not run (no fiefs / capital mismatch) clan={manager.OwnerClan?.StringId}");
+                Logger.Debug($"MERGED-SHADOW did not run (no fiefs / capital mismatch) clan={clanId}");
                 return;
             }
 
-            // M1 差异日志:按边语义类别的流量汇总。Target / 指令级对账留待 M2 decode。
-            // stockpile divergence 是预期的 —— 合并图经 transit 转发分支,legacy 走首府囤兵。
-            Logger.Info("MERGED-SHADOW " + unified.DiffLine(manager.OwnerClan?.StringId ?? "?"));
+            // 边语义类别汇总 + Target / 指令级对账。stockpile divergence 是预期的
+            // —— 合并图经 transit 转发分支,legacy 走首府囤兵。
+            Logger.Info("MERGED-SHADOW " + unified.DiffLine(clanId));
+            LogMergedDiff(clanId, unified, passA, legacyResult, manualMode);
         }
         catch (Exception ex)
         {
             Logger.Error($"CapitalLogisticsManager.RunMergedShadow failed (clan={manager?.OwnerClan?.StringId})", ex);
         }
+    }
+
+    /// <summary>
+    /// 方案2 MergedOnly 真派发(M6):跑合并 solver,派发其路由指令 + 执行其遣散决策,
+    /// 跳过 legacy 路由 / 遣散。详见 audits/mcmf-merge-handoff.md §4。仅自动模式调用
+    /// (manual 模式留待 M5)。
+    /// 返回 true = 合并 solver 跑成并已派发;false = 没跑成 → 调用方回退 legacy。
+    /// </summary>
+    private bool RunMergedDispatch(
+        CapitalManager manager, Settlement capitalSettlement,
+        GarrisonAllocationResult passA, SupplyDemandGraphResult legacyResult)
+    {
+        try
+        {
+            string clanId = manager.OwnerClan?.StringId ?? "?";
+
+            // 合并 solver 不复刻 EnabledFeatures 开关 —— 派发侧由各 dispatcher 自校验,
+            // 但开关关闭时合并图仍建模招募/调拨,先打一条 warn 免事后误判。
+            var features = ConfigurationManager.Current?.EnabledFeatures;
+            if (features != null && (!features.AutoRecruitment || !features.TroopTransfers))
+                Logger.Warn(
+                    $"MERGED-DISPATCH: EnabledFeatures off (AutoRecruitment={features.AutoRecruitment} " +
+                    $"TroopTransfers={features.TroopTransfers}) — merged solver still models them clan={clanId}");
+
+            // passA 复用:合并 solver 跳过预算 / wage 重算(passA 只读)。
+            var unified = UnifiedGarrisonSolver.Solve(manager, capitalSettlement, passA);
+            if (!unified.Ran)
+            {
+                Logger.Debug($"MERGED-DISPATCH did not run (no fiefs / capital mismatch) clan={clanId}");
+                return false;
+            }
+
+            Logger.Info("MERGED-DISPATCH " + unified.DiffLine(clanId));
+            // RunMergedDispatch 仅自动模式调用(EvaluateClan 分流 MergedOnly && !manualMode)。
+            LogMergedDiff(clanId, unified, passA, legacyResult, manualMode: false);
+            ExecuteMergedInstructions(manager, unified);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.RunMergedDispatch failed (clan={manager?.OwnerClan?.StringId})", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 方案2 MergedOnly:派发合并 solver 的路由指令 + 执行其每城遣散决策。
+    /// 路由指令派发复用 <see cref="ExecuteInstructionList"/>(与 legacy 同一执行层);
+    /// 遣散经 <see cref="ExecuteMergedDisband"/>。
+    /// </summary>
+    private void ExecuteMergedInstructions(CapitalManager manager, UnifiedSolverResult unified)
+    {
+        try
+        {
+            var (accepted, skipped) = ExecuteInstructionList(manager, unified.Instructions, "merged");
+            int unmet = Math.Max(0, unified.DemandTierCapacity - unified.DemandFilled);
+            Logger.Info(
+                $"CapitalLogistics MERGED execution: clan={manager.OwnerClan?.StringId} " +
+                $"accepted={accepted} skipped={skipped} unmet={unmet}");
+
+            ExecuteMergedDisband(manager, unified);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.ExecuteMergedInstructions failed (clan={manager.OwnerClan?.StringId})", ex);
+        }
+    }
+
+    /// <summary>
+    /// 执行合并 solver 的每城遣散决策。solver 求解时已排除保护态城(围城 / 高危),
+    /// 但 solve→dispatch 之间风险可能变化 —— 派发前重查 Gate 3/4(镜像
+    /// <see cref="DisbandExcessGarrisons"/>),被门限拦下则记一条 deferred 日志免差异日志误导。
+    /// </summary>
+    private static void ExecuteMergedDisband(CapitalManager manager, UnifiedSolverResult unified)
+    {
+        var clan = manager?.OwnerClan;
+        foreach (var kv in unified.Disband)
+        {
+            var settlement = kv.Key;
+            int count = kv.Value;
+            if (settlement == null || count <= 0) continue;
+            try
+            {
+                // Gate 3:围城 —— 永不遣散。
+                if (settlement.IsUnderSiege)
+                {
+                    Logger.Info($"MERGED-DISPATCH disband deferred (under siege) settlement='{settlement.StringId}' planned={count}");
+                    continue;
+                }
+                // Gate 4:高/危风险 —— 仅和平期遣散。
+                if (RiskAssessmentService.Assess(settlement).Level >= RiskLevel.High)
+                {
+                    Logger.Info($"MERGED-DISPATCH disband deferred (risk≥High) settlement='{settlement.StringId}' planned={count}");
+                    continue;
+                }
+
+                int disbanded = DisbandFromGarrison(settlement, count);
+                if (disbanded > 0)
+                {
+                    Logger.Info(
+                        $"MERGED-DISPATCH disband settlement='{settlement.StringId}' planned={count} disbanded={disbanded}");
+                    DecisionAuditLogger.LogRule(
+                        decisionType: "DisbandExcessGarrison",
+                        inputSummary: $"settlement={settlement.StringId} clan={clan?.StringId} planned={count} disbanded={disbanded} source=merged",
+                        decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan?.StringId}\",\"planned\":{count},\"disbanded\":{disbanded},\"source\":\"merged\"}}",
+                        accepted: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"CapitalLogisticsManager.ExecuteMergedDisband per-settlement failed (settlement='{settlement?.StringId}')", ex);
+            }
+        }
+    }
+
+    /// <summary>
+    /// merged(含路由 + 预算约束)对 legacy 的差异对账,写入运行日志(诊断 only,不进玩家动态流)。
+    /// Target:merged vs Pass A —— 自动模式下差异即合并 ROI(Pass A 对路由可行性瞎);
+    /// manual 模式下 Pass A 是 auto 推荐、merged 是 manual 上限下的结果,差异≈玩家目标偏离推荐。
+    /// 指令:类型摘要 + 按 (类型,源,目标,role) 签名的逐条差异(首 10 条)。
+    /// disband:legacy 的 DisbandExcessGarrisons 为独立 pass、不输出可比 list,故仅记 merged 侧。
+    /// </summary>
+    private static void LogMergedDiff(
+        string clanId, UnifiedSolverResult merged,
+        GarrisonAllocationResult passA, SupplyDemandGraphResult legacyResult, bool manualMode)
+    {
+        try
+        {
+            int diffCount = 0, sumAbs = 0;
+            var targetDiffs = new List<string>();
+            foreach (var kv in merged.Target)
+            {
+                int legacyTarget = passA.Target.TryGetValue(kv.Key!, out var lt) ? lt : 0;
+                int d = kv.Value - legacyTarget;
+                if (d == 0) continue;
+                diffCount++;
+                sumAbs += Math.Abs(d);
+                if (targetDiffs.Count < 10)
+                    targetDiffs.Add($"s={kv.Key?.StringId} legacy={legacyTarget} merged={kv.Value} diff={d:+0;-0;0}");
+            }
+            string baselineNote = manualMode
+                ? "(manual 模式:passA=auto 推荐,merged=manual 上限下的结果 — 差异≈玩家目标 vs 推荐)"
+                : "(merged 含路由+预算约束,passA 未含 — 差异 = 合并 ROI)";
+            Logger.Info(
+                $"MERGED-DIFF clan={clanId} mode={(manualMode ? "manual" : "auto")} " +
+                $"Δtarget: {diffCount} settlement(s) differ ΣabsDiff={sumAbs} {baselineNote}");
+            foreach (var line in targetDiffs)
+                Logger.Info("  MERGED-DIFF target " + line);
+
+            Logger.Info($"  MERGED-DIFF instr legacy: {SummarizeInstructions(legacyResult.Instructions)}");
+            Logger.Info($"  MERGED-DIFF instr merged: {SummarizeInstructions(merged.Instructions)}");
+            Logger.Info(
+                "  MERGED-DIFF signature diffs include expected stockpile divergence " +
+                "(I:<capital>:* inflated, T:<capital>>* present only in merged — see mcmf-merge-handoff.md §3.3)");
+
+            var legSig = SignatureCounts(legacyResult.Instructions);
+            var mrgSig = SignatureCounts(merged.Instructions);
+            var allKeys = new HashSet<string>(legSig.Keys);
+            allKeys.UnionWith(mrgSig.Keys);
+            int sigDiffs = 0, shown = 0;
+            foreach (var key in allKeys)
+            {
+                int l = legSig.TryGetValue(key, out var lv) ? lv : 0;
+                int m = mrgSig.TryGetValue(key, out var mv) ? mv : 0;
+                if (l == m) continue;
+                sigDiffs++;
+                if (shown < 10)
+                {
+                    shown++;
+                    Logger.Info($"  MERGED-DIFF instr {key} legacy={l} merged={m}");
+                }
+            }
+            if (sigDiffs > shown)
+                Logger.Info($"  MERGED-DIFF instr ... {sigDiffs - shown} more signature diff(s)");
+
+            if (merged.Disband.Count > 0)
+            {
+                int totalDisband = merged.Disband.Values.Sum();
+                Logger.Info(
+                    $"  MERGED-DIFF merged disband total={totalDisband} across {merged.Disband.Count} " +
+                    $"settlement(s) (legacy disband 为独立 pass,不可直接对比)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.LogMergedDiff failed (clan={clanId})", ex);
+        }
+    }
+
+    /// <summary>指令列表按类型 + 头数汇总成一行。</summary>
+    private static string SummarizeInstructions(IReadOnlyList<DispatchInstruction> list)
+    {
+        int rec = 0, recT = 0, inp = 0, inpT = 0, xfer = 0, xferT = 0, other = 0;
+        foreach (var i in list)
+        {
+            if (i == null) continue;
+            switch (i)
+            {
+                case RecruiterPartyInstruction: rec++; recT += i.Count; break;
+                case InPlaceRecruitInstruction: inp++; inpT += i.Count; break;
+                case TransferPartyInstruction: xfer++; xferT += i.Count; break;
+                default: other++; break;
+            }
+        }
+        string s = $"recruiter={rec}(t={recT}) inplace={inp}(t={inpT}) transfer={xfer}(t={xferT})";
+        return other > 0 ? s + $" other={other}" : s;
+    }
+
+    /// <summary>指令列表按 (类型,源,目标,role) 签名聚合头数,供逐条差异对账。</summary>
+    private static Dictionary<string, int> SignatureCounts(IEnumerable<DispatchInstruction> list)
+    {
+        var d = new Dictionary<string, int>();
+        foreach (var i in list)
+        {
+            if (i == null) continue;
+            string sig = i switch
+            {
+                RecruiterPartyInstruction r => $"R:{r.TargetVillage?.StringId}>{r.ReturnSettlement?.StringId}:{r.Role}",
+                InPlaceRecruitInstruction p => $"I:{p.Settlement?.StringId}:{p.Role}",
+                TransferPartyInstruction t => $"T:{t.Source?.StringId}>{t.Destination?.StringId}:{t.Role}",
+                _ => $"?:{i.GetType().Name}:{i.Role}",
+            };
+            d[sig] = (d.TryGetValue(sig, out var c) ? c : 0) + i.Count;
+        }
+        return d;
     }
 
     /// <summary>
@@ -236,20 +470,7 @@ public sealed class CapitalLogisticsManager
                     int excess = current - effectiveTarget;
                     if (excess <= 0) continue;
 
-                    var garrison = town.GarrisonParty;
-                    if (garrison == null) continue;
-                    var garrisonRoster = garrison.MemberRoster;
-                    if (garrisonRoster == null) continue;
-
-                    // Use a throwaway roster as target — troops extracted here are abandoned (disbanded).
-                    // This matches the established TroopRoster.CreateDummyTroopRoster() pattern used
-                    // across transfer/patrol/recruiter paths (no PartyBase needed).
-                    var discardRoster = TroopRoster.CreateDummyTroopRoster();
-                    int disbanded = TroopTransferHelper.TransferFromGarrison(
-                        garrisonRoster,
-                        discardRoster,
-                        excess,
-                        TroopTransferHelper.SortStrategy.LowestTierFirst);
+                    int disbanded = DisbandFromGarrison(settlement, excess);
 
                     if (disbanded > 0)
                     {
@@ -276,6 +497,26 @@ public sealed class CapitalLogisticsManager
         {
             Logger.Error($"DisbandExcessGarrisons failed (clan='{manager?.OwnerClan?.StringId}')", ex);
         }
+    }
+
+    /// <summary>
+    /// 从某城驻军按 LowestTierFirst 抽走 <paramref name="count"/> 头并丢弃(遣散),返回实抽头数。
+    /// legacy <see cref="DisbandExcessGarrisons"/> 与方案2 <see cref="ExecuteMergedDisband"/> 共用。
+    /// 围城 / 风险等门限校验由调用方负责。丢弃用 dummy roster 作目标 —— 抽出的兵被废弃,与
+    /// transfer/patrol/recruiter 各路径既有 <c>TroopRoster.CreateDummyTroopRoster()</c> 用法一致。
+    /// </summary>
+    private static int DisbandFromGarrison(Settlement settlement, int count)
+    {
+        if (count <= 0) return 0;
+        var garrisonRoster = settlement?.Town?.GarrisonParty?.MemberRoster;
+        if (garrisonRoster == null) return 0;
+
+        var discardRoster = TroopRoster.CreateDummyTroopRoster();
+        return TroopTransferHelper.TransferFromGarrison(
+            garrisonRoster,
+            discardRoster,
+            count,
+            TroopTransferHelper.SortStrategy.LowestTierFirst);
     }
 
     private static GarrisonAllocationResult RunPassA(CapitalManager manager)
@@ -385,6 +626,21 @@ public sealed class CapitalLogisticsManager
 
     private void ExecuteMcmfInstructions(CapitalManager manager, SupplyDemandGraphResult result)
     {
+        var (accepted, skipped) = ExecuteInstructionList(manager, result.Instructions, "mcmf");
+        Logger.Info(
+            $"CapitalLogistics MCMF execution: clan={manager.OwnerClan?.StringId} " +
+            $"accepted={accepted} skipped={skipped} unmet={result.Unmet}");
+    }
+
+    /// <summary>
+    /// 派发一组路由指令。InPlace 按定居点分组、Recruiter 按 (首府,返回点,role) 分组打包成多站
+    /// 行程,Transfer 逐条派发。legacy MCMF(Pass B)与方案2 合并 solver 共用此执行层。
+    /// <paramref name="auditSource"/> 标记决策来源("mcmf" / "merged"),写进 Transfer 审计日志
+    /// 的 inputSummary 以区分两条路径。返回 (接受数, 跳过数)。
+    /// </summary>
+    private (int Accepted, int Skipped) ExecuteInstructionList(
+        CapitalManager manager, IReadOnlyList<DispatchInstruction> instructions, string auditSource)
+    {
         int accepted = 0;
         int skipped = 0;
 
@@ -393,7 +649,7 @@ public sealed class CapitalLogisticsManager
             var inPlaceInstructions = new List<InPlaceRecruitInstruction>();
             var recruiterInstructions = new List<RecruiterPartyInstruction>();
 
-            foreach (var instruction in result.Instructions)
+            foreach (var instruction in instructions)
             {
                 if (instruction == null || instruction.Count <= 0)
                 {
@@ -412,7 +668,7 @@ public sealed class CapitalLogisticsManager
                     continue;
                 }
 
-                bool ok = ExecuteMcmfInstruction(manager, instruction);
+                bool ok = ExecuteMcmfInstruction(manager, instruction, auditSource);
                 if (ok) accepted++;
                 else skipped++;
             }
@@ -440,18 +696,16 @@ public sealed class CapitalLogisticsManager
                 if (ok) accepted++;
                 else skipped++;
             }
-
-            Logger.Info(
-                $"CapitalLogistics MCMF execution: clan={manager.OwnerClan?.StringId} " +
-                $"accepted={accepted} skipped={skipped} unmet={result.Unmet}");
         }
         catch (Exception ex)
         {
-            Logger.Error($"CapitalLogisticsManager.ExecuteMcmfInstructions failed (clan={manager.OwnerClan?.StringId})", ex);
+            Logger.Error($"CapitalLogisticsManager.ExecuteInstructionList failed (clan={manager.OwnerClan?.StringId} source={auditSource})", ex);
         }
+
+        return (accepted, skipped);
     }
 
-    private bool ExecuteMcmfInstruction(CapitalManager manager, DispatchInstruction instruction)
+    private bool ExecuteMcmfInstruction(CapitalManager manager, DispatchInstruction instruction, string auditSource)
     {
         try
         {
@@ -465,7 +719,7 @@ public sealed class CapitalLogisticsManager
                         manager, x.Town, x.ReturnSettlement, x.Role, new[] { x.TargetVillage }, x.Count);
 
                 case TransferPartyInstruction x:
-                    return ExecuteTransferDispatch(manager, x);
+                    return ExecuteTransferDispatch(manager, x, auditSource);
 
                 case PrisonerConvertInstruction x:
                     Logger.Debug(
@@ -525,6 +779,39 @@ public sealed class CapitalLogisticsManager
         }
     }
 
+    /// <summary>
+    /// 路线风险分 = home 与各 waypoint 的端点 + 连线中点处、由
+    /// <see cref="HostilePartyScanner"/> 评出的最大敌对健康兵力。0 = 安全。
+    /// Part D1(派发否决)用它比阈值。评估失败返回 0(保守:宁可派也不无故卡死)。
+    /// </summary>
+    private static float RouteRiskScore(Settlement home, IEnumerable<Settlement> waypoints)
+    {
+        try
+        {
+            if (home == null) return 0f;
+            var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+            var friendly = home.MapFaction;
+            if (friendly == null) return 0f;
+            float radius = Math.Max(1f, cfg.DispatchRiskScanRadius);
+            float worst = HostilePartyScanner.HostileStrengthNear(home.GetPosition2D, radius, friendly);
+            foreach (var wp in waypoints)
+            {
+                if (wp == null) continue;
+                worst = Math.Max(worst,
+                    HostilePartyScanner.HostileStrengthNear(wp.GetPosition2D, radius, friendly));
+                var mid = (home.GetPosition2D + wp.GetPosition2D) * 0.5f;
+                worst = Math.Max(worst,
+                    HostilePartyScanner.HostileStrengthNear(mid, radius, friendly));
+            }
+            return worst;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"CapitalLogisticsManager.RouteRiskScore failed (home='{home?.StringId}')", ex);
+            return 0f;
+        }
+    }
+
     private bool ExecuteRecruiterDispatch(
         CapitalManager manager, Town town, Settlement returnSettlement,
         GenericTroopRole role, IReadOnlyList<Settlement> itinerary, int tripTarget)
@@ -538,6 +825,20 @@ public sealed class CapitalLogisticsManager
             return false;
         }
         if (itinerary == null || itinerary.Count == 0) return false;
+
+        // D1:路途有敌军 → 本 tick 不派(soft skip,下 tick 重评)。出击队不经此路径。
+        var riskCfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+        if (riskCfg.DispatchRiskEnabled)
+        {
+            float risk = RouteRiskScore(returnSettlement, itinerary);
+            if (risk >= riskCfg.DispatchRiskVetoThreshold)
+            {
+                Logger.Info(
+                    $"DISPATCH-RISK recruiter skipped: route risk {risk:F0} ≥ threshold " +
+                    $"{riskCfg.DispatchRiskVetoThreshold:F0} home='{returnSettlement?.StringId}' stops={itinerary.Count}");
+                return false;
+            }
+        }
 
         string reason =
             $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={role} stops={itinerary.Count} count={tripTarget}";
@@ -576,10 +877,26 @@ public sealed class CapitalLogisticsManager
         return ordered;
     }
 
-    private bool ExecuteTransferDispatch(CapitalManager manager, TransferPartyInstruction instruction)
+    private bool ExecuteTransferDispatch(
+        CapitalManager manager, TransferPartyInstruction instruction, string auditSource)
     {
+        // D1:路途有敌军 → 本 tick 不派(soft skip,下 tick 重评)。
+        var riskCfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+        if (riskCfg.DispatchRiskEnabled)
+        {
+            float risk = RouteRiskScore(instruction.Source, new[] { instruction.Destination });
+            if (risk >= riskCfg.DispatchRiskVetoThreshold)
+            {
+                Logger.Info(
+                    $"DISPATCH-RISK transfer skipped: route risk {risk:F0} ≥ threshold " +
+                    $"{riskCfg.DispatchRiskVetoThreshold:F0} src='{instruction.Source?.StringId}' " +
+                    $"dst='{instruction.Destination?.StringId}'");
+                return false;
+            }
+        }
+
         string reason =
-            $"mcmf transfer clan={manager.OwnerClan?.StringId} role={instruction.Role} count={instruction.Count}";
+            $"{auditSource} transfer clan={manager.OwnerClan?.StringId} role={instruction.Role} count={instruction.Count}";
         var task = new TransferTask(
             instruction.Source,
             instruction.Destination,
@@ -592,8 +909,8 @@ public sealed class CapitalLogisticsManager
         {
             DecisionAuditLogger.LogRule(
                 decisionType: "CapitalLogisticsMcmfTransfer",
-                inputSummary: $"clan={manager.OwnerClan?.StringId} src={instruction.Source.StringId} dest={instruction.Destination.StringId} role={instruction.Role} amount={instruction.Count}",
-                decisionJson: $"{{\"src\":\"{instruction.Source.StringId}\",\"dest\":\"{instruction.Destination.StringId}\",\"role\":\"{instruction.Role}\",\"amount\":{instruction.Count}}}",
+                inputSummary: $"clan={manager.OwnerClan?.StringId} src={instruction.Source.StringId} dest={instruction.Destination.StringId} role={instruction.Role} amount={instruction.Count} source={auditSource}",
+                decisionJson: $"{{\"src\":\"{instruction.Source.StringId}\",\"dest\":\"{instruction.Destination.StringId}\",\"role\":\"{instruction.Role}\",\"amount\":{instruction.Count},\"source\":\"{auditSource}\"}}",
                 accepted: true);
         }
         return ok;
@@ -630,10 +947,6 @@ public sealed class CapitalLogisticsManager
             string clanId = clan.StringId ?? "";
 
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            // I-1: 路由 manual 模式把目标 clamp 到 cfg.MaxGarrisonHardCap(见
-            // SupplyDemandGraph.BuildSettlementStates)。评估面板必须显示路由真实采用的值,
-            // 否则 DailyWageDelta 是虚构数 —— 这里用同一 hardCap 钳制 playerTarget。
-            int hardCap = Math.Max(1, cfg.MaxGarrisonHardCap);
 
             // I-2: 复用 GarrisonAllocationSolver 的满级工资口径,不再本地重实现。
             // solver 的 WagePerTroopAtMaxTier(manager, towns) 中 towns 仅作 GetCapital 失败兜底。
@@ -650,23 +963,10 @@ public sealed class CapitalLogisticsManager
                 try
                 {
                     var settlement = town.Settlement;
-                    int playerTarget;
-                    if (town.IsTown)
-                    {
-                        var rule = ConfigurationManager.GetRuleFor(town) ?? TownGarrisonRule.CreateDefault();
-                        var risk = RiskAssessmentService.Assess(settlement);
-                        float mul = risk.Level >= RiskLevel.High ? rule.WartimeMultiplier : rule.PeacetimeMultiplier;
-                        // ComputeDesiredTarget 同口径:Math.Max(1, round(...)) 再 clamp 到 hardCap。
-                        playerTarget = Math.Min(Math.Max(1, (int)Math.Round(rule.TargetTotalCount * mul)), hardCap);
-                    }
-                    else
-                    {
-                        // 城堡:BranchRule.TargetPower 是 power 口径,这里直接当目标头数展示
-                        // (评估值,非路由输入;路由侧自有 power↔头数换算)。同样 clamp 到 hardCap
-                        // 避免面板显示超出路由允许的上限。
-                        var branch = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
-                        playerTarget = Math.Min(Math.Max(1, branch.TargetPower), hardCap);
-                    }
+                    // 玩家手动目标:与合并 solver 的 manual demand 容量共用同一口径
+                    // (UnifiedGarrisonSolver.ComputeManualTarget)—— 单一来源,否则面板展示的
+                    // "玩家目标"与 solver 实采容量乖离,DailyWageDelta 也会是虚构数。
+                    int playerTarget = UnifiedGarrisonSolver.ComputeManualTarget(town, cfg);
 
                     int recommended = passA.Target.TryGetValue(settlement, out var rec) ? Math.Max(0, rec) : 0;
 
