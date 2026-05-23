@@ -4,9 +4,11 @@
 
 为 **骑马与砍杀 II：霸主 v1.3.15**（Mount & Blade II: Bannerlord v1.3.15）
 设计的端到端 **氏族级城镇治理 mod**。玩家氏族选取一个定居点作为
-**首府**（capital），mod 围绕首府全面接管：驻军构成、志愿兵招募、
-俘虏转化、跨定居点兵力调拨、巡逻、出击迎敌、金库财政、按分支配置的
-兵种构成模板。最小费用流（MCMF）求解器按可配置的 **后勤 tick**
+**首府**（capital），mod 围绕首府全面接管氏族日常自动化：驻军构成、
+志愿兵招募、俘虏转化、跨定居点兵力调拨、巡逻、出击迎敌、**氏族金币
+经济管理**（队伍种子金 / 招募人头费 / 装备升级费直接从 `Clan.Gold` 扣，
+另补一套 Hero↔Clan.Gold 转账 UI —— vanilla 没有这个）、以及按分支
+配置的兵种构成模板。最小费用流（MCMF）求解器按可配置的 **后勤 tick**
 规划氏族网络内的兵力流动（默认每 6 游戏小时一次，可调范围 1–24 小时，
 由 `FiscalAutonomy.CapitalLogisticsTickHours` 控制）。
 
@@ -37,8 +39,28 @@
   由最小费用流（min-cost-flow）求解器驱动。
 - 围绕每个所属定居点派出 **巡逻队**（Patrol parties），驱赶盗匪和小股袭击者。
 - 当敌对部队威胁定居点时派出 **出击队**（Sally parties）迎敌。
-- 从每首府的金库支付队伍工资，并把账目与氏族财政 tooltip 对齐。
 - 补充驻军时遵循每分支的 **兵种构成模板**（等级范围 / 文化筛选 / 兵种比例）。
+
+### 氏族经济
+
+mod 的经济决策也围绕首府运行。首府金库 **直接等于** vanilla `Clan.Gold`，
+不再有独立账本：
+
+- vanilla 把氏族所有城镇/城堡的每日收入（税收、商业、村庄）汇总到
+  `Clan.Gold`（不论由哪位 hero 持有），通过原版 `DefaultClanFinanceModel`
+  自动处理。mod 不拦截这部分。
+- mod 自身的支出 —— 派出队伍种子金、招募人头费、装备升级费 —— 通过
+  反射 setter 直接从 `Clan.Gold` 扣（vanilla 把 Clan.Gold 的 setter
+  声明为 internal，外部代码不能直接赋值，所以 mod 加了一层
+  `ClanGoldAccess` 反射 helper）。
+- "金币不足时暂停支出"开关（默认开）会在 `Clan.Gold` 即将变负时阻止
+  mod 主动扣款；关闭则允许 mod 把 Clan.Gold 扣到负数（与 vanilla 政策
+  献金等机制行为一致）。
+- 控制面板（游戏内 + 网页两端）都暴露存取页面：在 **Hero.MainHero.Gold**
+  和 **Clan.Gold** 之间转账 —— vanilla 没提供这层 UI，mod 自补。作坊与
+  商队收益按 vanilla 仍走主角个人 `Hero.Gold`，不进氏族金币。
+- vanilla 的 Clan Finance 标签页和 mod 的金库页显示**同一个数字**
+  （因为它们就是同一个数字）。
 
 配置方式：游戏内 **控制面板**（大地图左侧贴边的常驻竖向按钮 +
 每个所属城镇/城堡菜单的入口选项）+ 单独提供的
@@ -184,9 +206,12 @@ Layer 1  Infrastructure     ：SovereignTownsSubModule, SovereignTownsCampaignBe
                               Logger, DecisionAuditLogger + ActivityNarrator
                               + ActivityFeed（src/Audit/）
 支撑层                       ：src/Models/（GameModel 覆盖 —— 移速、军饷、
-                              容量上限、Volunteer、ClanFinance）；
-                              src/Economy/（ClanTreasury, ModTreasury,
-                              ModExpenseLedger, TreasuryUserActions）；
+                              容量上限、Volunteer；ClanFinance 现在只是
+                              SafeTownIncome 只读 helper，不再注册）；
+                              src/Economy/（ModTreasury —— 直接从 Clan.Gold
+                              扣 mod 支出；TreasuryUserActions —— Hero↔
+                              Clan.Gold 转账；ClanGoldAccess —— 反射 setter；
+                              ModExpenseLedger 开销账本）；
                               src/Settlement/（VanillaSuppressionManager,
                               VanillaPatrolSuppressor）；
                               src/Templates/（TroopTemplateModeService）；

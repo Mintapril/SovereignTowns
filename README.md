@@ -4,12 +4,15 @@
 
 An end-to-end **clan-level town governance** mod for
 **Mount & Blade II: Bannerlord v1.3.15**. The player clan elects one of
-its settlements as a **capital**, and the mod takes over garrison
-composition, volunteer recruitment, prisoner conversion, cross-settlement
-troop logistics, patrolling, sally-forth, treasury, and per-branch
-composition templates around it. A min-cost-flow (MCMF) solver plans
-troop movement across the player's settlement network on a configurable
-**logistics tick** (default every 6 game hours, configurable 1–24h via
+its settlements as a **capital**, and the mod takes over the clan's
+day-to-day automation around it: garrison composition, volunteer
+recruitment, prisoner conversion, cross-settlement troop logistics,
+patrolling, sally-forth, clan-gold-backed treasury management (party
+seed funds, recruit wages, equipment upgrades, plus a Hero↔Clan.Gold
+transfer UI vanilla doesn't ship), and per-branch composition
+templates. A min-cost-flow (MCMF) solver plans troop movement across
+the player's settlement network on a configurable **logistics tick**
+(default every 6 game hours, configurable 1–24h via
 `FiscalAutonomy.CapitalLogisticsTickHours`).
 
 > **Scope**: currently **player-clan only**. AI-clan management is
@@ -48,10 +51,31 @@ automatically:
 - Dispatches **Patrol parties** around each owned settlement to keep bandits
   and small raiders off the road.
 - Dispatches **Sally parties** when a hostile force threatens a settlement.
-- Pays party wages from a per-capital treasury and reconciles the books with
-  the clan finance tooltip.
 - Honours per-branch composition templates (tier-range / culture filter /
   troop-type ratios) when topping up garrisons.
+
+### Clan economy
+
+Mod-owned economic decisions also run from the capital. The treasury **is**
+the vanilla `Clan.Gold` — there is no separate ledger:
+
+- Vanilla aggregates income from every fief the clan owns (daily taxes,
+  trade income, village income — for every `clan.Fiefs` entry regardless of
+  which family member holds it) into `Clan.Gold` via the standard
+  `DefaultClanFinanceModel`. The mod does not intercept this.
+- Mod outflows — party seed funds, recruiter-per-head wages, equipment
+  upgrade costs — are debited straight from `Clan.Gold` (through a
+  reflection helper, since vanilla declares the setter internal).
+- A "pause when broke" feature flag (default on) holds back mod-initiated
+  spending when `Clan.Gold` would go negative; turning it off lets the mod
+  spend the clan into the red just like vanilla policies can.
+- The control panel and web panel both expose a deposit/withdraw page that
+  moves funds between **Hero.MainHero.Gold** and **Clan.Gold** — vanilla
+  has no UI for this, so the mod adds it. Workshop and caravan profits keep
+  going to your personal `Hero.Gold` per vanilla; they do not enter clan
+  gold.
+- The vanilla Clan Finance tab and the mod's treasury page show the same
+  number (because they are the same number).
 
 Configuration: an in-game **Control Panel** (a persistent vertical button
 on the left edge of the campaign map, plus an entry on every owned
@@ -202,9 +226,13 @@ Layer 1  Infrastructure     : SovereignTownsSubModule, SovereignTownsCampaignBeh
                               Logger, DecisionAuditLogger + ActivityNarrator
                               + ActivityFeed (src/Audit/)
 Supporting                  : src/Models/ (GameModel overrides — speed, wage,
-                              size-limit, volunteer, ClanFinance);
-                              src/Economy/ (ClanTreasury, ModTreasury,
-                              ModExpenseLedger, TreasuryUserActions);
+                              size-limit, volunteer; ClanFinance is a
+                              read-only SafeTownIncome helper, no longer
+                              registered);
+                              src/Economy/ (ModTreasury — debits Clan.Gold;
+                              TreasuryUserActions — Hero↔Clan.Gold transfer;
+                              ClanGoldAccess — reflection setter;
+                              ModExpenseLedger);
                               src/Settlement/ (VanillaSuppressionManager,
                               VanillaPatrolSuppressor);
                               src/Templates/ (TroopTemplateModeService);
