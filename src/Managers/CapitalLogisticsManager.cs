@@ -597,14 +597,14 @@ public sealed class CapitalLogisticsManager
 
     // ── 财政自治财务视图快照 ──────────────────────────────────────────────────
 
-    /// <summary>一次性 warn 去重：registered ClanFinanceModel 不是 STClanFinanceModel 时只警告一次。</summary>
-    private static bool _warnedFinanceModelMissing;
-
     /// <summary>
     /// 在 Campaign 主线程调用:对该受管氏族产出一份 <see cref="WebConfig.FinancialSnapshot.ClanFinance"/>
     /// (金库余额/缓冲上限/日均开销 + 各受管领地单城 P&amp;L),整体替换该 clan 在快照中的条目。
     /// 收入用 <see cref="Models.STClanFinanceModel.SafeTownIncome"/> 重算;推荐头数取调度器最近一次
     /// 求解的目标缓存。任何失败保留旧快照不变(本方法整体 try/catch)。
+    ///
+    /// 2026-05-23 Plan B：金库余额 ≡ <c>Clan.Gold</c>。TrailingDailyExpense 概念已废弃
+    /// （旧的 ClanTreasury 7-日开销环不再存在），快照中固定为 0。
     /// </summary>
     private void StashFinancialSnapshot(CapitalManager manager)
     {
@@ -615,8 +615,6 @@ public sealed class CapitalLogisticsManager
             string clanId = clan.StringId ?? "";
             if (string.IsNullOrEmpty(clanId)) return;
 
-            // clan = manager?.OwnerClan 且 clan != null → manager 必非空。
-            var treasury = manager!.Treasury;
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
 
             // 驻军工资预算:复用调度器同一口径(GarrisonAllocationSolver.ClanWageBudget)——
@@ -637,28 +635,16 @@ public sealed class CapitalLogisticsManager
                 Logger.Error($"CapitalLogisticsManager.StashFinancialSnapshot: budget compute failed (clan={clanId})", budgetEx);
             }
 
-            // STClanFinanceModel 的 SafeTownIncome 是只读重算 helper(绝不抛、绝不改金库)。
-            // 优先复用已注册的 model 实例;取不到则构造一个(无状态,构造廉价)。
-            // 取不到说明别的 mod 覆盖了 ClanFinanceModel —— 一次性 warn 提示兼容性意外
-            // (SafeTownIncome 是纯读 helper,fallback 实例本身安全)。
-            var financeModel =
-                TaleWorlds.CampaignSystem.Campaign.Current?.Models?.ClanFinanceModel as Models.STClanFinanceModel;
-            if (financeModel == null)
-            {
-                if (!_warnedFinanceModelMissing)
-                {
-                    _warnedFinanceModelMissing = true;
-                    Logger.Warn("CapitalLogisticsManager.StashFinancialSnapshot: registered ClanFinanceModel is not STClanFinanceModel (another mod overrode it); using a standalone instance for the read-only SafeTownIncome helper.");
-                }
-                financeModel = new Models.STClanFinanceModel();
-            }
+            // STClanFinanceModel 仅作为继承自 DefaultClanFinanceModel 的只读 helper（Plan B 起不再注册）。
+            // 构造廉价、无状态，直接 new 一份用于 SafeTownIncome 调用。
+            var financeModel = new Models.STClanFinanceModel();
 
             var cf = new WebConfig.FinancialSnapshot.ClanFinance
             {
                 ClanId = clanId,
                 ClanName = clan.Name?.ToString() ?? clanId,
-                TreasuryBalance = treasury?.Balance ?? 0,
-                TrailingDailyExpense = treasury?.TrailingDailyExpense() ?? 0,
+                TreasuryBalance = clan.Gold,
+                TrailingDailyExpense = 0,  // Plan B：开销环概念已废弃
                 GarrisonWageBudget = garrisonWageBudget,
             };
 

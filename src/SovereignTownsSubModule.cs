@@ -164,8 +164,11 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
                 campaignStarter.AddModel(new SovereignTowns.Models.STPartySpeedModel());
                 campaignStarter.AddModel(new SovereignTowns.Models.STPartyWageModel());
                 campaignStarter.AddModel(new SovereignTowns.Models.STVolunteerModel());
-                campaignStarter.AddModel(new SovereignTowns.Models.STClanFinanceModel());
-                if (_loggerInitialized) Logger.Info("Registered 5 ST GameModels (PartySize/Speed/Wage/Volunteer/ClanFinance)");
+                // 2026-05-23 Plan B：STClanFinanceModel 不再作为 GameModel 注册 —— vanilla
+                // DefaultClanFinanceModel 是活跃模型；STClanFinanceModel 仅作为继承自
+                // DefaultClanFinanceModel 的只读 helper 让 CapitalLogisticsManager 复用
+                // 其 protected income 计算方法。
+                if (_loggerInitialized) Logger.Info("Registered 4 ST GameModels (PartySize/Speed/Wage/Volunteer)");
             }
             catch (System.Exception ex)
             {

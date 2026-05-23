@@ -64,7 +64,7 @@ public static class GarrisonAllocationSolver
             // 战时上调:clan 与任意势力交战 且 金库有余额 → 取 max(常规, 全额充足驻军工资)。
             // configFull 用各城 adequate 头数(与 Solve 主循环同一 floor/hardCap/adequate 口径),
             // 确保战时预算恰好够养满价值层 —— 而不是被 manual-mode 旋钮间接放大或卡死。
-            if (IsClanAtWar(clan) && manager.Treasury != null && manager.Treasury.Balance > 0)
+            if (IsClanAtWar(clan) && clan.Gold > 0)
             {
                 long fullGarrisonHeads = 0;
                 foreach (var t in towns)

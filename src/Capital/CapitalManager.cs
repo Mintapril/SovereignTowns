@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
 using SovereignTowns.Audit;
-using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using SovereignTowns.Patrol;
-using SovereignTowns.Recruitment;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -55,9 +53,6 @@ public sealed class CapitalManager
     /// <summary>本氏族的巡逻调度器（B7.26）。与 manager 同生命周期。</summary>
     private readonly ClanPatrolScheduler _patrolScheduler;
 
-    /// <summary>本氏族的金库（余额 + 7 日开销环）。经 SyncData st_treasuries_json 持久化。</summary>
-    private ClanTreasury _treasury = new ClanTreasury();
-
     public CapitalManager(PartyLifecycleManager lifecycle, Clan clan)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
@@ -73,16 +68,6 @@ public sealed class CapitalManager
 
     /// <summary>本氏族的巡逻调度器（B7.26 全氏族巡逻）。永不为 null。</summary>
     public ClanPatrolScheduler PatrolScheduler => _patrolScheduler;
-
-    /// <summary>本氏族的金库（余额 + 7 日开销环）。永不为 null。</summary>
-    public ClanTreasury Treasury => _treasury;
-
-    /// <summary>
-    /// SyncData(load) 路径用 —— 从持久化字符串恢复金库状态。
-    /// 必须在 <see cref="Initialize"/> 之前由 <see cref="CapitalRegistry.EnsureForClan"/> 调用。
-    /// null / 空串安全：退化为空金库。
-    /// </summary>
-    public void RestoreTreasuryFrom(string? s) => _treasury = ClanTreasury.Deserialize(s);
 
     /// <summary>当前首府的 <see cref="Town"/>，或 null（无首府 / 该 settlement 已失效）。</summary>
     public Town? GetCapital()

@@ -100,11 +100,10 @@ public sealed class RecruitmentDispatcher
                 var ownerClan = homeTown.OwnerClan;
                 if (ownerClan != null && GarrisonAllocationSolver.IsClanAtWar(ownerClan))
                 {
-                    var mgr = CapitalRegistry.Instance?.GetForClan(ownerClan);
-                    if (mgr != null && mgr.Treasury.Balance <= 0)
+                    if (ownerClan.Gold <= 0)
                     {
                         Logger.Info(
-                            $"  RecruitmentDispatcher: dispatch paused for '{homeTown.Name}' — clan at war + treasury balance={mgr.Treasury.Balance}");
+                            $"  RecruitmentDispatcher: dispatch paused for '{homeTown.Name}' — clan at war + Clan.Gold={ownerClan.Gold}");
                         return false;
                     }
                 }

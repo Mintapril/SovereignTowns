@@ -190,12 +190,11 @@ public static class GarrisonXpInjector
                     var ownerClan = town.OwnerClan;
                     if (ownerClan != null && GarrisonAllocationSolver.IsClanAtWar(ownerClan))
                     {
-                        var mgr = CapitalRegistry.Instance?.GetForClan(ownerClan);
-                        if (mgr != null && mgr.Treasury.Balance <= 0)
+                        if (ownerClan.Gold <= 0)
                         {
                             skipUpgrade = true;
                             Logger.Info(
-                                $"GarrisonXpInjector: upgrade paused for '{settlement.StringId}' — clan at war + treasury balance={mgr.Treasury.Balance}");
+                                $"GarrisonXpInjector: upgrade paused for '{settlement.StringId}' — clan at war + Clan.Gold={ownerClan.Gold}");
                         }
                     }
                 }

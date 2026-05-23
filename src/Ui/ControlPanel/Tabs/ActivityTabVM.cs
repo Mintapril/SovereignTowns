@@ -118,11 +118,11 @@ public sealed class ActivityTabVM : ViewModel
 
         TreasuryActionTitle = ControlPanelLoc.Tr("金库存取", "Treasury deposit / withdraw");
         TreasuryActionHint  = ControlPanelLoc.Tr(
-            "金库与你的个人金币之间不再自动结算 —— 收入只单向流入金库,工资也只从金库支付。要在两者之间转账请用以下按钮。",
-            "The treasury no longer auto-settles with your personal gold — income flows in only, garrison wages flow out only. Use the buttons below to move funds between the two.");
+            "本金库 ≡ vanilla 氏族金币（Clan.Gold）。vanilla 不提供主角金币 ↔ 氏族金币的转账 UI，本面板补这层。",
+            "This treasury IS the vanilla clan gold (Clan.Gold). Vanilla provides no UI to transfer between your personal hero gold and clan gold; these buttons fill that gap.");
         TreasurySourceNote = ControlPanelLoc.Tr(
-            "收入来源：受管城镇/城堡的每日税收、商业收入与所属村庄收入(原本进 vanilla 氏族金币,由 Mod 拦截转入本金库)。支出:驻军工资、派出队伍工资、装备升级费。\n注:作坊和商队收益不在内 —— 它们仍按 vanilla 走主角个人金币,不进本金库。",
-            "Income sources: daily taxes, trade income, and village income from your managed towns and castles (intercepted from your vanilla clan gold and routed here). Outflows: garrison wages, dispatched-party wages, and equipment upgrades.\nNote: workshop and caravan profits are not included — those still flow into your personal hero gold via vanilla.");
+            "收入来源（vanilla 自动路径）：氏族所有城镇/城堡的每日税收、商业收入、村庄收入 —— 不分持有 hero，全氏族汇入 Clan.Gold。\n支出（vanilla + Mod）：vanilla 处理驻军应急补贴、政策献金、债务结算等；Mod 处理派出队伍种子金、招募人头费、装备升级费 —— 都直接从 Clan.Gold 扣。\n注：作坊与商队收益按 vanilla 直接进主角 Hero.Gold，不进氏族金币，本金库也不到。",
+            "Income (vanilla auto): daily taxes, trade income, and village income from every town/castle the clan owns — irrespective of which family member holds it, all flow into Clan.Gold.\nOutflows (vanilla + Mod): vanilla handles garrison wage shortfalls, policy contributions, debt settlement; the Mod handles dispatched-party seed funds, recruit-per-head wages, and equipment upgrades — all debited from Clan.Gold directly.\nNote: workshop and caravan profits go straight into your personal Hero.Gold via vanilla; they do not enter clan gold or this treasury.");
         DepositSmallLabel    = ControlPanelLoc.Tr("存入 100",   "Deposit 100");
         DepositMediumLabel   = ControlPanelLoc.Tr("存入 1000",  "Deposit 1000");
         DepositLargeLabel    = ControlPanelLoc.Tr("存入 10000", "Deposit 10000");
@@ -163,9 +163,8 @@ public sealed class ActivityTabVM : ViewModel
     {
         try
         {
-            var clan = Clan.PlayerClan;
-            if (clan == null) return 0;
-            return Capital.CapitalRegistry.Instance?.GetForClan(clan)?.Treasury?.Balance ?? 0;
+            // 2026-05-23 Plan B：首府金库 ≡ vanilla Clan.Gold。
+            return Clan.PlayerClan?.Gold ?? 0;
         }
         catch { return 0; }
     }
@@ -204,17 +203,10 @@ public sealed class ActivityTabVM : ViewModel
             return;
         }
 
-        // 大额警告:amount > min(balance × 0.5, TrailingDailyExpense × 7) → 首次提示,需二次点击同金额。
+        // 大额警告：amount > balance × 0.5 → 首次提示，需二次点击同金额。
+        // Plan B 起 TrailingDailyExpense 概念已废弃，门控仅按余额半数。
         long bal = ResolveTreasuryBalance();
-        long avg = 0;
-        try
-        {
-            var clan = Clan.PlayerClan;
-            if (clan != null)
-                avg = Capital.CapitalRegistry.Instance?.GetForClan(clan)?.Treasury?.TrailingDailyExpense() ?? 0;
-        }
-        catch { avg = 0; }
-        long warnThreshold = Math.Min(bal / 2, avg * 7);
+        long warnThreshold = bal / 2;
         if (warnThreshold > 0 && amount > warnThreshold && _pendingLargeWithdraw != amount)
         {
             _pendingLargeWithdraw = amount;
@@ -262,14 +254,12 @@ public sealed class ActivityTabVM : ViewModel
             HasFiscal = cf != null;
             if (cf == null) return;
 
-            // 氏族概览（2 列）。
+            // 氏族概览（2 列）。Plan B 起金库 ≡ Clan.Gold，TrailingDailyExpense 行已移除。
             _clanRows.Add(new FinanceRowVM(
-                ControlPanelLoc.Tr("金库余额", "Treasury balance"), cf.TreasuryBalance + "d"));
+                ControlPanelLoc.Tr("金库余额（= 氏族金币）", "Treasury balance (= clan gold)"), cf.TreasuryBalance + "d"));
             _clanRows.Add(new FinanceRowVM(
                 ControlPanelLoc.Tr("驻军工资预算", "Garrison wage budget"),
                 cf.GarrisonWageBudget + "d/" + ControlPanelLoc.Tr("日", "day")));
-            _clanRows.Add(new FinanceRowVM(
-                ControlPanelLoc.Tr("近 7 日日均开销", "Trailing daily expense"), cf.TrailingDailyExpense + "d"));
 
             // 各领地状态表头 + 每城/堡行 + 合计行（4 列）。
             _holdingRows.Add(new FinanceRowVM(

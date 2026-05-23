@@ -45,12 +45,6 @@ public sealed class CapitalRegistry
     /// </summary>
     private Dictionary<string, string>? _pendingCapitals;
 
-    /// <summary>
-    /// Task 2：由 SovereignTownsCampaignBehavior.SyncData 在加载阶段灌入的
-    /// clanStringId → treasury 序列化串映射；在 Initialize / EnsureForAllAiClans 内消费完即清空。
-    /// </summary>
-    private Dictionary<string, string>? _pendingTreasuries;
-
     public CapitalRegistry(PartyLifecycleManager lifecycle)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
@@ -94,8 +88,6 @@ public sealed class CapitalRegistry
             // 消费完毕 → 清空。后续 EnsureForClan 调用（OnSettlementOwnerChanged 内 AI 获新城）
             // 不再走持久化分支，按规则随机/获城自动选首府即可。
             _pendingCapitals = null;
-            // Task 2：同样清空金库暂存。
-            _pendingTreasuries = null;
 
             Instance = this;
 
@@ -145,40 +137,6 @@ public sealed class CapitalRegistry
             Logger.Error("CapitalRegistry.ExportCapitals failed", ex);
         }
         return dict;
-    }
-
-    /// <summary>
-    /// Task 2：导出当前所有受管 clan 的 clanStringId → treasury 序列化串映射，
-    /// 供 SovereignTownsCampaignBehavior.SyncData 在 IsSaving 阶段序列化写盘。
-    /// </summary>
-    public Dictionary<string, string> ExportTreasuries()
-    {
-        var dict = new Dictionary<string, string>();
-        try
-        {
-            foreach (var kv in _managers)
-            {
-                var clan = kv.Key;
-                var mgr = kv.Value;
-                if (clan == null || mgr == null) continue;
-                dict[clan.StringId] = mgr.Treasury.Serialize();
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("CapitalRegistry.ExportTreasuries failed", ex);
-        }
-        return dict;
-    }
-
-    /// <summary>
-    /// Task 2：由 SovereignTownsCampaignBehavior.SyncData 在加载阶段调用，
-    /// 把磁盘上的 clan→treasury 映射暂存。<see cref="Initialize"/> 会消费此 dict 并立即清空。
-    /// 传 null / 空字典都安全：退化为空金库。
-    /// </summary>
-    public void RestoreTreasuries(Dictionary<string, string>? dict)
-    {
-        _pendingTreasuries = dict;
     }
 
     /// <summary>查询某 clan 的 CapitalManager；不存在返回 null（不主动创建，避免误打开）。</summary>
@@ -432,11 +390,6 @@ public sealed class CapitalRegistry
         if (!string.IsNullOrEmpty(pendingStringId))
         {
             mgr.RestoreFromStringId(pendingStringId);
-        }
-        // Task 2：在 Initialize 之前注入持久化金库（若存在）。
-        if (_pendingTreasuries != null && _pendingTreasuries.TryGetValue(clan.StringId, out var ts))
-        {
-            mgr.RestoreTreasuryFrom(ts);
         }
         mgr.Initialize();
         _managers[clan] = mgr;
