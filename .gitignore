@@ -26,6 +26,13 @@ _research/
 **/_research/
 
 # =============================================================================
+# Internal documentation — design specs, behaviour guides, audit reports,
+# planning notes. Local-only by project policy (only README.md ships).
+# =============================================================================
+audits/
+docs/
+
+# =============================================================================
 # AI tooling artefacts — local-only conventions / scratch state, not project code.
 # Anything Claude Code / Anthropic Agent SDK / similar drops in the repo.
 # =============================================================================
