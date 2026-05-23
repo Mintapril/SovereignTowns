@@ -931,6 +931,12 @@
                                                     <TextWidget IsVisible="@HasFiscal"
                                                                 WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                 Brush="SPOptions.Slider.Value.Text" Text="@TreasuryActionHint"
+                                                                MarginBottom="2" />
+                                                    <!-- 金币来源说明（2026-05-23）。让玩家清楚金库收入来自哪里、
+                                                         以及作坊/商队收益不在内（vanilla 走 Hero.Gold）。 -->
+                                                    <TextWidget IsVisible="@HasFiscal"
+                                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="SPOptions.Slider.Value.Text" Text="@TreasurySourceNote"
                                                                 MarginBottom="6" />
 
                                                     <!-- 存款按钮行 -->

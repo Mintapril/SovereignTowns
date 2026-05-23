@@ -76,6 +76,7 @@ public sealed class ActivityTabVM : ViewModel
     // ── 金库主动存取 ──
     [DataSourceProperty] public string TreasuryActionTitle { get; }
     [DataSourceProperty] public string TreasuryActionHint { get; }
+    [DataSourceProperty] public string TreasurySourceNote { get; }
     [DataSourceProperty] public string DepositSmallLabel { get; }
     [DataSourceProperty] public string DepositMediumLabel { get; }
     [DataSourceProperty] public string DepositLargeLabel { get; }
@@ -119,6 +120,9 @@ public sealed class ActivityTabVM : ViewModel
         TreasuryActionHint  = ControlPanelLoc.Tr(
             "金库与你的个人金币之间不再自动结算 —— 收入只单向流入金库,工资也只从金库支付。要在两者之间转账请用以下按钮。",
             "The treasury no longer auto-settles with your personal gold — income flows in only, garrison wages flow out only. Use the buttons below to move funds between the two.");
+        TreasurySourceNote = ControlPanelLoc.Tr(
+            "收入来源：受管城镇/城堡的每日税收、商业收入与所属村庄收入(原本进 vanilla 氏族金币,由 Mod 拦截转入本金库)。支出:驻军工资、派出队伍工资、装备升级费。\n注:作坊和商队收益不在内 —— 它们仍按 vanilla 走主角个人金币,不进本金库。",
+            "Income sources: daily taxes, trade income, and village income from your managed towns and castles (intercepted from your vanilla clan gold and routed here). Outflows: garrison wages, dispatched-party wages, and equipment upgrades.\nNote: workshop and caravan profits are not included — those still flow into your personal hero gold via vanilla.");
         DepositSmallLabel    = ControlPanelLoc.Tr("存入 100",   "Deposit 100");
         DepositMediumLabel   = ControlPanelLoc.Tr("存入 1000",  "Deposit 1000");
         DepositLargeLabel    = ControlPanelLoc.Tr("存入 10000", "Deposit 10000");
