@@ -49,8 +49,8 @@ public sealed class BranchesTabVM : ViewModel
             "Auto garrison dispatch mode is active: branch target strength is decided by the central dispatcher from defensive value and clan budget, so the \"Target strength\" knob below is hidden. To set it manually, enable \"Allow manual garrison targets\" under Strategy → Fiscal Autonomy.");
         Title = ControlPanelLoc.Tr("非首府驻军", "Branch garrison");
         Intro = ControlPanelLoc.Tr(
-            "下面两项仅作用于首府拥有者本人名下的非首府城镇 / 城堡。同氏族其他领主名下的非首府按 vanilla 行为自行补兵（不受这两项约束），但其驻军仍可被调拨队抽到别处。AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。",
-            "The two settings below apply only to the capital owner in person's non-capital towns / castles. Branches held by other lords of the same clan reinforce by vanilla behaviour (not bound by these two), though their garrisons can still be drawn elsewhere by transfer parties. An AI clan's target strength is computed dynamically by the vanilla formula (this setting is ignored for it).");
+            "下面两项作用于玩家氏族所有非首府城镇 / 城堡。AI 氏族的目标兵力按 vanilla 公式动态计算（忽略此处设定）。",
+            "The two settings below apply to all non-capital towns / castles of the player clan. An AI clan's target strength is computed dynamically by the vanilla formula (this setting is ignored for it).");
 
         _targetPowerSpec = new SpecEntry
         {

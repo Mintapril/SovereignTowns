@@ -122,7 +122,8 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 _teamFunds + 出发地买 3 天粮"。
     /// 玩家氏族：走 ModTreasury（受 PauseSpendingWhenBroke 门控，写 ledger + audit），扣款成功 SetTeamFunds(DefaultSeedGold)；
     ///           扣款失败返 false，调用方应回滚兵 + 销毁 party。
-    /// AI 氏族：从 home owner hero.Gold 扣（vanilla 路径，按可用余额取），InitTeamFundsFromHomeOwner 内部不会失败（最低 0 资金继续）；
+    /// AI 氏族：从 home.OwnerClan.Leader.Gold 扣（vanilla 路径，按可用余额取；Clan.Gold ≡ Leader.Gold，
+    ///         vanilla 没有 per-fief Hero 持有人）。InitTeamFundsFromHomeOwner 内部不会失败（最低 0 资金继续）；
     ///         返 true。
     /// 创建后立即在 origin 用资金 BuyFoodAtSettlement(3 天)。
     /// </summary>

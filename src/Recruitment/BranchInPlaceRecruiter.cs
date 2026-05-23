@@ -31,17 +31,9 @@ public static class BranchInPlaceRecruiter
             if (registry != null)
             {
                 if (!registry.IsManagedClan(branch.OwnerClan)) return 0;
-
-                // BranchRule 仅对"首府拥有者本人"持有的非首府生效；
-                // 同氏族其他领主名下的非首府按 vanilla 行为补兵，ST 不在此招募。
-                // 防御性回退：任一 Owner 为 null 时不过滤，保留原行为。
-                var capital = registry.GetCapitalForClan(branch.OwnerClan);
-                if (capital != null && capital != branch)
-                {
-                    var capitalOwner = capital.Owner;
-                    var branchOwner = branch.Owner;
-                    if (capitalOwner != null && branchOwner != null && branchOwner != capitalOwner) return 0;
-                }
+                // Vanilla 不存在 "clan 内 hero 各自持城" 概念（CLAUDE.md #6）：clan.Fiefs 全部
+                // 归 Clan.Leader 一个账户。所以 branch 一律走 mod 招募，无需按 "is the capital
+                // owner's personal fief vs another lord's fief" 区分。
             }
             else if (branch.OwnerClan != Clan.PlayerClan) return 0;
             if (branch.IsUnderSiege) return 0;
