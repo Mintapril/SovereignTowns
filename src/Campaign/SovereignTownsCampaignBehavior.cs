@@ -171,8 +171,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _pendingCapitals = null;
         }
 
-        // 2026-05-23 Plan B：金库余额不再独立持久化 —— 首府金库 ≡ vanilla Clan.Gold，
-        // 由 vanilla Saveable 系统自动保存 / 恢复。原 st_treasuries_json 块已删除。
+        // 2026-05-23 Plan B：mod 不再持久化任何金库余额 —— vanilla 里"氏族金库"并不存在,
+        // Clan.Gold 是计算属性 = Leader.Gold,vanilla Saveable 系统会自动保存 leader hero。
+        // 原 st_treasuries_json 块已删除。
     }
 
     private void OnSessionLaunched(CampaignGameStarter campaignGameStarter)

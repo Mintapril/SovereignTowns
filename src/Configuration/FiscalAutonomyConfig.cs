@@ -11,10 +11,10 @@ public enum ForecastMode
 /// <summary>财政自治 + 中央驻军调度器配置。详见两份设计文档。</summary>
 public sealed class FiscalAutonomyConfig
 {
-    // ── 金库 / 预算 ──
-    // 注:玩家氏族金库改为完全手动 —— 收入单向流入金库,工资单向流出金库;
-    // 不再有溢出回流家族金币或 Hero.Gold 兜底欠饷的自动通道。玩家需在控制面板/WebUI
-    // 主动存款/取款来调度个人金币与金库间的资金流。详见 Economy/TreasuryUserActions。
+    // ── 工资预算 ──
+    // 调度器从 Clan.Gold（= clan.Leader.Gold）当前余额按比例计算每 tick 可用的驻军工资预算。
+    // 注:vanilla 没有"氏族金库"独立账本 —— Clan.Gold 即 Leader.Gold,所以"预算"不是抽出
+    // 一块封闭账户,只是约束求解器每 tick 不要让推荐驻军超过本比例对应的工资。
     public float GarrisonWageBudgetRatio { get; set; } = 0.55f;
 
     // ── 后勤评估节奏 ──

@@ -265,8 +265,6 @@ public static class WebConfigServer
                 case "GET" when path == "/api/status":      WebConfigEndpoints.GetStatus(ctx); return;
                 case "GET" when path == "/api/specs":       WebConfigEndpoints.GetSpecs(ctx); return;
                 case "POST" when path == "/api/reload":     WebConfigEndpoints.PostReload(ctx); return;
-                case "POST" when path == "/api/treasury/deposit":  WebConfigEndpoints.PostTreasuryDeposit(ctx); return;
-                case "POST" when path == "/api/treasury/withdraw": WebConfigEndpoints.PostTreasuryWithdraw(ctx); return;
             }
 
             // 6) Static file fallback (only GET) — served from Modules/SovereignTowns/WebUI/.

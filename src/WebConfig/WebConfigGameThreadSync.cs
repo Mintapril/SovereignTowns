@@ -17,8 +17,8 @@ namespace SovereignTowns.WebConfig;
 /// queued here and replayed on the campaign thread inside <see cref="Drain"/> — never
 /// invoked directly from the HTTP thread.
 ///
-/// 2026-05-23: 增加 <see cref="EnqueueAction"/> 通用主线程 action 排队 + 等待完成(用于
-/// HTTP /api/treasury/deposit 等需在主线程做扣金币操作并把结果同步给 HTTP response 的场景)。
+/// 2026-05-23: 提供 <see cref="EnqueueAction"/> 通用主线程 action 排队 + 等待完成,供未来需要
+/// 在主线程触碰 vanilla 对象并把结果同步给 HTTP response 的 endpoint 复用(当前无在用 endpoint)。
 /// </summary>
 internal static class WebConfigGameThreadSync
 {
