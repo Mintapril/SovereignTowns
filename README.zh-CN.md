@@ -25,8 +25,10 @@
 - 从每首府的金库支付队伍工资，并把账目与氏族财政 tooltip 对齐。
 - 补充驻军时遵循每分支的 **兵种构成模板**（等级范围 / 文化筛选 / 兵种比例）。
 
-配置方式：游戏内 **控制面板**（campaign 地图 Esc 菜单按钮）+ 单独启动的
-**网页控制面板**（`http://127.0.0.1:<端口>/`，编辑能力更强）。
+配置方式：游戏内 **控制面板**（大地图左侧贴边的常驻竖向按钮 +
+每个所属城镇/城堡菜单的入口选项）+ 单独提供的
+**网页控制面板**（`http://127.0.0.1:<端口>/`，默认端口 `41763`，
+冲突时自动递增；编辑能力更强）。
 
 UI 完整本地化：**英文** 和 **简体中文**。
 
@@ -47,8 +49,13 @@ UI 完整本地化：**英文** 和 **简体中文**。
 └── README.zh-CN.md
 ```
 
-`_research/`（反编译的 vanilla + 参考 mod 源码）、`audits/`、`docs/` 仅在
-本地保留，不入 git（第三方版权 + 仓库瘦身 + 文档仅本地维护）。
+以下目录可能在本地存在，但不入 git（第三方版权 / 仓库瘦身 / 内部文档）：
+
+- `_research/` —— 反编译的 vanilla + 参考 mod 源码（查 TaleWorlds API 签名时
+  作为权威参考，仅本地保留）。
+- `audits/` —— 设计规格、重构 handoff、backlog 笔记。
+- `docs/` —— 行为指南、计划归档。
+- `.claude/` —— AI 工具的本地配置/缓存。
 
 ## 构建
 
@@ -116,20 +123,44 @@ dotnet build src\SovereignTowns.csproj -c Debug `
 
 ```
 Layer 4  UI                 ：DiagnosticGameMenu, STPartyDialogRegistration,
-                              ControlPanel (Gauntlet), WebConfig (HTTP)
-Layer 3  Dispatchers        ：CapitalManager ★, CapitalLogisticsManager,
-                              RecruitmentDispatcher, PrisonerRecruitmentManager,
-                              PatrolDispatcher, TransferDispatcher,
-                              SallyDispatcher, PartyLifecycleManager
-Layer 3b Component instances：StPartyComponent (abstract base),
+                              ControlPanel (Gauntlet, src/Ui/),
+                              WebConfig (HTTP, src/WebConfig/)
+Layer 3  Dispatchers        ：CapitalManager ★ (src/Capital/),
+                              CapitalLogisticsManager (src/Managers/),
+                              RecruitmentDispatcher + PrisonerRecruitmentManager
+                              + CapitalInPlaceRecruiter (src/Recruitment/),
+                              PatrolDispatcher (src/Patrol/),
+                              TransferDispatcher (src/Transfer/),
+                              SallyDispatcher (src/SallyForth/),
+                              PartyLifecycleManager (src/Lifecycle/)
+Layer 3b Component instances：StPartyComponent（抽象基类, src/Parties/）,
                               StPatrolPartyComponent / StRecruiterPartyComponent /
                               StTransferPartyComponent / StSallyPartyComponent
 Layer 2  Evaluators         ：RiskAssessmentService, TroopCompositionEvaluator,
                               TroopClassifier, TroopTemplateMatcher,
-                              GenericTroopMatcher, HostilePartyScanner
+                              GenericTroopMatcher, HostilePartyScanner,
+                              GarrisonPowerEvaluator, HorizonForecast
+                              （src/Evaluators/）
+Layer 2.5 算法核              ：MinCostFlow, UnifiedGarrisonSolver,
+                              GarrisonAllocationSolver, DispatchInstruction,
+                              RecruitmentTopology（src/Algorithm/）
+                              —— 被 CapitalLogisticsManager 调用以规划
+                              招募 + 跨定居点调拨。
 Layer 1  Infrastructure     ：SovereignTownsSubModule, SovereignTownsCampaignBehavior,
                               SovereignTownsTypeDefiner, ConfigurationManager,
-                              Logger, DecisionAuditLogger
+                              Logger, DecisionAuditLogger + ActivityNarrator
+                              + ActivityFeed（src/Audit/）
+支撑层                       ：src/Models/（GameModel 覆盖 —— 移速、军饷、
+                              容量上限、Volunteer、ClanFinance）；
+                              src/Economy/（ClanTreasury, ModTreasury,
+                              ModExpenseLedger, TreasuryUserActions）；
+                              src/Settlement/（VanillaSuppressionManager,
+                              VanillaPatrolSuppressor）；
+                              src/Templates/（TroopTemplateModeService）；
+                              src/Upgrades/（TroopUpgradeService,
+                              GarrisonXpInjector）；
+                              src/Patches/（Harmony 补丁）；
+                              src/Coordination/, src/Common/（工具/助手）。
 ```
 
 ★ **CapitalManager** 是运行时语义核心：每个受管理氏族至多一个首府。

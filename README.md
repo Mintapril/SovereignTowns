@@ -32,9 +32,11 @@ cadence then automatically:
 - Honours per-branch composition templates (tier-range / culture filter /
   troop-type ratios) when topping up garrisons.
 
-Configuration: an in-game **Control Panel** (Esc-menu button on the campaign
-map) plus a separately-launched **web control panel** at
-`http://127.0.0.1:<port>/` for richer editing.
+Configuration: an in-game **Control Panel** (a persistent vertical button
+on the left edge of the campaign map, plus an entry on every owned
+town/castle menu) and a separately-served **web control panel** at
+`http://127.0.0.1:<port>/` (default `41763`, auto-increments on conflict)
+for richer editing.
 
 UI is fully localised in **English** and **Simplified Chinese**.
 
@@ -49,15 +51,20 @@ UI is fully localised in **English** and **Simplified Chinese**.
 │   ├── GUI/Prefabs/             # Gauntlet UI prefabs (control panel)
 │   ├── ModuleData/Languages/    # EN + CNs localization
 │   └── WebUI/                   # web control panel bundle (HTML/JS/CSS)
-├── docs/                        # behaviour guide + planning notes
-├── audits/                      # design specs, refactor handoffs, backlogs
 ├── Directory.Build.props
 ├── LICENSE
-└── README.md
+├── README.md
+└── README.zh-CN.md
 ```
 
-`_research/` (decompiled vanilla + reference mods) is local-only and excluded
-from git — third-party copyright + repository bloat.
+The following directories may exist locally but are excluded from git
+(third-party copyright, repo bloat, or internal-only documentation):
+
+- `_research/` — decompiled vanilla + reference mods (kept locally as the
+  authoritative source when looking up TaleWorlds API signatures).
+- `audits/` — design specs, refactor handoffs, backlog notes.
+- `docs/` — behaviour guide + planning notes.
+- `.claude/` — AI-tooling scratch state.
 
 ## Build
 
@@ -126,20 +133,44 @@ Manager-to-Manager coupling goes through `SovereignTownsCampaignBehavior`
 
 ```
 Layer 4  UI                 : DiagnosticGameMenu, STPartyDialogRegistration,
-                              ControlPanel (Gauntlet), WebConfig (HTTP)
-Layer 3  Dispatchers        : CapitalManager ★, CapitalLogisticsManager,
-                              RecruitmentDispatcher, PrisonerRecruitmentManager,
-                              PatrolDispatcher, TransferDispatcher,
-                              SallyDispatcher, PartyLifecycleManager
-Layer 3b Component instances: StPartyComponent (abstract base),
+                              ControlPanel (Gauntlet, src/Ui/),
+                              WebConfig (HTTP, src/WebConfig/)
+Layer 3  Dispatchers        : CapitalManager ★ (src/Capital/),
+                              CapitalLogisticsManager (src/Managers/),
+                              RecruitmentDispatcher + PrisonerRecruitmentManager
+                              + CapitalInPlaceRecruiter (src/Recruitment/),
+                              PatrolDispatcher (src/Patrol/),
+                              TransferDispatcher (src/Transfer/),
+                              SallyDispatcher (src/SallyForth/),
+                              PartyLifecycleManager (src/Lifecycle/)
+Layer 3b Component instances: StPartyComponent (abstract base, src/Parties/),
                               StPatrolPartyComponent / StRecruiterPartyComponent /
                               StTransferPartyComponent / StSallyPartyComponent
 Layer 2  Evaluators         : RiskAssessmentService, TroopCompositionEvaluator,
                               TroopClassifier, TroopTemplateMatcher,
-                              GenericTroopMatcher, HostilePartyScanner
+                              GenericTroopMatcher, HostilePartyScanner,
+                              GarrisonPowerEvaluator, HorizonForecast
+                              (src/Evaluators/)
+Layer 2.5 Algorithm kernels : MinCostFlow, UnifiedGarrisonSolver,
+                              GarrisonAllocationSolver, DispatchInstruction,
+                              RecruitmentTopology (src/Algorithm/)
+                              — consumed by CapitalLogisticsManager to plan
+                              recruitment + cross-settlement transfers.
 Layer 1  Infrastructure     : SovereignTownsSubModule, SovereignTownsCampaignBehavior,
                               SovereignTownsTypeDefiner, ConfigurationManager,
-                              Logger, DecisionAuditLogger
+                              Logger, DecisionAuditLogger + ActivityNarrator
+                              + ActivityFeed (src/Audit/)
+Supporting                  : src/Models/ (GameModel overrides — speed, wage,
+                              size-limit, volunteer, ClanFinance);
+                              src/Economy/ (ClanTreasury, ModTreasury,
+                              ModExpenseLedger, TreasuryUserActions);
+                              src/Settlement/ (VanillaSuppressionManager,
+                              VanillaPatrolSuppressor);
+                              src/Templates/ (TroopTemplateModeService);
+                              src/Upgrades/ (TroopUpgradeService,
+                              GarrisonXpInjector);
+                              src/Patches/ (Harmony patches);
+                              src/Coordination/, src/Common/ (helpers).
 ```
 
 ★ **CapitalManager** is central: each managed clan has at most one "capital"
