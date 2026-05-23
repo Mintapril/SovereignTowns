@@ -2,13 +2,23 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Automated clan town garrison / recruitment / patrol / cross-town transfer /
-sally-forth management for **Mount & Blade II: Bannerlord v1.3.15**.
+An end-to-end **clan-level town governance** mod for
+**Mount & Blade II: Bannerlord v1.3.15**. Each managed clan elects one of
+its settlements as a **capital**, and the mod takes over garrison
+composition, volunteer recruitment, prisoner conversion, cross-settlement
+troop logistics, patrolling, sally-forth, treasury, and per-branch
+composition templates — for the player clan *and* for every AI clan that
+owns a capital. A min-cost-flow (MCMF) solver plans daily troop movement
+across the clan's settlement network; vanilla volunteer-recruitment is
+suppressed for AI clans and routed exclusively through the mod's channels.
 
-Designed as a **complete replacement** for `ImprovedGarrisons` (IG) and
-`GarrisonDoSomething` (GDS) — both are listed in `<IncompatibleModules>` and
-detected at boot. Compatible with **RBM** (troop classification is not
-`stringId`-dependent).
+> **Compatibility**: SovereignTowns governs the same vanilla surfaces —
+> garrison composition, patrol/sally parties, AI-clan recruitment — that
+> `ImprovedGarrisons` (IG) and `GarrisonDoSomething` (GDS) also modify.
+> Running either alongside this mod would race for the same state, so both
+> are listed in `<IncompatibleModules>` and the launcher refuses to start
+> with either enabled. Compatible with **RBM** (troop classification is
+> not `stringId`-dependent).
 
 > **Status**: pre-release rapid iteration (v0.0.1). Save-format and
 > `global.json` schema may break between commits — no backwards-compatibility

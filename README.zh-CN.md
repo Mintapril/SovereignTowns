@@ -3,11 +3,18 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 为 **骑马与砍杀 II：霸主 v1.3.15**（Mount & Blade II: Bannerlord v1.3.15）
-设计的 **氏族城镇** 自动化管理 mod：驻军 / 招募 / 巡逻 / 跨城调拨 / 出击迎敌。
+设计的端到端 **氏族级城镇治理 mod**。每个受管理的氏族选取一个定居点作为
+**首府**（capital），mod 全面接管：驻军构成、志愿兵招募、俘虏转化、
+跨定居点兵力调拨、巡逻、出击迎敌、金库财政、按分支配置的兵种构成模板 ——
+覆盖玩家氏族 **以及** 所有持有首府的 AI 氏族。最小费用流（MCMF）求解器
+规划氏族网络内的日级兵力流动；AI 氏族在 vanilla 渠道的招志愿兵被屏蔽，
+全部改由 mod 自身的招募/调拨/转化渠道供应。
 
-定位为 `ImprovedGarrisons` (IG) 和 `GarrisonDoSomething` (GDS) 的 **完整替代品** ——
-两者都被列入 `<IncompatibleModules>`，启动时会自动检测。与 **RBM** 兼容
-（兵种识别不依赖 `stringId`）。
+> **兼容性**：SovereignTowns 治理的 vanilla 范围（驻军构成、巡逻/出击队、
+> AI 氏族招募）与 `ImprovedGarrisons` (IG) 和 `GarrisonDoSomething` (GDS)
+> 修改的是同一组 vanilla 状态，共存会争抢。两者因此被列入
+> `<IncompatibleModules>`，启动器在它们启用时拒绝启动。**与 RBM 兼容**
+> （兵种判定不依赖 `stringId`）。
 
 > **当前状态**：预发布快速迭代期（v0.0.1）。存档格式和 `global.json` 配置
 > schema 可能在任意 commit 间不兼容 —— 暂不保证向后兼容性。
