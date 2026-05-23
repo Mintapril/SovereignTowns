@@ -1,5 +1,7 @@
 # Sovereign Towns
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Automated clan town garrison / recruitment / patrol / cross-town transfer /
 sally-forth management for **Mount & Blade II: Bannerlord v1.3.15**.
 
