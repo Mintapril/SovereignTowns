@@ -2,259 +2,146 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-An end-to-end **clan-level town governance** mod for
-**Mount & Blade II: Bannerlord v1.3.15**. The player clan elects one of
-its settlements as a **capital**, and the mod takes over the clan's
-day-to-day automation around it: garrison composition, volunteer
-recruitment, prisoner conversion, cross-settlement troop logistics,
-patrolling, sally-forth, clan-gold-backed treasury management (party
-seed funds, recruit wages, equipment upgrades, plus a Hero↔Clan.Gold
-transfer UI vanilla doesn't ship), and per-branch composition
-templates. A min-cost-flow (MCMF) solver plans troop movement across
-the player's settlement network on a configurable **logistics tick**
-(default every 6 game hours, configurable 1–24h via
-`FiscalAutonomy.CapitalLogisticsTickHours`).
+**Hand the clan's day-to-day busywork — garrison, recruitment, patrols, sallies, books — to its capital.** A min-cost-flow dispatcher decides what moves where; you decide the policy.
 
-> **Scope**: currently **player-clan only**. AI-clan management is
-> code-complete (CapitalRegistry / VanillaSuppressionManager have
-> symmetric AI paths) but disabled by default — gated behind
-> `GlobalConfig.ApplyToAiSettlementsToo`, which defaults to `false` and
-> is intentionally not exposed in the in-game / web control panels
-> pending further balance testing. Flipping the flag enables full
-> AI-clan takeover (capital election, garrison rebalancing, recruitment,
-> patrols, sallies, prisoner conversion) and suppresses vanilla
-> volunteer-recruitment for those clans.
+> **Bannerlord v1.3.15** · requires **Bannerlord.Harmony** · incompatible with **ImprovedGarrisons** and **GarrisonDoSomething** · plays nice with **RBM** · pre-release (v0.0.1, save and config formats may break between commits)
 
-> **Compatibility**: SovereignTowns governs the same vanilla surfaces —
-> garrison composition, patrol/sally parties, AI-clan recruitment — that
-> `ImprovedGarrisons` (IG) and `GarrisonDoSomething` (GDS) also modify.
-> Running either alongside this mod would race for the same state, so both
-> are listed in `<IncompatibleModules>` and the launcher refuses to start
-> with either enabled. Compatible with **RBM** (troop classification is
-> not `stringId`-dependent).
-
-> **Status**: pre-release rapid iteration (v0.0.1). Save-format and
-> `global.json` schema may break between commits — no backwards-compatibility
-> is guaranteed yet.
+---
 
 ## What it does
 
-The managed clan picks one of its settlements as a **capital**. On every
-logistics tick (default 6 game hours, configurable 1–24h) the mod
-automatically:
+Your clan picks one settlement as a **capital**. From there the mod runs everything else.
 
-- Recruits volunteers in the capital and dispatches **Recruiter parties** to
-  villages farther afield.
-- Converts prisoners into the capital garrison.
-- Dispatches **Transfer parties** to rebalance troops between the capital and
-  branch towns/castles, driven by a min-cost-flow solver.
-- Dispatches **Patrol parties** around each owned settlement to keep bandits
-  and small raiders off the road.
-- Dispatches **Sally parties** when a hostile force threatens a settlement.
-- Honours per-branch composition templates (tier-range / culture filter /
-  troop-type ratios) when topping up garrisons.
+### Capital-led automation
+
+- **Garrison composition** — every owned town and castle held to your per-branch template (tier range, culture filter, troop-type ratios).
+- **Recruitment** — in-place at the capital, Recruiter parties out to villages, prisoners converted on the spot.
+- **Logistics** — Transfer parties shuttle troops across the clan's settlement network, planned by a min-cost-flow solver against a capital-level snapshot.
+- **Defence** — Patrol parties orbit each holding to keep bandits off the road; Sally parties go out when a real threat shows up.
+- **Capital recovery** — if the capital falls, in-flight parties either migrate to the new capital or evaporate cleanly.
 
 ### Clan economy
 
-Mod-owned economic decisions also run from the capital. The treasury **is**
-the vanilla `Clan.Gold` — there is no separate ledger:
+The treasury **is** vanilla `Clan.Gold` — same number the in-game Clan Finance tab shows.
 
-- Vanilla aggregates income from every fief the clan owns (daily taxes,
-  trade income, village income — for every `clan.Fiefs` entry regardless of
-  which family member holds it) into `Clan.Gold` via the standard
-  `DefaultClanFinanceModel`. The mod does not intercept this.
-- Mod outflows — party seed funds, recruiter-per-head wages, equipment
-  upgrade costs — are debited straight from `Clan.Gold` (through a
-  reflection helper, since vanilla declares the setter internal).
-- A "pause when broke" feature flag (default on) holds back mod-initiated
-  spending when `Clan.Gold` would go negative; turning it off lets the mod
-  spend the clan into the red just like vanilla policies can.
-- The control panel and web panel both expose a deposit/withdraw page that
-  moves funds between **Hero.MainHero.Gold** and **Clan.Gold** — vanilla
-  has no UI for this, so the mod adds it. Workshop and caravan profits keep
-  going to your personal `Hero.Gold` per vanilla; they do not enter clan
-  gold.
-- The vanilla Clan Finance tab and the mod's treasury page show the same
-  number (because they are the same number).
+- Vanilla pours all `clan.Fiefs` income into `Clan.Gold` (no mod interception).
+- Mod outflows — party seed funds, recruit-per-head wages, equipment upgrades — debit `Clan.Gold` directly.
+- **Hero ↔ Clan.Gold transfer** in both control panels; vanilla doesn't provide this UI.
+- A "pause when broke" guard rail (default on) holds mod spending when the clan would go negative.
+- Workshops and caravans keep flowing to your `Hero.Gold` per vanilla — they don't enter clan gold.
 
-Configuration: an in-game **Control Panel** (a persistent vertical button
-on the left edge of the campaign map, plus an entry on every owned
-town/castle menu) and a separately-served **web control panel** at
-`http://127.0.0.1:<port>/` (default `41763`, auto-increments on conflict)
-for richer editing.
+### Knobs and observability
 
-UI is fully localised in **English** and **Simplified Chinese**.
+- **Configurable cadence** — logistics tick anywhere from 1 hour to 24 hours (default 6h).
+- **In-game Control Panel** — persistent button on the left edge of the campaign map plus an entry on every owned town/castle menu.
+- **Web Control Panel** — separately served at `http://127.0.0.1:41763/` (auto-increments on port conflict) for richer editing.
+- **Activity feed** — every dispatch, recruit, transfer and sally logged, queryable from either panel.
+- **Localisation** — English and Simplified Chinese.
 
-## Repository layout
+---
 
-```
-.
-├── src/                         # C# source + csproj
-│   └── SovereignTowns.csproj
-├── Module/                      # Bannerlord-side module assets
-│   ├── SubModule.xml
-│   ├── GUI/Prefabs/             # Gauntlet UI prefabs (control panel)
-│   ├── ModuleData/Languages/    # EN + CNs localization
-│   └── WebUI/                   # web control panel bundle (HTML/JS/CSS)
-├── Directory.Build.props
-├── LICENSE
-├── README.md
-└── README.zh-CN.md
-```
+## Scope
 
-The following directories may exist locally but are excluded from git
-(third-party copyright, repo bloat, or internal-only documentation):
+Currently **player clan only**. AI-clan management is implemented end-to-end (symmetric `CapitalRegistry` / `VanillaSuppressionManager` paths) but disabled by default — `EnabledFeatures.ApplyToAiSettlementsToo` defaults to `false` and is intentionally hidden from the panels until balance testing wraps. Flipping it puts every capital-holding clan under the same regime and routes their recruitment exclusively through the mod.
 
-- `_research/` — decompiled vanilla + reference mods (kept locally as the
-  authoritative source when looking up TaleWorlds API signatures).
-- `audits/` — design specs, refactor handoffs, backlog notes.
-- `docs/` — behaviour guide + planning notes.
-- `.claude/` — AI-tooling scratch state.
+---
 
-## Build
+## Install
 
-Requires the .NET Framework 4.7.2 dev pack and a local Bannerlord install.
+1. Install [Bannerlord.Harmony](https://www.nexusmods.com/mountandblade2bannerlord/mods/2006) (and any other usual prerequisites).
+2. Drop this module's `SovereignTowns/` folder next to `Native/` under `Modules/`.
+3. Enable **Sovereign Towns** in the launcher.
+4. Start a campaign and open the map button.
 
-```powershell
-dotnet build src\SovereignTowns.csproj -c Debug
-# or -c Release
-```
-
-The `DeployToGame` MSBuild target (`AfterTargets="Build"`) automatically
-copies the DLL/PDB + `SubModule.xml` + GUI prefabs + WebUI bundle + language
-XMLs into `$(BannerlordPath)\Modules\SovereignTowns`.
-
-`BannerlordPath` defaults to the standard Steam install location:
-
-```
-C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord
-```
-
-If your install lives elsewhere (custom Steam library, Epic, GOG, a
-different drive), override it in any of these ways — they take precedence
-in this order:
-
-1. **Per-build CLI flag** — one-shot:
-   ```powershell
-   dotnet build src\SovereignTowns.csproj -c Debug `
-     -p:BannerlordPath="D:\Games\Mount & Blade II Bannerlord"
-   ```
-2. **`Directory.Build.props.user`** — local persistent override
-   (gitignored; recommended for contributors):
-   ```xml
-   <Project>
-     <PropertyGroup>
-       <BannerlordPath>D:\Games\Mount &amp; Blade II Bannerlord</BannerlordPath>
-     </PropertyGroup>
-   </Project>
-   ```
-3. **Environment variable** `BannerlordPath`:
-   ```powershell
-   $env:BannerlordPath = "D:\Games\Mount & Blade II Bannerlord"
-   dotnet build src\SovereignTowns.csproj -c Debug
-   ```
-
-## Runtime logs
-
-Logs are written to:
+Logs are written to
 
 ```
 %USERPROFILE%\Documents\Mount and Blade II Bannerlord\Configs\ModLogs\SovereignTowns\
 ```
 
-(*not* the module directory — Steam-on-`C:` hits UAC.)
+— never the module directory, to avoid UAC writes on Steam-on-`C:` installs.
 
-## Hard invariants
+---
 
-These are bugs already paid for; they are not negotiable.
+## Build from source
 
-1. **`TargetFramework = net472`**. Bannerlord v1.3.15 CLR cannot resolve
-   `netstandard 2.1.0.0` → MonoMod/Harmony chain crash at boot.
-2. **`SaveBaseId = 1_900_000_000`** in `src/SaveSystem/SovereignTownsTypeDefiner.cs`.
-   The earlier value `100_000_000` lives in a low 8-digit band shared by other
-   mods → save corruption. Stays below ButterLib's `2_002_018_000`.
-3. **`LocalSaveId` per `Saveable` type: never reuse, never reorder.** When
-   deleting a field, keep the ID and mark `[Obsolete]` with type `object` so
-   vanilla skips it.
-4. **GameModels must be added in `OnGameStart(Game, IGameStarter)`** —
-   *not* `OnSessionLaunched`. By session-launched time the Campaign is
-   finalised and `AddModel` corrupts the internal model list.
-5. **Every event handler entry point wraps its body in `try { ... } catch
-   { Logger.Error(...) }`.** Never let our exceptions escape into vanilla.
-6. **`HourlyTickPartyEvent` callbacks first-line-filter by `PartyComponent`
-   type.** Players have hundreds of parties per hour; touching non-ST parties
-   is unsafe and a perf budget killer.
-7. **The save becomes hard-dependent on this mod** the moment an
-   `StPartyComponent` subclass is persisted. There is no in-mod removal flow.
-8. **JSON: `Newtonsoft.Json`** (bundled in
-   `$(GameBinPath)\Newtonsoft.Json.dll`, `Private=false`). Don't reintroduce
-   hand-rolled regex/MiniJson parsers.
-
-## Architecture in one screen
-
-Four-layer dependency stack, top-down, no upward references; same-layer
-Manager-to-Manager coupling goes through `SovereignTownsCampaignBehavior`
-(the single event dispatcher).
-
-```
-Layer 4  UI                 : DiagnosticGameMenu, STPartyDialogRegistration,
-                              ControlPanel (Gauntlet, src/Ui/),
-                              WebConfig (HTTP, src/WebConfig/)
-Layer 3  Dispatchers        : CapitalManager ★ (src/Capital/),
-                              CapitalLogisticsManager (src/Managers/),
-                              RecruitmentDispatcher + PrisonerRecruitmentManager
-                              + CapitalInPlaceRecruiter (src/Recruitment/),
-                              PatrolDispatcher (src/Patrol/),
-                              TransferDispatcher (src/Transfer/),
-                              SallyDispatcher (src/SallyForth/),
-                              PartyLifecycleManager (src/Lifecycle/)
-Layer 3b Component instances: StPartyComponent (abstract base, src/Parties/),
-                              StPatrolPartyComponent / StRecruiterPartyComponent /
-                              StTransferPartyComponent / StSallyPartyComponent
-Layer 2  Evaluators         : RiskAssessmentService, TroopCompositionEvaluator,
-                              TroopClassifier, TroopTemplateMatcher,
-                              GenericTroopMatcher, HostilePartyScanner,
-                              GarrisonPowerEvaluator, HorizonForecast
-                              (src/Evaluators/)
-Layer 2.5 Algorithm kernels : MinCostFlow, UnifiedGarrisonSolver,
-                              GarrisonAllocationSolver, DispatchInstruction,
-                              RecruitmentTopology (src/Algorithm/)
-                              — consumed by CapitalLogisticsManager to plan
-                              recruitment + cross-settlement transfers.
-Layer 1  Infrastructure     : SovereignTownsSubModule, SovereignTownsCampaignBehavior,
-                              SovereignTownsTypeDefiner, ConfigurationManager,
-                              Logger, DecisionAuditLogger + ActivityNarrator
-                              + ActivityFeed (src/Audit/)
-Supporting                  : src/Models/ (GameModel overrides — speed, wage,
-                              size-limit, volunteer; ClanFinance is a
-                              read-only SafeTownIncome helper, no longer
-                              registered);
-                              src/Economy/ (ModTreasury — debits Clan.Gold;
-                              TreasuryUserActions — Hero↔Clan.Gold transfer;
-                              ClanGoldAccess — reflection setter;
-                              ModExpenseLedger);
-                              src/Settlement/ (VanillaSuppressionManager,
-                              VanillaPatrolSuppressor);
-                              src/Templates/ (TroopTemplateModeService);
-                              src/Upgrades/ (TroopUpgradeService,
-                              GarrisonXpInjector);
-                              src/Patches/ (Harmony patches);
-                              src/Coordination/, src/Common/ (helpers).
+```powershell
+dotnet build src\SovereignTowns.csproj -c Debug
 ```
 
-★ **CapitalManager** is central: each managed clan has at most one "capital"
-town. **CapitalLogisticsManager** is the per-tick decision point for
-capital in-place recruitment, recruiter-party dispatch, and cross-settlement
-transfers — driven by min-cost-flow against the capital-level snapshot.
-The tick fires every `FiscalAutonomy.CapitalLogisticsTickHours` game hours
-(default 6, configurable [1, 24]; this same value also sets the unit length
-of one tick in the time-expanded MCMF solver). When the capital falls,
-`PartyLifecycleManager.MigrateAllOrDisband` rescues in-flight parties to
-the new capital or evaporates them.
+`Directory.Build.props` defaults `BannerlordPath` to the standard Steam install. Override via, in precedence order:
 
-## Tests
+1. **CLI flag** — `dotnet build … -p:BannerlordPath="D:\Games\Mount & Blade II Bannerlord"`
+2. **`Directory.Build.props.user`** — gitignored, one line of XML
+3. **Env var** — `$env:BannerlordPath = "..."`
 
-There are **no unit tests**. Verification = launch the game, watch the logs.
+The `DeployToGame` MSBuild target runs `AfterTargets="Build"` and copies the DLL, GUI prefabs, WebUI bundle and language XMLs into `$(BannerlordPath)\Modules\SovereignTowns`.
+
+There are **no unit tests** — verification is "launch the game, watch the logs."
+
+---
+
+## Repository layout
+
+```
+.
+├── src/                     # C# source + csproj
+├── Module/                  # SubModule.xml + Gauntlet prefabs + ModuleData + WebUI
+├── Directory.Build.props
+├── README.md  README.zh-CN.md  LICENSE
+```
+
+Local-only and gitignored: `_research/` (decompiled vanilla + reference mods), `audits/` (design notes), `docs/` (planning), `.claude/` (AI-tooling state).
+
+---
+
+## For modders
+
+<details>
+<summary><strong>Architecture overview</strong></summary>
+
+Four-layer dependency stack, top-down, no upward references; same-layer wiring routes through the single `SovereignTownsCampaignBehavior` event dispatcher.
+
+```
+Layer 4   UI                 DiagnosticGameMenu, STPartyDialogRegistration,
+                             ControlPanel (Gauntlet), WebConfig (HTTP)
+Layer 3   Dispatchers        CapitalManager ★, CapitalLogisticsManager,
+                             RecruitmentDispatcher, PrisonerRecruitmentManager,
+                             PatrolDispatcher, TransferDispatcher, SallyDispatcher,
+                             PartyLifecycleManager
+Layer 3b  Components         StPartyComponent + Patrol/Recruiter/Transfer/Sally
+Layer 2   Evaluators         Risk, TroopClassifier, TemplateMatcher,
+                             HostilePartyScanner, GarrisonPowerEvaluator, ...
+Layer 2.5 Algorithm kernels  MinCostFlow, UnifiedGarrisonSolver,
+                             GarrisonAllocationSolver, RecruitmentTopology
+Layer 1   Infrastructure     SubModule, CampaignBehavior, TypeDefiner,
+                             ConfigurationManager, Logger, DecisionAuditLogger
+Supporting                   Models/ (vanilla GameModel overrides),
+                             Economy/ (ModTreasury + ClanGoldAccess reflection),
+                             Settlement/ (vanilla suppression),
+                             Templates/, Upgrades/, Patches/, Coordination/, Common/
+```
+
+★ `CapitalManager` is per-clan: at most one capital town per managed clan.
+`CapitalLogisticsManager` runs the per-tick decision (recruitment + cross-settlement transfers) by handing a snapshot to the MCMF solver and decoding the flow into dispatch instructions. The tick interval is `FiscalAutonomy.CapitalLogisticsTickHours` (default 6, range 1–24) — the same value also sets one unit in the time-expanded MCMF horizon.
+
+</details>
+
+<details>
+<summary><strong>Hard invariants — bugs already paid for, don't undo</strong></summary>
+
+1. **`TargetFramework = net472`**. v1.3.15's CLR can't resolve `netstandard 2.1.0.0` — anything else chain-crashes MonoMod/Harmony at boot.
+2. **`SaveBaseId = 1_900_000_000`** (`src/SaveSystem/SovereignTownsTypeDefiner.cs`). The original `100_000_000` collided with other mods in a low band → save corruption. Stays below ButterLib's `2_002_018_000`.
+3. **`LocalSaveId` per `Saveable` type: never reuse, never reorder.** When deleting a field, keep the ID and mark `[Obsolete]` with type `object` so vanilla skips it.
+4. **Register GameModels in `OnGameStart`, not `OnSessionLaunched`.** By session-launched time the Campaign is finalised and `AddModel` corrupts the internal model list.
+5. **Every event-handler entry point wraps its body in `try { ... } catch { Logger.Error(...) }`.** Our exceptions must not leak into vanilla.
+6. **`HourlyTickPartyEvent` callbacks first-line filter by `PartyComponent` type.** Players have hundreds of parties per hour — touching non-ST ones is both unsafe and a perf budget killer.
+7. **Save becomes hard-dependent on the mod** the moment an `StPartyComponent` subclass is persisted. There is no in-mod removal path.
+8. **JSON via Newtonsoft.Json** (bundled with the game at `$(GameBinPath)\Newtonsoft.Json.dll`, `Private=false`). No hand-rolled regex/MiniJson parsers.
+
+</details>
+
+---
 
 ## License
 
