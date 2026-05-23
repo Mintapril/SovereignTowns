@@ -5,6 +5,7 @@ using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Lifecycle;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Party.PartyComponents;
@@ -31,8 +32,9 @@ public abstract class StPartyComponent : CustomPartyComponent
     // ── 持久化字段 ──
     [SaveableField(10)] private Settlement? _homeSettlement;
     [SaveableField(11)] private int _initialMemberCount;
-    // doc §20 #1 (T1)：所有 ST 队伍共享的自资金闭环。
-    [SaveableField(12)] private int _teamFunds;
+    // 槽位 12 已废弃（2026-05-24 Plan C）：原 PartyTradeGold 改为复用 vanilla MobileParty.PartyTradeGold
+    // （vanilla 自动持久化 _partyTradeGold；GiveGoldAction.ApplyForXxxToParty 自动维护）。
+    // 按 CLAUDE.md #3/#7 槽位永不复用 —— 此槽位空缺,后续 SaveableField 必须从 13+ 起。
     // 2026-05-18 v4：标记 DefaultMergeAndDisband 已显示左下角消息，避免 OnDestroyed 重复显示。
     // CachedData 不持久化 — 部队即将销毁，重复显示概率为零。
     [CachedData] private bool _disbandReportShown;
@@ -73,53 +75,62 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// <summary>doc §20 #1 (T1) 重整：所有 4 类 ST 队伍统一初始资金。</summary>
     public const int DefaultSeedGold = 2000;
 
-    /// <summary>当前队伍资金（第纳尔）。</summary>
-    public int TeamFunds => _teamFunds;
+    /// <summary>当前队伍资金（第纳尔）= vanilla <see cref="MobileParty.PartyTradeGold"/>。</summary>
+    public int TeamFunds => MobileParty?.PartyTradeGold ?? 0;
 
-    /// <summary>从首府所有者扣 amount 第纳尔作为初始资金（hero 不够时按可负担扣）。</summary>
+    /// <summary>从首府所有者（=氏族领袖）扣 amount 第纳尔注入 party.PartyTradeGold（hero 不够时按可负担扣）。
+    /// 调 vanilla <see cref="GiveGoldAction.ApplyForCharacterToParty"/> 原子完成 hero.Gold -= + party.PartyTradeGold +=。</summary>
     public void InitTeamFundsFromHomeOwner(MobileParty self, int amount)
     {
         var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
-        int charged = PartyEconomyHelper.ChargeHero(owner, amount);
-        _teamFunds = charged;
-        Logger.Info($"{GetType().Name} '{PartyNameFormatter.SafeName(self)}': team funds initialized = {charged}d (charged from '{owner?.StringId ?? "null"}')");
+        if (owner == null || self?.Party == null || amount <= 0) return;
+        int wantTransfer = Math.Min(owner.Gold, amount);
+        if (wantTransfer <= 0) return;
+        GiveGoldAction.ApplyForCharacterToParty(owner, self.Party, wantTransfer, disableNotification: true);
+        Logger.Info($"{GetType().Name} '{PartyNameFormatter.SafeName(self)}': team funds initialized = {self.PartyTradeGold}d (charged from '{owner.StringId}')");
     }
 
-    /// <summary>在 settlement 内用队伍资金购买 days 天食物。返回花费的第纳尔。</summary>
+    /// <summary>在 settlement 内用 PartyTradeGold 购买 days 天食物。返回花费第纳尔。</summary>
     public int BuyFoodAtSettlement(MobileParty self, Settlement settlement, float days)
-        => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days, ref _teamFunds);
+        => PartyEconomyHelper.BuyFoodFromSettlement(self, settlement, days);
 
-    /// <summary>在 settlement 内用队伍资金购买松散坐骑（让无马步兵骑乘提升大地图移速）。返回花费。</summary>
+    /// <summary>购买松散坐骑（无马步兵骑乘提升移速）。返回花费。</summary>
     public int BuyHorsesAtSettlement(MobileParty self, Settlement settlement)
-        => PartyEconomyHelper.BuyHorsesFromSettlement(self, settlement, ref _teamFunds);
+        => PartyEconomyHelper.BuyHorsesFromSettlement(self, settlement);
 
-    /// <summary>把战利品（非食物 item）卖给 settlement，金额加入队伍资金。返回收益。</summary>
+    /// <summary>把战利品（非食物 item）卖给 settlement，金额自动加到 PartyTradeGold（vanilla GiveGoldAction）。返回收益。</summary>
     public int SellLootAtSettlement(MobileParty self, Settlement settlement)
-        => PartyEconomyHelper.SellLootToSettlement(self, settlement, ref _teamFunds);
+        => PartyEconomyHelper.SellLootToSettlement(self, settlement);
 
-    /// <summary>把剩余资金还给首府所有者；清零 _teamFunds。返回还回的数额。</summary>
+    /// <summary>把 PartyTradeGold 剩余资金退还首府所有者（=氏族领袖）。返回还回的数额。
+    /// 调 vanilla <see cref="GiveGoldAction.ApplyForPartyToCharacter"/> 原子完成 party.PartyTradeGold -= + hero.Gold +=。</summary>
     public int RefundTeamFundsToOwner()
     {
-        if (_teamFunds <= 0) return 0;
+        var self = MobileParty;
+        if (self?.Party == null) return 0;
+        int refund = self.PartyTradeGold;
+        if (refund <= 0) return 0;
         var owner = HomeSettlementOrNull?.OwnerClan?.Leader;
-        int refunded = PartyEconomyHelper.RefundHero(owner, _teamFunds);
-        if (refunded > 0)
-            Logger.Info($"{GetType().Name}: refunded {refunded}d team funds to '{owner?.StringId ?? "null"}'");
-        _teamFunds = 0;
-        return refunded;
+        if (owner == null) return 0;
+        GiveGoldAction.ApplyForPartyToCharacter(self.Party, owner, refund, disableNotification: true);
+        Logger.Info($"{GetType().Name}: refunded {refund}d team funds to '{owner.StringId}'");
+        return refund;
     }
 
-    /// <summary>由 Dispatcher 在玩家氏族 ModTreasury.Charge 成功后调用，直接把队伍资金设为 amount。</summary>
+    /// <summary>由 Dispatcher 在玩家氏族 ModTreasury.Charge 成功后调用，把 PartyTradeGold 设为 amount。
+    /// vanilla PartyTradeGold setter 自带 Max(value, 0) clamp。</summary>
     public void SetTeamFunds(int amount)
     {
-        _teamFunds = amount < 0 ? 0 : amount;
+        var self = MobileParty;
+        if (self == null) return;
+        self.PartyTradeGold = amount < 0 ? 0 : amount;
     }
 
     /// <summary>子类返回本类型对应的 ExpenseCategory（用于 ModTreasury 玩家路径退款记账）。</summary>
     protected abstract ExpenseCategory GetExpenseCategoryForKind();
 
     /// <summary>
-    /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 _teamFunds + 出发地买 3 天粮"。
+    /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 PartyTradeGold + 出发地买 3 天粮"。
     /// 玩家氏族：走 ModTreasury（受 PauseSpendingWhenBroke 门控，写 ledger + audit），扣款成功 SetTeamFunds(DefaultSeedGold)；
     ///           扣款失败返 false，调用方应回滚兵 + 销毁 party。
     /// AI 氏族：从 home.OwnerClan.Leader.Gold 扣（vanilla 路径，按可用余额取；Clan.Gold ≡ Leader.Gold，
@@ -310,7 +321,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             // _disbandReportShown=true 表示已由 DefaultMergeAndDisband 显示过完整汇总，本路径跳过避免重复。
             TryDisplayDestroyedFallbackMessage(self, destroyer);
 
-            // doc §20 #1 (T1)：退款剩余 _teamFunds（所有 ST 队伍共享）
+            // doc §20 #1 (T1)：退款剩余 PartyTradeGold（所有 ST 队伍共享）
             TryRefundOnDestroy(self);
 
             var home = HomeSettlementOrNull;
@@ -451,7 +462,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             return;
         }
 
-        // 2026-05-18 v4：解散前最终清算 — 卖光所有物资（含食物）入 _teamFunds。
+        // 2026-05-18 v4：解散前最终清算 — 卖光所有物资（含食物）入 PartyTradeGold。
         int soldGained = 0;
         try { soldGained = SellAllItemsAtSettlement(self, home); }
         catch (Exception sellEx) { Logger.Warn($"{GetType().Name}.DefaultMergeAndDisband final-liquidation failed: {sellEx.Message}"); }
@@ -466,12 +477,12 @@ public abstract class StPartyComponent : CustomPartyComponent
         PartyMergeService.Instance.DisbandAndUntrack(self, $"{GetType().Name}.DefaultMergeAndDisband");
     }
 
-    /// <summary>2026-05-18 v4：解散前最终清算 wrapper — 把 ItemRoster 所有物品（含食物）卖给 settlement，加到 _teamFunds。</summary>
+    /// <summary>解散前最终清算 wrapper — 把 ItemRoster 所有物品（含食物）卖给 settlement，收益自动入 PartyTradeGold。</summary>
     protected int SellAllItemsAtSettlement(MobileParty self, Settlement settlement)
-        => PartyEconomyHelper.SellAllItemsToSettlement(self, settlement, ref _teamFunds);
+        => PartyEconomyHelper.SellAllItemsToSettlement(self, settlement);
 
     /// <summary>
-    /// 2026-05-18 v4：DefaultMergeAndDisband 汇总左下角消息（仅玩家氏族）。退款额预读自 _teamFunds —
+    /// 2026-05-18 v4：DefaultMergeAndDisband 汇总左下角消息（仅玩家氏族）。退款额预读自 PartyTradeGold —
     /// 实际退款由后续 DisbandAndUntrack → OnDestroyed → TryRefundOnDestroy 完成；同 frame 内显示与退款一致。
     /// </summary>
     private void TryDisplayDisbandReport(MobileParty self, Settlement home, int troopsTransferred, int soldGained)
@@ -511,12 +522,12 @@ public abstract class StPartyComponent : CustomPartyComponent
     // ── B17.4 共享 helpers ──
 
     /// <summary>
-    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都"在 settlement.Town 内卖战利品入 _teamFunds"；
+    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都"在 settlement.Town 内卖战利品入 PartyTradeGold"；
     /// 只有 Patrol/Recruiter（多 settlement 移动）需要"食物 &lt;1 天买 3 天"补粮逻辑。
     /// Sally/Transfer 是单目的地短命任务，没有沿途补给机会，故 override ShouldReplenishFoodEnRoute=false 跳过补粮。
     /// </summary>
     /// <summary>
-    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都在 settlement.Town 内卖战利品入 _teamFunds；
+    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都在 settlement.Town 内卖战利品入 PartyTradeGold；
     /// Patrol/Recruiter 还会在食物 &lt;1 天时补 3 天粮。
     ///
     /// 2026-05-18 v3：调用时机改由子类在 arrival 上下文中显式触发（patrol arrival 分支 + recruiter
@@ -615,23 +626,26 @@ public abstract class StPartyComponent : CustomPartyComponent
     }
 
     /// <summary>
-    /// doc §20 #1 (T1)：销毁时退款。玩家氏族走 ModTreasury.Refund 保账目对称；AI 氏族走 RefundTeamFundsToOwner（vanilla hero.Gold）。
-    /// _teamFunds=0 时双路径均 no-op。
+    /// 销毁时退款 PartyTradeGold 给首府所有者（=氏族领袖）。
+    /// 玩家氏族：ModTreasury.Refund 走 ClanGoldAccess（leader.Gold += amount）+ 做 ledger/audit/snapshot；
+    ///           随后 SetTeamFunds(0) 清空 PartyTradeGold —— 两步净效果 = 转账 party→leader。
+    /// AI 氏族：RefundTeamFundsToOwner 用 vanilla GiveGoldAction.ApplyForPartyToCharacter 一步原子转账。
+    /// PartyTradeGold=0 时双路径均 no-op。
     /// </summary>
     private void TryRefundOnDestroy(MobileParty self)
     {
-        if (_teamFunds <= 0) return;
+        int balance = self?.PartyTradeGold ?? 0;
+        if (balance <= 0) return;
         try
         {
             var refundClan = self.ActualClan ?? HomeSettlementOrNull?.OwnerClan;
             if (CapitalRegistry.ShouldChargeClan(refundClan))
             {
-                int toRefund = _teamFunds;
-                _teamFunds = 0;
-                Economy.ModTreasury.Refund(refundClan, GetExpenseCategoryForKind(), toRefund,
+                // 玩家氏族：先清 party 钱袋，再给 leader（ModTreasury 内部走 leader.ChangeHeroGold + ledger）
+                SetTeamFunds(0);
+                Economy.ModTreasury.Refund(refundClan, GetExpenseCategoryForKind(), balance,
                     $"{GetType().Name}_destroyed home={HomeSettlementOrNull?.StringId ?? "null"}");
-                if (toRefund > 0)
-                    Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {toRefund}d via ModTreasury (player clan)");
+                Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' OnDestroyed — refunded {balance}d via ModTreasury (player clan)");
             }
             else
             {

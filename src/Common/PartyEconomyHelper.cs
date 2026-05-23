@@ -7,6 +7,8 @@ using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
+using TaleWorlds.Library;
+using TaleWorlds.Localization;
 using TaleWorlds.ObjectSystem;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -15,14 +17,20 @@ namespace SovereignTowns.Common;
 /// <summary>
 /// ST party 食物 / 队伍资金共用工具。
 ///
-/// 设计原则（与 CLAUDE.md「非作弊基调」对齐）：
-///   - Sally / Transfer：短命任务，凭空塞 2-3 天食物，简化复杂度，无队伍资金。
-///   - Patrol：终身户外巡逻，从首府所有者扣 2000 第纳尔作启动资金；用资金买食物 + 战利品卖掉补充资金；
-///     销毁时余款还首府所有者（自负盈亏）。
+/// 设计原则（与 CLAUDE.md「非作弊基调」对齐 + #6 反编译实证）：
+///   - Sally / Transfer：短命任务，简化复杂度。
+///   - Patrol / Recruiter：派出时扣 seed 进 <see cref="MobileParty.PartyTradeGold"/>；用此钱袋买食物 +
+///     战利品卖回补充；销毁时余款退还首府所有者（自负盈亏）。
 ///
-/// "购买"的实现：vanilla 没有公开的 settlement 级市场粮食购入 API（Town.MarketData 是只读统计），
-/// 因此 buy = "估值 + 扣资金 + 凭空塞食物"。这与 IG 的"凭空塞食物"区别是：有资金来源（首府）和经济
-/// 闭环（资金随战利品流入 / 食物购买流出），不是无源凭空。
+/// 经济闭环（2026-05-24 反编译实证）：
+///   - 钱袋 = vanilla <see cref="MobileParty.PartyTradeGold"/>（自动持久化，自动 clamp ≥0），不再有 mod 自建的
+///     <c>_teamFunds</c> 副本。
+///   - 物品转移：mod 手动 <c>ItemRoster.AddToCounts</c> 两侧（不通过 <c>SellItemsAction.Apply</c>，因为
+///     custom party <c>IsCaravan=false</c>，后者会走 LeaderHero 分支，custom party LeaderHero==null 导致漏单边）。
+///   - 金币转移：mod 调 <see cref="GiveGoldAction.ApplyForPartyToSettlement"/> /
+///     <see cref="GiveGoldAction.ApplyForSettlementToParty"/> —— vanilla 公开 API，按 IsMobile/IsSettlement
+///     正确双侧增减 PartyTradeGold ↔ Settlement.Gold，与 vanilla caravan 走 SellItemsAction 的 IsCaravan 分支
+///     等价闭环。
 /// </summary>
 public static class PartyEconomyHelper
 {
@@ -81,42 +89,39 @@ public static class PartyEconomyHelper
         }
     }
 
-    /// <summary>用 teamFunds 在 settlement 内购买 days 天食物：选 settlement 库存中最便宜的食物，
-    /// 用 vanilla SellItemsAction 真实把物品从 settlement.ItemRoster 转到 party.ItemRoster；teamFunds 扣实际花费。
-    /// 没在 settlement 内 / settlement 食物缺货 / 资金不够时按可买数量买；返回实际花费。
-    /// 注：vanilla SellItemsAction 不自动调 settlement.Gold，巡逻队队伍资金是 mod 内部账，与 hero 钱包 / settlement.Gold 独立。</summary>
-    public static int BuyFoodFromSettlement(MobileParty? party, Settlement? settlement, float days, ref int teamFunds)
+    /// <summary>从 settlement 库存购买 days 天食物。预算 = <c>party.PartyTradeGold</c>。
+    /// 物品手动 AddToCounts 两侧；金币用 <see cref="GiveGoldAction.ApplyForPartyToSettlement"/>
+    /// 让 vanilla 同时更新 party.PartyTradeGold ↔ settlement.Gold（双侧闭环）。
+    /// 成功后左下角推一条玩家消息（仅玩家氏族部队）。返回实际花费第纳尔。</summary>
+    public static int BuyFoodFromSettlement(MobileParty? party, Settlement? settlement, float days)
     {
-        // 2026-05-18 v4：放开"必须是 Town"的限制 — village 用 Village.Bound.Town 定价 + village PartyBase 库存。
-        // 保守：town 路径完全不变（之前在 Sanala 买 11 grain @ 7d 已验证）；只为 village 加新分支。
-        // 早 return 时印 ECON-DIAG（Info 级）以诊断"wool 村连片无食物 / Village.Bound 失效"等真实 fallback 场景。
-        if (party?.ItemRoster == null || settlement == null || teamFunds <= 0)
+        if (party?.ItemRoster == null || settlement == null)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (basic): party='{PartyNameFormatter.SafeName(party)}' settlement='{settlement?.Name?.ToString() ?? "<null>"}' teamFunds={teamFunds} days={days:F1}");
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (basic): party='{PartyNameFormatter.SafeName(party)}' settlement='{settlement?.Name?.ToString() ?? "<null>"}' days={days:F1}");
+            return 0;
+        }
+        int budget = party.PartyTradeGold;
+        if (budget <= 0)
+        {
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no funds): party='{PartyNameFormatter.SafeName(party)}' PartyTradeGold={budget} days={days:F1}");
             return 0;
         }
 
-        // 抽取 (pricingTown, counterparty, inventory) 三元组：town 路径与 village 路径不同，但后续买卖逻辑相同。
+        // (pricingTown, settlementInv) 三元组：town 走 town.Owner.ItemRoster，village 走 village.Party.ItemRoster + Bound.Town 定价
         Town? pricingTown;
-        PartyBase? counterparty;
         ItemRoster? settlementInv;
         if (settlement.Town != null)
         {
-            // ── Town 路径（保持与旧版本一致；已在线上验证 ──
             pricingTown = settlement.Town;
-            var settlementOwner = ((SettlementComponent)pricingTown).Owner;
-            counterparty = settlementOwner;
-            settlementInv = settlementOwner?.ItemRoster;
+            settlementInv = ((SettlementComponent)pricingTown).Owner?.ItemRoster;
         }
         else if (settlement.IsVillage)
         {
-            // ── Village 路径（新增）── 用绑定 town 定价 + village.Party 当库存与 counterparty。
             pricingTown = settlement.Village?.Bound?.Town;
-            counterparty = settlement.Party;
-            settlementInv = counterparty?.ItemRoster;
+            settlementInv = settlement.Party?.ItemRoster;
             if (pricingTown == null)
             {
-                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (village Bound.Town null): settlement='{settlement.Name}' villageBound='{settlement.Village?.Bound?.StringId ?? "<null>"}'");
+                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (village Bound.Town null): settlement='{settlement.Name}'");
                 return 0;
             }
         }
@@ -125,9 +130,9 @@ public static class PartyEconomyHelper
             Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (not town/village): settlement='{settlement.Name}'");
             return 0;
         }
-        if (counterparty == null || settlementInv == null)
+        if (settlementInv == null)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no inv): settlement='{settlement.Name}' isVillage={settlement.IsVillage} counterparty='{counterparty?.GetType().Name ?? "<null>"}'");
+            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no inv): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
 
@@ -139,10 +144,12 @@ public static class PartyEconomyHelper
         }
 
         int totalSpent = 0;
+        int totalUnits = 0;
+        string? firstItemId = null;
         int foodItemsScanned = 0;
         try
         {
-            while (wantUnits > 0 && teamFunds > 0)
+            while (wantUnits > 0 && party.PartyTradeGold > 0)
             {
                 int bestIdx = -1;
                 int bestPricePerUnit = int.MaxValue;
@@ -160,31 +167,38 @@ public static class PartyEconomyHelper
                 }
                 if (bestIdx < 0) break;
                 var bestElem = settlementInv.GetElementCopyAtIndex(bestIdx);
-                int affordable = teamFunds / bestPricePerUnit;
+                int affordable = party.PartyTradeGold / bestPricePerUnit;
                 int actual = Math.Min(Math.Min(wantUnits, bestElem.Amount), affordable);
                 if (actual <= 0) break;
                 int chunkCost = actual * bestPricePerUnit;
                 try
                 {
-                    SellItemsAction.Apply(counterparty, party.Party, bestElem, actual, settlement);
-                    teamFunds -= chunkCost;
+                    // 1) 物品转移：settlement -= actual; party += actual
+                    settlementInv.AddToCounts(bestElem.EquipmentElement, -actual);
+                    party.ItemRoster.AddToCounts(bestElem.EquipmentElement, actual);
+                    // 2) 金币转移（vanilla 闭环 API）：party.PartyTradeGold -= chunkCost; settlement.Gold += chunkCost
+                    GiveGoldAction.ApplyForPartyToSettlement(party.Party, settlement, chunkCost, disableNotification: true);
                     totalSpent += chunkCost;
+                    totalUnits += actual;
                     wantUnits -= actual;
+                    firstItemId ??= bestElem.EquipmentElement.Item?.StringId;
                     var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
                     string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
-                    Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
+                    Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, partyTradeGold={party.PartyTradeGold})");
                 }
                 catch (Exception apEx)
                 {
-                    Logger.Warn($"PartyEconomyHelper.BuyFoodFromSettlement SellItemsAction failed", apEx);
+                    Logger.Warn($"PartyEconomyHelper.BuyFoodFromSettlement transfer failed", apEx);
                     break;
                 }
             }
             if (totalSpent == 0)
             {
-                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement no-food: settlement='{settlement.Name}' isVillage={settlement.IsVillage} invCount={settlementInv.Count} foodItemsScanned={foodItemsScanned} villageType='{settlement.Village?.VillageType?.StringId ?? "<n/a>"}' — 无可买食物（库存无 IsFood 或 amount=0 或定价异常）");
+                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement no-food: settlement='{settlement.Name}' isVillage={settlement.IsVillage} invCount={settlementInv.Count} foodItemsScanned={foodItemsScanned} villageType='{settlement.Village?.VillageType?.StringId ?? "<n/a>"}'");
             }
             try { party.ItemRoster.UpdateVersion(); } catch { }
+            // 玩家可见提示（仅玩家氏族部队）
+            if (totalSpent > 0) TryShowBuyMessage(party, settlement, totalUnits, firstItemId, totalSpent);
         }
         catch (Exception ex)
         {
@@ -193,36 +207,47 @@ public static class PartyEconomyHelper
         return totalSpent;
     }
 
-    /// <summary>用 teamFunds 在 settlement 内购买松散坐骑，让无马步兵骑乘以提升大地图移速。
-    /// 目标数量 = party.Party.NumberOfMenWithoutHorse − 已有松散坐骑数（每名无马步兵 1 匹即满速，
-    /// 多买会进畜群反而减速）。资金不足按可买数量买；返回实际花费。
-    /// 坐骑判定：item.HasHorseComponent &amp;&amp; HorseComponent.IsMount。town / village 定价同 BuyFoodFromSettlement。</summary>
-    public static int BuyHorsesFromSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    private static void TryShowBuyMessage(MobileParty party, Settlement settlement, int units, string? itemId, int totalCost)
     {
-        if (party?.ItemRoster == null || settlement == null || teamFunds <= 0) return 0;
+        try
+        {
+            if (party?.ActualClan != Clan.PlayerClan) return;  // 仅玩家氏族部队
+            var template = new TextObject(
+                "{=ST_Msg_PartyBoughtFood}[Sovereign Towns] {PARTY} bought {UNITS} {ITEM} at {WHERE} (-{COST}d).");
+            template.SetTextVariable("PARTY", (TextObject?)party.Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)"));
+            template.SetTextVariable("UNITS", units);
+            template.SetTextVariable("ITEM", itemId ?? "food");
+            template.SetTextVariable("WHERE", (TextObject?)settlement?.Name ?? new TextObject("{=ST_Common_Unknown}unknown"));
+            template.SetTextVariable("COST", totalCost);
+            InformationManager.DisplayMessage(new InformationMessage(template.ToString()));
+        }
+        catch (Exception ex) { Logger.Warn($"TryShowBuyMessage failed: {ex.Message}"); }
+    }
+
+    /// <summary>从 settlement 内购买松散坐骑（无马步兵骑乘以提升大地图移速）。预算 = <c>party.PartyTradeGold</c>。
+    /// 目标 = NumberOfMenWithoutHorse − 已有松散坐骑数。物品 + 金币转移同 <see cref="BuyFoodFromSettlement"/>。</summary>
+    public static int BuyHorsesFromSettlement(MobileParty? party, Settlement? settlement)
+    {
+        if (party?.ItemRoster == null || settlement == null || party.PartyTradeGold <= 0) return 0;
 
         Town? pricingTown;
-        PartyBase? counterparty;
         ItemRoster? settlementInv;
         if (settlement.Town != null)
         {
             pricingTown = settlement.Town;
-            var settlementOwner = ((SettlementComponent)pricingTown).Owner;
-            counterparty = settlementOwner;
-            settlementInv = settlementOwner?.ItemRoster;
+            settlementInv = ((SettlementComponent)pricingTown).Owner?.ItemRoster;
         }
         else if (settlement.IsVillage)
         {
             pricingTown = settlement.Village?.Bound?.Town;
-            counterparty = settlement.Party;
-            settlementInv = counterparty?.ItemRoster;
+            settlementInv = settlement.Party?.ItemRoster;
             if (pricingTown == null) return 0;
         }
         else
         {
             return 0;
         }
-        if (counterparty == null || settlementInv == null) return 0;
+        if (settlementInv == null) return 0;
 
         int wantUnits;
         try
@@ -240,7 +265,7 @@ public static class PartyEconomyHelper
         int totalSpent = 0;
         try
         {
-            while (wantUnits > 0 && teamFunds > 0)
+            while (wantUnits > 0 && party.PartyTradeGold > 0)
             {
                 int bestIdx = -1;
                 int bestPricePerUnit = int.MaxValue;
@@ -257,27 +282,28 @@ public static class PartyEconomyHelper
                 }
                 if (bestIdx < 0) break;
                 var bestElem = settlementInv.GetElementCopyAtIndex(bestIdx);
-                int affordable = teamFunds / bestPricePerUnit;
+                int affordable = party.PartyTradeGold / bestPricePerUnit;
                 int actual = Math.Min(Math.Min(wantUnits, bestElem.Amount), affordable);
                 if (actual <= 0) break;
                 int chunkCost = actual * bestPricePerUnit;
                 try
                 {
-                    SellItemsAction.Apply(counterparty, party.Party, bestElem, actual, settlement);
-                    teamFunds -= chunkCost;
+                    settlementInv.AddToCounts(bestElem.EquipmentElement, -actual);
+                    party.ItemRoster.AddToCounts(bestElem.EquipmentElement, actual);
+                    GiveGoldAction.ApplyForPartyToSettlement(party.Party, settlement, chunkCost, disableNotification: true);
                     totalSpent += chunkCost;
                     wantUnits -= actual;
                     var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
-                    Logger.Info($"PartyEconomyHelper.BuyHorsesFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, funds={teamFunds})");
+                    Logger.Info($"PartyEconomyHelper.BuyHorsesFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, partyTradeGold={party.PartyTradeGold})");
                 }
                 catch (Exception apEx)
                 {
-                    Logger.Warn($"PartyEconomyHelper.BuyHorsesFromSettlement SellItemsAction failed", apEx);
+                    Logger.Warn($"PartyEconomyHelper.BuyHorsesFromSettlement transfer failed", apEx);
                     break;
                 }
             }
             if (totalSpent == 0)
-                Logger.Info($"[ECON-DIAG] BuyHorsesFromSettlement no-mount: settlement='{settlement.Name}' isVillage={settlement.IsVillage} wantUnits={wantUnits} — 无可买坐骑（库存无 mount 物品 / 定价异常 / 资金不足）");
+                Logger.Info($"[ECON-DIAG] BuyHorsesFromSettlement no-mount: settlement='{settlement.Name}' isVillage={settlement.IsVillage} wantUnits={wantUnits}");
             try { party.ItemRoster.UpdateVersion(); } catch { }
         }
         catch (Exception ex)
@@ -287,16 +313,16 @@ public static class PartyEconomyHelper
         return totalSpent;
     }
 
-    /// <summary>把 party.ItemRoster 中所有非食物物品卖给 settlement：用 vanilla SellItemsAction 真实转 + 用 settlement.GetItemPrice 算价。
-    /// 收益加到 teamFunds。settlement.Gold 不动（与 vanilla caravan 同模式 — SellItemsAction 不自动转金币）。返回总收益。</summary>
-    public static int SellLootToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    /// <summary>把 party.ItemRoster 中所有非食物物品卖给 settlement：物品手动 AddToCounts 两侧，
+    /// 金币用 <see cref="GiveGoldAction.ApplyForSettlementToParty"/>（settlement.Gold -= price; party.PartyTradeGold += price）。
+    /// 食物保留供巡逻队自用。返回总收益。</summary>
+    public static int SellLootToSettlement(MobileParty? party, Settlement? settlement)
     {
-        // 2026-05-18 v4：放开"必须是 Town"的限制 — village 用 Village.Bound.Town 定价。settlement-side counterparty 一直是 Settlement.Party。
         if (party?.ItemRoster == null || settlement == null) return 0;
         var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
         if (pricingTown == null)
         {
-            Logger.Info($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage} villageBound='{settlement.Village?.Bound?.StringId ?? "<null>"}'");
+            Logger.Info($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
         int gained = 0;
@@ -315,21 +341,19 @@ public static class PartyEconomyHelper
                 int totalPrice = price * count;
                 try
                 {
-                    SellItemsAction.Apply(party.Party, settlement.Party, slot, count, settlement);
-                    teamFunds += totalPrice;
+                    party.ItemRoster.AddToCounts(slot.EquipmentElement, -count);
+                    settlement.Party?.ItemRoster.AddToCounts(slot.EquipmentElement, count);
+                    GiveGoldAction.ApplyForSettlementToParty(settlement, party.Party, totalPrice, disableNotification: true);
                     gained += totalPrice;
                     string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
-                    Logger.Info($"PartyEconomyHelper.SellLootToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: sold {count} '{item.StringId}' @ {price}d (+{totalPrice}d, funds={teamFunds})");
+                    Logger.Info($"PartyEconomyHelper.SellLootToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: sold {count} '{item.StringId}' @ {price}d (+{totalPrice}d, partyTradeGold={party.PartyTradeGold})");
                 }
                 catch (Exception apEx)
                 {
-                    Logger.Warn($"PartyEconomyHelper.SellLootToSettlement SellItemsAction failed for '{item.StringId}'", apEx);
+                    Logger.Warn($"PartyEconomyHelper.SellLootToSettlement transfer failed for '{item.StringId}'", apEx);
                 }
             }
-            if (gained > 0)
-            {
-                try { party.ItemRoster.UpdateVersion(); } catch { }
-            }
+            if (gained > 0) { try { party.ItemRoster.UpdateVersion(); } catch { } }
         }
         catch (Exception ex)
         {
@@ -338,12 +362,9 @@ public static class PartyEconomyHelper
         return gained;
     }
 
-    /// <summary>
-    /// 2026-05-18 v4：解散前最终清算专用 — 把 party.ItemRoster 中所有非空物品（含 IsFood）卖给 settlement。
-    /// 与 <see cref="SellLootToSettlement"/> 的区别：本方法不跳过食物，因为部队解散后食物没有意义。
-    /// 返回总收益，加到 teamFunds。
-    /// </summary>
-    public static int SellAllItemsToSettlement(MobileParty? party, Settlement? settlement, ref int teamFunds)
+    /// <summary>解散前最终清算专用 — 把 party.ItemRoster 中所有非空物品（含 IsFood）卖给 settlement。
+    /// 与 <see cref="SellLootToSettlement"/> 的区别：不跳过食物，因部队解散后食物没有意义。返回总收益。</summary>
+    public static int SellAllItemsToSettlement(MobileParty? party, Settlement? settlement)
     {
         if (party?.ItemRoster == null || settlement == null) return 0;
         var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
@@ -368,20 +389,18 @@ public static class PartyEconomyHelper
                 int totalPrice = price * count;
                 try
                 {
-                    SellItemsAction.Apply(party.Party, settlement.Party, slot, count, settlement);
-                    teamFunds += totalPrice;
+                    party.ItemRoster.AddToCounts(slot.EquipmentElement, -count);
+                    settlement.Party?.ItemRoster.AddToCounts(slot.EquipmentElement, count);
+                    GiveGoldAction.ApplyForSettlementToParty(settlement, party.Party, totalPrice, disableNotification: true);
                     gained += totalPrice;
-                    Logger.Info($"PartyEconomyHelper.SellAllItemsToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}'{(item.IsFood ? " (food)" : "")} @ {price}d (+{totalPrice}d, funds={teamFunds})");
+                    Logger.Info($"PartyEconomyHelper.SellAllItemsToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}'{(item.IsFood ? " (food)" : "")} @ {price}d (+{totalPrice}d, partyTradeGold={party.PartyTradeGold})");
                 }
                 catch (Exception apEx)
                 {
-                    Logger.Warn($"PartyEconomyHelper.SellAllItemsToSettlement SellItemsAction failed for '{item.StringId}'", apEx);
+                    Logger.Warn($"PartyEconomyHelper.SellAllItemsToSettlement transfer failed for '{item.StringId}'", apEx);
                 }
             }
-            if (gained > 0)
-            {
-                try { party.ItemRoster.UpdateVersion(); } catch { }
-            }
+            if (gained > 0) { try { party.ItemRoster.UpdateVersion(); } catch { } }
         }
         catch (Exception ex)
         {
@@ -412,39 +431,9 @@ public static class PartyEconomyHelper
         }
     }
 
-    /// <summary>从 hero 扣金，最多扣可用余额。返回实际扣到的数。</summary>
-    public static int ChargeHero(Hero? hero, int amount)
-    {
-        if (hero == null || amount <= 0) return 0;
-        try
-        {
-            int available = hero.Gold;
-            int deduct = Math.Min(amount, available);
-            if (deduct <= 0) return 0;
-            // ApplyBetweenCharacters(giver, recipient, amount, disableNotification)
-            GiveGoldAction.ApplyBetweenCharacters(hero, null, deduct, disableNotification: true);
-            return deduct;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"PartyEconomyHelper.ChargeHero '{hero?.StringId}' x{amount} failed", ex);
-            return 0;
-        }
-    }
-
-    /// <summary>还金给 hero。</summary>
-    public static int RefundHero(Hero? hero, int amount)
-    {
-        if (hero == null || amount <= 0) return 0;
-        try
-        {
-            GiveGoldAction.ApplyBetweenCharacters(null, hero, amount, disableNotification: true);
-            return amount;
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"PartyEconomyHelper.RefundHero '{hero?.StringId}' x{amount} failed", ex);
-            return 0;
-        }
-    }
+    // ChargeHero / RefundHero 已删除（2026-05-24 Plan C 重构）：
+    //   - 队伍 seed: 改调 GiveGoldAction.ApplyForCharacterToParty(leader, party.Party, amount)
+    //     一步完成 hero.Gold -= + party.PartyTradeGold += 双侧闭环。
+    //   - 队伍 refund: 改调 GiveGoldAction.ApplyForPartyToCharacter(party.Party, leader, party.PartyTradeGold)。
+    // 调用方搬迁完成后本注释可删。
 }
