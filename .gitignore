@@ -10,6 +10,11 @@
 .vscode/
 .idea/
 
+# MSBuild user-local overrides — see Directory.Build.props for the contract.
+# Each contributor sets their local BannerlordPath here without leaking it
+# into the repo.
+Directory.Build.props.user
+
 # Solution-level user settings
 *.sln.docstates
 *.sln.iml

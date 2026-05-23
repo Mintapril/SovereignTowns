@@ -78,20 +78,38 @@ dotnet build src\SovereignTowns.csproj -c Debug
 # 或 -c Release
 ```
 
-默认情况下，`DeployToGame` MSBuild target（`AfterTargets="Build"`）
-**自动将** DLL/PDB + `SubModule.xml` + GUI prefab + WebUI 资源 + 语言 XML
-拷贝到你的 Bannerlord 安装目录：
+`DeployToGame` MSBuild target（`AfterTargets="Build"`）会在编译后自动把
+DLL/PDB + `SubModule.xml` + GUI prefab + WebUI 资源 + 语言 XML 拷贝到
+`$(BannerlordPath)\Modules\SovereignTowns`。
 
-`D:\SteamLibrary\steamapps\common\Mount & Blade II Bannerlord\Modules\SovereignTowns`
+`BannerlordPath` 默认值是 Steam 标准安装位置：
 
-覆盖安装路径：
-
-```powershell
-dotnet build src\SovereignTowns.csproj -c Debug `
-  -p:BannerlordPath="C:\Games\Mount & Blade II Bannerlord"
+```
+C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord
 ```
 
-（默认路径见 `Directory.Build.props`。）
+如果你的 Bannerlord 装在别处（自定义 Steam Library、Epic、GOG、其他盘等），
+用以下任一方式覆盖，优先级从上到下：
+
+1. **每次 build 用 CLI 参数**（一次性）：
+   ```powershell
+   dotnet build src\SovereignTowns.csproj -c Debug `
+     -p:BannerlordPath="D:\Games\Mount & Blade II Bannerlord"
+   ```
+2. **`Directory.Build.props.user`** —— 本地持久覆盖
+   （已 gitignored；contributor 推荐方式）：
+   ```xml
+   <Project>
+     <PropertyGroup>
+       <BannerlordPath>D:\Games\Mount &amp; Blade II Bannerlord</BannerlordPath>
+     </PropertyGroup>
+   </Project>
+   ```
+3. **环境变量** `BannerlordPath`：
+   ```powershell
+   $env:BannerlordPath = "D:\Games\Mount & Blade II Bannerlord"
+   dotnet build src\SovereignTowns.csproj -c Debug
+   ```
 
 ## 运行日志
 

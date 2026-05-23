@@ -93,19 +93,39 @@ dotnet build src\SovereignTowns.csproj -c Debug
 # or -c Release
 ```
 
-By default the `DeployToGame` MSBuild target (AfterTargets="Build")
-**automatically copies** the DLL/PDB + `SubModule.xml` + GUI prefabs + WebUI
-bundle + language XMLs into your live Bannerlord install at
-`D:\SteamLibrary\steamapps\common\Mount & Blade II Bannerlord\Modules\SovereignTowns`.
+The `DeployToGame` MSBuild target (`AfterTargets="Build"`) automatically
+copies the DLL/PDB + `SubModule.xml` + GUI prefabs + WebUI bundle + language
+XMLs into `$(BannerlordPath)\Modules\SovereignTowns`.
 
-Override the install path:
+`BannerlordPath` defaults to the standard Steam install location:
 
-```powershell
-dotnet build src\SovereignTowns.csproj -c Debug `
-  -p:BannerlordPath="C:\Games\Mount & Blade II Bannerlord"
+```
+C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord
 ```
 
-(See `Directory.Build.props` for the default.)
+If your install lives elsewhere (custom Steam library, Epic, GOG, a
+different drive), override it in any of these ways — they take precedence
+in this order:
+
+1. **Per-build CLI flag** — one-shot:
+   ```powershell
+   dotnet build src\SovereignTowns.csproj -c Debug `
+     -p:BannerlordPath="D:\Games\Mount & Blade II Bannerlord"
+   ```
+2. **`Directory.Build.props.user`** — local persistent override
+   (gitignored; recommended for contributors):
+   ```xml
+   <Project>
+     <PropertyGroup>
+       <BannerlordPath>D:\Games\Mount &amp; Blade II Bannerlord</BannerlordPath>
+     </PropertyGroup>
+   </Project>
+   ```
+3. **Environment variable** `BannerlordPath`:
+   ```powershell
+   $env:BannerlordPath = "D:\Games\Mount & Blade II Bannerlord"
+   dotnet build src\SovereignTowns.csproj -c Debug
+   ```
 
 ## Runtime logs
 

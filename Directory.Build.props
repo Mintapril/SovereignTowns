@@ -1,18 +1,40 @@
 <Project>
+
+  <!--
+    Local-only override file: contributors can create a sibling file named
+    `Directory.Build.props.user` (gitignored) and set <BannerlordPath> there
+    to point at a non-default Bannerlord install. This Import is the first
+    line so any value the user sets pre-empts the default below.
+  -->
+  <Import Project="Directory.Build.props.user"
+          Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.props.user')" />
+
   <PropertyGroup>
-    <!-- Bannerlord 安装路径（决定引用程序集来源 + 部署目标） -->
-    <BannerlordPath Condition="'$(BannerlordPath)' == ''">D:\SteamLibrary\steamapps\common\Mount &amp; Blade II Bannerlord</BannerlordPath>
+    <!-- Bannerlord install path. Drives both the referenced-assembly source
+         (TaleWorlds DLLs come from $(GameBinPath)) and the deploy target
+         ($(ModuleDeployPath) below).
+
+         Default = standard Steam install location. If your install lives
+         elsewhere (custom Steam Library, Epic, GOG, different drive),
+         override via either:
+           1.  CLI:           dotnet build -p:BannerlordPath="C:\Games\..."
+           2.  user file:     create Directory.Build.props.user (gitignored)
+                              with <BannerlordPath>...</BannerlordPath>.
+           3.  env variable:  set BannerlordPath=C:\Games\...   (CMD)
+                              $env:BannerlordPath = "C:\Games\..."   (PowerShell) -->
+    <BannerlordPath Condition="'$(BannerlordPath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Mount &amp; Blade II Bannerlord</BannerlordPath>
     <GameBinPath>$(BannerlordPath)\bin\Win64_Shipping_Client</GameBinPath>
 
-    <!-- 模块标识 -->
+    <!-- Module identity. -->
     <ModuleId>SovereignTowns</ModuleId>
     <ModuleDeployPath>$(BannerlordPath)\Modules\$(ModuleId)</ModuleDeployPath>
 
-    <!-- 公共编译选项
-         2026-05-13 启动崩溃修复 (rgl_log_errors_58444):
-         之前 netstandard2.1 → Bannerlord 运行时 CLR 无法解析 'netstandard v2.1.0.0'
-         → 加载我们 DLL 失败 → MonoMod/Harmony 连锁崩溃。
-         BUTR Module.Template 标准是 net472，与 Bannerlord v1.3.15 运行时兼容。 -->
+    <!-- Shared compile settings.
+         2026-05-13 boot-crash fix (rgl_log_errors_58444):
+           netstandard 2.1 → Bannerlord runtime CLR cannot resolve
+           'netstandard v2.1.0.0' → our DLL fails to load → MonoMod/Harmony
+           chain crash. BUTR Module.Template standard is net472, which is
+           ABI-compatible with the Bannerlord v1.3.15 runtime. -->
     <TargetFramework>net472</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
