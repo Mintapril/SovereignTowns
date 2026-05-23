@@ -73,6 +73,30 @@ public sealed class PartyLifecycleManager
         }
     }
 
+    /// <summary>
+    /// 反注册路径（由 SovereignTownsCampaignBehavior.Uninstall 链调用）。
+    /// MbEvent 没有 RemoveListener API；ClearListeners(owner) 一次性删除 owner==this 的所有订阅，
+    /// 故两个事件（HourlyTickPartyEvent + MobilePartyDestroyed）都按 this owner 一并清掉。
+    /// 没有 Instance 静态字段，用 _initialized 做幂等门控：第二次调用直接 return。
+    /// </summary>
+    public void Uninstall()
+    {
+        try
+        {
+            if (!_initialized) return; // 幂等
+            try { CampaignEvents.HourlyTickPartyEvent.ClearListeners(this); }
+            catch (Exception innerEx) { Logger.Warn("PartyLifecycleManager.Uninstall: HourlyTickPartyEvent ClearListeners failed", innerEx); }
+            try { CampaignEvents.MobilePartyDestroyed.ClearListeners(this); }
+            catch (Exception innerEx) { Logger.Warn("PartyLifecycleManager.Uninstall: MobilePartyDestroyed ClearListeners failed", innerEx); }
+            _initialized = false;
+            Logger.Info("PartyLifecycleManager: uninstalled (listeners cleared)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("PartyLifecycleManager.Uninstall failed", ex);
+        }
+    }
+
     /// <summary>注册新创建的 MobileParty 进入本管理器跟踪。</summary>
     /// <param name="party">本 Mod 刚创建的队伍（非 null）</param>
     /// <param name="home">该队伍所属的 home settlement（非 null）</param>

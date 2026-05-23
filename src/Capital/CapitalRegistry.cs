@@ -376,6 +376,26 @@ public sealed class CapitalRegistry
         }
     }
 
+    /// <summary>
+    /// 反注册路径（由 SovereignTownsCampaignBehavior.Uninstall 链调用）。
+    /// CapitalRegistry 本身不直接订阅 vanilla 事件（OnSettlementOwnerChanged 由 behavior 转发进来），
+    /// 故只需把全局 Instance 清空，并幂等防重入。
+    /// 多次调用安全：若 Instance 已是 null 或已被新实例替代，直接 return。
+    /// </summary>
+    public void Uninstall()
+    {
+        try
+        {
+            if (Instance != this) return; // 幂等：已被替换 / 已清空
+            Instance = null;
+            Logger.Info("CapitalRegistry: uninstalled (Instance cleared)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("CapitalRegistry.Uninstall failed", ex);
+        }
+    }
+
     // ───────── 私有 ─────────
 
     /// <summary>

@@ -47,6 +47,14 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     public static SallyDispatcher? SallyDispatcher => _staticSallyDispatcher;
 
     /// <summary>
+    /// 2026-05-23 反注册路径：CampaignBehaviorBase 没有 OnRemovedBehavior hook（已通过反射确认），
+    /// 故 SovereignTownsSubModule.OnSubModuleUnloaded 需要一个进程级入口调本实例的 Uninstall()。
+    /// 用静态字段保留当前活跃 behavior 实例；跨存档重新构造时由 OnSessionLaunched 覆盖。
+    /// </summary>
+    private static SovereignTownsCampaignBehavior? _instance;
+    internal static SovereignTownsCampaignBehavior? Instance => _instance;
+
+    /// <summary>
     /// R3：跨存档去重 — `ConfigurationManager.OnConfigChanged` 是 static event，
     /// 同进程内连续加载多个存档会创建多个 behavior 实例，每实例的 `-=` 因 delegate
     /// target 是新 this，无法删除前一实例的订阅 → static event 永远持有旧实例。
@@ -171,6 +179,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
+            // 反注册路径：把当前 behavior 实例钉到静态字段，SubModule.OnSubModuleUnloaded 才能找到它调 Uninstall。
+            // 跨存档（新 behavior 实例）这里直接覆盖；旧 behavior 在它自己的 Uninstall 内会清 listeners。
+            _instance = this;
+
             ConfigurationManager.Initialize();
             DecisionAuditLogger.Initialize();
 
@@ -623,6 +635,73 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex)
         {
             Logger.Error($"OnSettlementOwnerChanged forwarding failed (settlement='{settlement?.Name}')", ex);
+        }
+    }
+
+    /// <summary>
+    /// 反注册路径（由 SovereignTownsSubModule.OnSubModuleUnloaded 调用）。
+    /// CampaignBehaviorBase 没有 OnRemovedBehavior virtual（反射确认），故走 SubModule 进程级 hook。
+    ///
+    /// MbEvent 没有 RemoveListener API；ClearListeners(owner) 删除 owner==this 的所有订阅，
+    /// 包括 OnSessionLaunched 里那段 lambda 订阅 MobilePartyDestroyed（其 owner 也是 this）。
+    /// 故无需把 lambda 改成命名字段。
+    ///
+    /// 顺序：先反注册自身订阅 → 再链式 Uninstall 内部 manager（manager 内部各自再反注册 + 清 Instance）。
+    /// 多次调用安全：每个 manager.Uninstall 都自带幂等门控。
+    /// 全部 try-catch 包裹，确保 Module 卸载流程不被任一异常中断。
+    /// </summary>
+    public void Uninstall()
+    {
+        try
+        {
+            if (_instance != this)
+            {
+                // 早已被新 behavior 替换或已清空 — 跳过避免误清 listeners。
+                return;
+            }
+
+            // ── 1) 本 behavior 自身 RegisterEvents 内 + OnSessionLaunched 内的所有 this-owned 订阅
+            //    用 ClearListeners(this) 一次性删除（MbEvent 没有 RemoveListener，按 owner 反注册）。
+            try { CampaignEvents.OnSessionLaunchedEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnSessionLaunchedEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.OnGameLoadedEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnGameLoadedEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.DailyTickEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall DailyTickEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.HourlyTickEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.HourlyTickPartyEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickPartyEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.HourlyTickSettlementEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickSettlementEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.DailyTickSettlementEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall DailyTickSettlementEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.OnSettlementOwnerChangedEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnSettlementOwnerChangedEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.MapEventEnded.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall MapEventEnded.ClearListeners failed", ex); }
+            try { CampaignEvents.WarDeclared.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall WarDeclared.ClearListeners failed", ex); }
+            try { CampaignEvents.OnHeroChangedClanEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnHeroChangedClanEvent.ClearListeners failed", ex); }
+            try { CampaignEvents.TickEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall TickEvent.ClearListeners failed", ex); }
+            // MobilePartyDestroyed：覆盖 OnSessionLaunched 内的 lambda 订阅（owner=this）。
+            try { CampaignEvents.MobilePartyDestroyed.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall MobilePartyDestroyed.ClearListeners failed", ex); }
+
+            // ConfigurationManager.OnConfigChanged 是 plain static C# event，不是 MbEvent；保留现有 -= 路径，
+            // 它自带跨存档去重逻辑（_registeredConfigChangedHandler）。
+            try
+            {
+                if (_registeredConfigChangedHandler != null)
+                {
+                    ConfigurationManager.OnConfigChanged -= _registeredConfigChangedHandler;
+                    _registeredConfigChangedHandler = null;
+                }
+            }
+            catch (Exception ex) { Logger.Warn("Uninstall OnConfigChanged unsubscribe failed", ex); }
+
+            // ── 2) 链式反注册内部 manager（顺序：依赖端先 uninstall，registry 最后）
+            try { _vanillaPatrolSuppressor?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaPatrolSuppressor failed", ex); }
+            try { _vanillaSuppression?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaSuppressionManager failed", ex); }
+            try { _capitalRegistry?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall CapitalRegistry failed", ex); }
+            try { _lifecycle?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall PartyLifecycleManager failed", ex); }
+
+            _staticSallyDispatcher = null;
+            _instance = null;
+            Logger.Info("SovereignTownsCampaignBehavior: uninstalled (event listeners cleared + managers unhooked)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("SovereignTownsCampaignBehavior.Uninstall failed", ex);
         }
     }
 

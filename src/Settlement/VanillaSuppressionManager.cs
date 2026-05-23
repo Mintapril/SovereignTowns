@@ -173,6 +173,30 @@ public sealed class VanillaSuppressionManager
         }
     }
 
+    /// <summary>
+    /// 反注册路径（由 SovereignTownsCampaignBehavior.Uninstall 链调用）。
+    /// MbEvent 没有 RemoveListener API；ClearListeners(owner) 一次性删除 owner==this 的所有订阅，
+    /// 等价于按"订阅时填的 owner"反注册。
+    /// 顺序：先 ClearListeners 再清 Instance，避免反注册中途事件被触发分派到半解构的实例。
+    /// 多次调用安全：若 Instance 已被替换或为 null，直接 return。
+    /// </summary>
+    public void Uninstall()
+    {
+        try
+        {
+            if (Instance != this) return; // 幂等
+            try { CampaignEvents.OnSettlementOwnerChangedEvent.ClearListeners(this); }
+            catch (Exception innerEx) { Logger.Warn("VanillaSuppressionManager.Uninstall: ClearListeners failed", innerEx); }
+            Instance = null;
+            _initialized = false;
+            Logger.Info("VanillaSuppressionManager: uninstalled (listeners cleared, Instance null)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("VanillaSuppressionManager.Uninstall failed", ex);
+        }
+    }
+
     private void OnSettlementOwnerChanged(
         Settlement settlement,
         bool openToClaim,

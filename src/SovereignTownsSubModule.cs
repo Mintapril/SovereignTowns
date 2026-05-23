@@ -234,6 +234,37 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
         }
         catch { }
 
+        // 反注册路径（2026-05-23）：CampaignBehaviorBase 没有 OnRemovedBehavior hook，
+        // 故在此处通过静态 accessor 拿到活跃 behavior 实例，调其 Uninstall() 链：
+        //   behavior 本身 ClearListeners(this) 所有 MbEvent → manager 链式 Uninstall
+        //   → 各 manager 内部 ClearListeners(this) + 清 Instance 静态字段。
+        // 整体幂等：再次 unload 不会重复清理。
+        try
+        {
+            SovereignTowns.Campaign.SovereignTownsCampaignBehavior.Instance?.Uninstall();
+        }
+        catch (System.Exception ex)
+        {
+            if (_loggerInitialized) Logger.Error("CampaignBehavior.Uninstall threw", ex);
+            TrySafeDebugPrint($"{Tag} CampaignBehavior.Uninstall threw: {ex.Message}");
+        }
+
+        // Harmony 反 patch：若 mod 卸载后 hook 仍挂着，vanilla / 其他 mod 调用相关方法会
+        // 跳进我们这边已卸载的 IL → MissingMethod / 段错误。按相同 patcher id 反向卸载。
+        try
+        {
+            if (!_skipBehaviorRegistration)
+            {
+                new Harmony("sovereigntowns.patches").UnpatchAll("sovereigntowns.patches");
+                if (_loggerInitialized) Logger.Info("Harmony.UnpatchAll('sovereigntowns.patches') done");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            if (_loggerInitialized) Logger.Error("Harmony.UnpatchAll threw", ex);
+            TrySafeDebugPrint($"{Tag} Harmony.UnpatchAll threw: {ex.Message}");
+        }
+
         try { SovereignTowns.WebConfig.WebConfigServer.Stop(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} WebConfigServer.Stop threw: {ex.Message}"); }
 
