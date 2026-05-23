@@ -7,8 +7,10 @@ An end-to-end **clan-level town governance** mod for
 its settlements as a **capital**, and the mod takes over garrison
 composition, volunteer recruitment, prisoner conversion, cross-settlement
 troop logistics, patrolling, sally-forth, treasury, and per-branch
-composition templates around it. A min-cost-flow (MCMF) solver plans the
-daily troop movement across the player's settlement network.
+composition templates around it. A min-cost-flow (MCMF) solver plans
+troop movement across the player's settlement network on a configurable
+**logistics tick** (default every 6 game hours, configurable 1–24h via
+`FiscalAutonomy.CapitalLogisticsTickHours`).
 
 > **Scope**: currently **player-clan only**. AI-clan management is
 > code-complete (CapitalRegistry / VanillaSuppressionManager have
@@ -34,8 +36,9 @@ daily troop movement across the player's settlement network.
 
 ## What it does
 
-Each managed clan picks one of its settlements as a **capital**. A daily
-cadence then automatically:
+The managed clan picks one of its settlements as a **capital**. On every
+logistics tick (default 6 game hours, configurable 1–24h) the mod
+automatically:
 
 - Recruits volunteers in the capital and dispatches **Recruiter parties** to
   villages farther afield.
@@ -212,11 +215,14 @@ Supporting                  : src/Models/ (GameModel overrides — speed, wage,
 ```
 
 ★ **CapitalManager** is central: each managed clan has at most one "capital"
-town. **CapitalLogisticsManager** is the daily decision point for capital
-in-place recruitment, capital recruiter dispatch, and cross-settlement
+town. **CapitalLogisticsManager** is the per-tick decision point for
+capital in-place recruitment, recruiter-party dispatch, and cross-settlement
 transfers — driven by min-cost-flow against the capital-level snapshot.
-When the capital falls, `PartyLifecycleManager.MigrateAllOrDisband` rescues
-in-flight parties to the new capital or evaporates them.
+The tick fires every `FiscalAutonomy.CapitalLogisticsTickHours` game hours
+(default 6, configurable [1, 24]; this same value also sets the unit length
+of one tick in the time-expanded MCMF solver). When the capital falls,
+`PartyLifecycleManager.MigrateAllOrDisband` rescues in-flight parties to
+the new capital or evaporates them.
 
 ## Tests
 

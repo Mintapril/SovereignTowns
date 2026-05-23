@@ -6,7 +6,9 @@
 设计的端到端 **氏族级城镇治理 mod**。玩家氏族选取一个定居点作为
 **首府**（capital），mod 围绕首府全面接管：驻军构成、志愿兵招募、
 俘虏转化、跨定居点兵力调拨、巡逻、出击迎敌、金库财政、按分支配置的
-兵种构成模板。最小费用流（MCMF）求解器规划玩家氏族网络内的日级兵力流动。
+兵种构成模板。最小费用流（MCMF）求解器按可配置的 **后勤 tick**
+规划氏族网络内的兵力流动（默认每 6 游戏小时一次，可调范围 1–24 小时，
+由 `FiscalAutonomy.CapitalLogisticsTickHours` 控制）。
 
 > **当前作用范围**：**仅玩家氏族**。AI 氏族管理在代码层已完整实装
 > （`CapitalRegistry` / `VanillaSuppressionManager` 都有对称的 AI 路径），
@@ -26,7 +28,8 @@
 
 ## 功能简介
 
-每个受管理的氏族选取一个定居点作为 **首府**（capital）。然后按日节奏自动：
+受管理的氏族选取一个定居点作为 **首府**（capital）。每个后勤 tick
+（默认 6 游戏小时，可调范围 1–24 小时）mod 自动执行：
 
 - 在首府就地招募志愿兵；向远方村庄派出 **征兵队**（Recruiter parties）。
 - 把俘虏转化进首府驻军。
@@ -195,9 +198,11 @@ Layer 1  Infrastructure     ：SovereignTownsSubModule, SovereignTownsCampaignBe
 
 ★ **CapitalManager** 是运行时语义核心：每个受管理氏族至多一个首府。
 **CapitalLogisticsManager** 是首府就地招募 / 派出征兵队 / 跨定居点调拨的
-日级决策点 —— 由最小费用流基于首府级快照求解。当首府失守时，
-`PartyLifecycleManager.MigrateAllOrDisband` 会把在途队伍迁移到新首府，
-或如果无可迁移则就地解散。
+**周期性决策点** —— 由最小费用流基于首府级快照求解。tick 频率由
+`FiscalAutonomy.CapitalLogisticsTickHours` 控制（默认 6 游戏小时，
+可调范围 [1, 24]；该值同时也是时间展开 MCMF solver 中"一个 tick"的
+时长）。当首府失守时，`PartyLifecycleManager.MigrateAllOrDisband` 会把
+在途队伍迁移到新首府，或如果无可迁移则就地解散。
 
 ## 测试
 
