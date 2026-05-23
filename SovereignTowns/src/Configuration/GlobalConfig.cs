@@ -51,7 +51,7 @@ public sealed class GlobalConfig
     /// <summary>建筑等级 → 队伍加成系数。军营 / 哨所等级派生各类队伍并发上限与驻军 XP。</summary>
     public BuildingBonusConfig BuildingBonus { get; set; } = new BuildingBonusConfig();
 
-    /// <summary>财政自治 + 中央驻军调度器配置。金库预算、遣散超额、MCMF 价值函数等所有财政自治旋钮。</summary>
+    /// <summary>财政自治 + 中央驻军调度器配置。金库预算、遣散超额、调度器价值函数等所有财政自治旋钮。</summary>
     public FiscalAutonomyConfig FiscalAutonomy { get; set; } = new FiscalAutonomyConfig();
 
     /// <summary>构造一份纯默认配置（用于首次安装 / 配置丢失回退）。</summary>
@@ -168,9 +168,6 @@ public sealed class PartyThresholds
     public float PartyReturnWoundedRatio { get; set; } = 0.3f;
 
     // ── 巡逻队（PatrolDispatcher） ──────────────────────────────────────────
-    /// <summary>创建巡逻队后首府必须保留的实际驻军比例。默认 0.8（高保留，避免抽空驻军）。</summary>
-    public float PatrolReserveAfterCreationRatio { get; set; } = 0.8f;
-
     /// <summary>新建巡逻队时从首府驻军抽走 garrison × 此比例的兵员。原硬编码 15/150 = 0.10。</summary>
     public float PatrolTroopBatchRatio { get; set; } = 0.10f;
 
@@ -180,6 +177,12 @@ public sealed class PartyThresholds
     /// 默认 50；范围 [0, 500]。0 = 不闸（兼容老行为）。
     /// </summary>
     public int PatrolMinDispatchSize { get; set; } = 50;
+
+    /// <summary>
+    /// 调度器口径下每支 MCMF 派出的巡逻队规模 —— patrol sink 容量
+    /// = (哨所派生的巡逻队上限余量) × 此值。默认 50。
+    /// </summary>
+    public int PatrolTargetSize { get; set; } = 50;
 
     // ── 征兵队（RecruitmentDispatcher） ────────────────────────────────────
     /// <summary>派出征兵队时从首府驻军抽取的护卫比例（0–1）。原硬编码 = 0.10（10%）。</summary>
@@ -195,17 +198,9 @@ public sealed class PartyThresholds
     public int RecruiterVillageCandidateCap { get; set; } = 250;
 
     // ── 调拨 / 调度（CapitalLogisticsManager） ─────────────────────────────
-    /// <summary>预计驻军低于 DesiredTarget × 此比例 → 视为危急缺口。原硬编码 36/150 ≈ 0.24。</summary>
-    public float TransferCriticalProjectedRatio { get; set; } = 0.24f;
-
-    /// <summary>从源城驻军中按此比例抽取（再受 dest demand 与 MaxTroopsPerTask 钳制）。原硬编码 = 0.30。</summary>
-    public float TransferRatio { get; set; } = 0.30f;
-
-    /// <summary>单次调拨最多搬运 source garrison × 此比例的兵员。原硬编码 100/150 ≈ 0.67。</summary>
+    /// <summary>单次调拨最多搬运 source garrison × 此比例的兵员。原硬编码 100/150 ≈ 0.67。
+    /// STPartySizeLimitModel 据此派生调拨队 PartySizeLimit。</summary>
     public float TransferMaxTroopsPerTaskRatio { get; set; } = 0.67f;
-
-    /// <summary>算出的调拨人数低于 source garrison × 此比例则放弃任务（除非缺口已临界）。原硬编码 20/150 ≈ 0.13。</summary>
-    public float TransferMinTroopRatio { get; set; } = 0.13f;
 
     /// <summary>派征兵队的缺口下限：capital garrison × 此比例。原硬编码 10/150 ≈ 0.07。</summary>
     public float RecruitmentMinDemandRatio { get; set; } = 0.07f;
@@ -265,15 +260,6 @@ public sealed class PartyThresholds
     /// <summary>R2：敌方需连续可见 N 个 hourly tick 才触发 Sally。原硬编码 3。范围 [1, 48]。</summary>
     public int SallyMinSustainedTicks { get; set; } = 3;
 
-    /// <summary>R3：调拨评分中容量项的权重（score -= capacity × 此值）。原硬编码 0.05f。范围 [0, 1]。</summary>
-    public float TransferCapacityWeight { get; set; } = 0.05f;
-
-    /// <summary>R3：branch-to-branch 调拨惩罚（destination 非首府且 source 非首府时 score -= 此值）。原硬编码 25f。范围 [0, 100]。</summary>
-    public float TransferBranchToBranchPenalty { get; set; } = 25f;
-
-    /// <summary>R3：首府出兵惩罚（destination 非首府且 source 即首府时 score += 此值）。原硬编码 10f。范围 [0, 100]。</summary>
-    public float TransferCapitalSourcePenalty { get; set; } = 10f;
-
     /// <summary>R4：自动升级触发：低 Tier (T1+T2) 占总兵比例 ≥ 此值时尝试升级。原硬编码 0.30。范围 [0, 1]。</summary>
     public float AutoUpgradeMinTierRatio { get; set; } = 0.30f;
 
@@ -286,19 +272,7 @@ public sealed class PartyThresholds
     // T1 重整 2026-05-18：4 类 ST 队伍 seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，
     // 不再可配置；删除 RecruiterSeedGold / SallySeedGold / TransferSeedGold 三字段（H7/H8 历史项）。
 
-    // ── MCMF solver（SupplyDemandGraph）──────────────────────────────────
-    /// <summary>兵种 role 不符或 exact template 不在升级树上的硬罚。默认 1000。</summary>
-    public int McmfHardPenalty { get; set; } = 1000;
-
-    /// <summary>每差 1 tier 的罚分。默认 50。</summary>
-    public int McmfTierPenalty { get; set; } = 50;
-
-    /// <summary>缺口越大越宽容的强度。范围 [0,1]，默认 0.8。</summary>
-    public float McmfLeniency { get; set; } = 0.8f;
-
-    /// <summary>需求未满足的 bypass cost。默认 2000。</summary>
-    public int McmfUnmetCost { get; set; } = 2000;
-
+    // ── MCMF solver（UnifiedGarrisonSolver）──────────────────────────────────
     /// <summary>VillageNotableSource 派 recruiter 的固定成本。默认 100。</summary>
     public int McmfRecruiterOverhead { get; set; } = 100;
 

@@ -14,8 +14,8 @@ using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 namespace SovereignTowns.Algorithm;
 
 /// <summary>
-/// 方案2 合并 solver 的求解产出 —— flow 统计 + 按边语义类别汇总 + decode 出的对外契约
-/// (每城 Target / 派发指令 / 每城遣散头数)。见 audits/mcmf-merge-handoff.md §3。
+/// P3 时间展开合并 solver 的求解产出 —— flow 统计 + 按边语义类别汇总 + decode 出的对外契约
+/// (每城 tick-0 目标头数 / 派发指令 / 每城 tick-0 遣散头数)。见 audits/2026-05-22-p3-lookahead-design.md §6。
 /// </summary>
 public sealed class UnifiedSolverResult
 {
@@ -26,15 +26,16 @@ public sealed class UnifiedSolverResult
     public int NodeCount { get; set; }
     public int EdgeCount { get; set; }
 
-    /// <summary>Σ 所有 origin 桶大小(superSource 出边容量之和)。</summary>
+    /// <summary>Σ superSource 出边容量(初始驻军 + 志愿兵 + 在飞兵)。</summary>
     public int OriginSupply { get; set; }
+    /// <summary>预算可供养头数(informational —— 软预算下不再是硬上限)。</summary>
     public int BudgetTroopCap { get; set; }
-    /// <summary>Σ 所有 demand-tier 节点容量。</summary>
+    /// <summary>Σ layer-0 holding tier 容量。</summary>
     public int DemandTierCapacity { get; set; }
 
     public int TotalFlow { get; set; }
     public long TotalCost { get; set; }
-    /// <summary>Σ 流入所有 demand-tier 的流量(= Σ demand-tier→budgetGate 流)。</summary>
+    /// <summary>tick 0 守军总头数(= Σ Target)。</summary>
     public int DemandFilled { get; set; }
 
     public int StayFlow { get; set; }
@@ -42,101 +43,112 @@ public sealed class UnifiedSolverResult
     public int RecruitFlow { get; set; }
     public int BypassFlow { get; set; }
 
-    /// <summary>本次求解所用氏族驻军工资预算(金币/日)。</summary>
+    /// <summary>Σ patrol sink 边流量(跨所有 tick)。⚠️ 仅诊断:实际派发的巡逻头数 = τ=0 decode
+    /// 出的 PatrolInstruction.Count,通常 &lt; 本值(τ&gt;0 的巡逻流只是规划塑形,不产指令)。</summary>
+    public int PatrolFlow { get; set; }
+
+    /// <summary>本次求解所用氏族驻军工资预算(金币/日,informational)。</summary>
     public long Budget { get; set; }
 
-    /// <summary>M2 decode:每城目标头数(= Σ 流入该城所有 demand-tier)。每个 fief 预播种 0。</summary>
+    /// <summary>decode:每城 tick-0 目标头数(= Σ_R holding 边 G[S,R,0]→G[S,R,1] 流)。每 fief 预播种 0。</summary>
     public Dictionary<Settlement, int> Target { get; } = new();
 
-    /// <summary>M2 decode:派发指令(Recruiter / InPlace / Transfer)。M2 仅供差异对账,不派发。</summary>
+    /// <summary>decode:tick-0 派发指令(Recruiter / InPlace / Transfer)。</summary>
     public List<DispatchInstruction> Instructions { get; } = new();
 
-    /// <summary>decode:每城遣散头数(现有驻军 origin → 本城 disbandGate 的流)。</summary>
+    /// <summary>decode:每城 tick-0 遣散头数(G[S,R,0]→disbandGate[S,0] 流)。</summary>
     public Dictionary<Settlement, int> Disband { get; } = new();
 
     /// <summary>parallel-run 差异日志行(边语义类别汇总)。Target / 指令级对账见
     /// CapitalLogisticsManager.LogMergedDiff。</summary>
     public string DiffLine(string clanId)
         => $"clan={clanId} settlements={SettlementCount} nodes={NodeCount} edges={EdgeCount} "
-         + $"originSupply={OriginSupply} budgetCap={BudgetTroopCap} demandCap={DemandTierCapacity} "
-         + $"flow={TotalFlow} demandFilled={DemandFilled} unmet={Math.Max(0, DemandTierCapacity - DemandFilled)} "
-         + $"stay={StayFlow} recruit={RecruitFlow} transfer={TransferFlow} bypass={BypassFlow}";
+         + $"originSupply={OriginSupply} budgetCap={BudgetTroopCap} holdL0Cap={DemandTierCapacity} "
+         + $"flow={TotalFlow} tick0Garrison={DemandFilled} "
+         + $"stay={StayFlow} recruit={RecruitFlow} transfer={TransferFlow} bypass={BypassFlow} patrol={PatrolFlow}";
 }
 
 /// <summary>
-/// 方案2 合并 solver —— 把 Pass A(分配)与 Pass B(路由)合并为单一 MinCostFlow 图、
-/// 单次求解。建图 + Solve + decode 成 Target / DispatchInstruction / 每城遣散。
-/// 精确规格见 audits/mcmf-merge-handoff.md §3。
+/// P3 时间展开合并 solver(option A:真时间展开 + 软预算)。把驻军分配 + 路由沿时间轴展开
+/// 成 T 层单一 MinCostFlow 图、单次求解,decode 只产 tick-0 指令(receding-horizon MPC)。
+/// 逐节点逐边规格见 audits/2026-05-22-p3-lookahead-design.md §6;K 平衡规则见 §6.3。
 ///
-/// 里程碑进度:
-///   - M1:建图 + Solve + 按边语义类别统计。
-///   - M2:decode 成 Target / DispatchInstruction / disband(填入结果对象)。
-///   - M3:value 用合并 solver 专用 Merged* 基常数(与 Pass A 独立,routing-可比标度)。
-///   - M4:两段 bypass —— 每个非保护城一个 disbandGate 节点,正常段(每 tick 遣散上限,
-///     费用 0)+ 溢出段(罚分)。现有驻军经 disbandGate 出图;保护态(siege / risk≥High /
-///     flag-off)origin 不连 disbandGate → 永不遣散。两段保证非保护城驻军恒有出路。
-///   - M5:manual 模式 —— 玩家手动目标作 demand 容量(adequate = hardCap = 手动目标,
-///     surplus 段归零);manual 模式全城保护、永不遣散。详见 handoff §3.8。
-/// 派发由 CapitalLogisticsManager 接线(ShadowMerged 只记差异、MergedOnly 真派发)。
+/// 历史:M1-M5 单 tick 合并 solver;P3 起重写为时间展开图。
+/// 派发由 CapitalLogisticsManager 接线。
 /// </summary>
 public static class UnifiedGarrisonSolver
 {
-    /// <summary>费用偏移,使 K − value ≥ 0(MinCostFlow 拒负费用)。须 ≥ 任何 merged tier
-    /// value 的最大值;20M 远高于此。全程整数运算 → routing-vs-value 比较精确,K 大小不影响正确性。</summary>
+    /// <summary>K 平衡偏移。每条 source→sink 路径的 K 分量之和恒 = T·K(§6.3),公共偏移抵消。
+    /// 须 ≥ 任何 tier value(~47K);20M 远高于此。单条边费用 ≤ ~T·K,T≤64 → ≤ ~1.3G,在 int 内。
+    /// 结构性常量,不暴露为配置。</summary>
     private const int K = 20_000_000;
 
-    private const float CoreDimRange = 0.8f;
-    private const float CoreDimMidpoint = 0.5f;
-    private const float ProsperityNormalizer = 4000f;
-    private const float CapitalStrategicBonus = 1.3f;
+    /// <summary>分支 G 节点单一占位 role(分支头数口径,见 handoff §3.1)。</summary>
+    private static readonly GenericTroopRole[] SingleInf = { GenericTroopRole.Infantry };
 
-    private enum OriginKind { Garrison, InPlace, Village }
+    /// <summary>边的语义类别 —— Solve 后聚合 EdgeFlows 产差异日志。</summary>
+    private enum EdgeCat { Internal, Stay, Transfer, Recruit, Bypass, Patrol }
 
-    /// <summary>边的语义类别 —— Solve 后按此聚合 EdgeFlows,产出差异日志(无需 decode)。</summary>
-    private enum EdgeCat { Internal, Stay, Transfer, Recruit, Bypass }
+    /// <summary>decode 用:layer-0 出发 / 指令相关边的登记。</summary>
+    private enum DecodeKind { Recruiter = 1, InPlace, Transfer, Disband, HoldingL0, Patrol }
 
-    private sealed class DemandTier
-    {
-        public int Node;
-        public Settlement Settlement = null!;
-        public bool IsCapital;
-        public GenericTroopRole Role;   // 首府:真实 role;分支:Infantry 占位
-        public int Capacity;
-        public int CostInto;            // K − clamp(round(value))
-    }
-
-    private sealed class Origin
-    {
-        public int Node;
-        public OriginKind Kind;
-        public Settlement Settlement = null!;   // Garrison/InPlace:该城;Village:该村
-        public GenericTroopRole Role;
-        public int Count;
-        public bool Protected;                  // 仅 Garrison:siege/risk/flag-off → 不可遣散
-    }
-
-    /// <param name="passA">非 null 时复用 legacy Pass A 已算好的预算 / 头数上限,
-    /// 避免 ShadowMerged 期双算;null 则自算(standalone)。</param>
+    /// <summary>
+    /// 同步求解封装 —— 一次排干 <see cref="SolveCoroutine"/>。同步驱动下 SSP 的 yield 退化为空
+    /// MoveNext,结果与分帧驱动逐字节一致。
+    /// </summary>
     public static UnifiedSolverResult Solve(
-        CapitalManager manager, Settlement capitalSettlement, GarrisonAllocationResult? passA = null)
+        CapitalManager manager, Settlement capitalSettlement,
+        IHorizonForecast forecast, int patrolHeadroom = 0)
+    {
+        UnifiedSolverResult? captured = null;
+        try
+        {
+            var it = SolveCoroutine(manager, capitalSettlement, forecast, patrolHeadroom,
+                r => captured = r);
+            while (it.MoveNext()) { }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("UnifiedGarrisonSolver.Solve failed", ex);
+        }
+        return captured ?? new UnifiedSolverResult();
+    }
+
+    /// <summary>
+    /// 分帧求解协程。建图同步跑完 → SSP 每 cfg.SspYieldEvery 次增广 yield 一帧 → decode
+    /// 同步跑完。完成(含前置守卫提前结束 / 异常)时一律经 finally 调 <paramref name="onResult"/>。
+    /// 异常不在此 catch —— 交由 AsyncSimulator.Update 捕获并打印协程栈。
+    /// </summary>
+    /// <param name="forecast">每 tick 威胁来源(FlatForecast / ThreatForecast)。</param>
+    /// <param name="patrolHeadroom">巡逻 sink 容量(头数)= 哨所派生的巡逻队上限余量 ×
+    /// PatrolTargetSize;0 = 不建巡逻 sink。由 CapitalLogisticsManager 算好传入(solver 不查建筑等级)。</param>
+    /// <param name="onResult">求解结束回调(finally 保证触发;前置守卫提前结束时 result.Ran=false)。</param>
+    public static System.Collections.IEnumerator SolveCoroutine(
+        CapitalManager manager, Settlement capitalSettlement,
+        IHorizonForecast forecast, int patrolHeadroom,
+        Action<UnifiedSolverResult> onResult)
     {
         var result = new UnifiedSolverResult();
         try
         {
             var clan = manager?.OwnerClan;
-            if (clan == null || capitalSettlement == null) return result;
+            if (clan == null || capitalSettlement == null || forecast == null) yield break;
+
+            // P3 性能埋点:build / solve / decode 三段计时;recruitMs 单列招募块
+            // (候选村枚举 + 志愿兵分桶 + 路线风险空间扫描)—— 建图里最可疑的热点。
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long recruitMs = 0;
 
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
             var thresholds = ConfigurationManager.Current?.Thresholds ?? new PartyThresholds();
-            // M5:manual 模式下 demand 容量改用玩家手动目标,且全城保护不遣散(见 §3.8)。
+            var features = ConfigurationManager.Current?.EnabledFeatures ?? new EnabledFeatures();
+            bool allowRecruitment = features.AutoRecruitment;
+            bool allowTransfers = features.TroopTransfers;
             bool manualMode = cfg.AllowManualGarrisonTargets;
+            int T = Math.Min(64, Math.Max(1, cfg.HorizonTicks));
+            int tickHours = Math.Min(24, Math.Max(1, cfg.CapitalLogisticsTickHours));
 
-            // #2:同氏族但首府主之外的领主持有的非首府(同氏族封臣的独立封地)—— 合并 solver
-            // 整体排除(既不建 demand 也不建 origin)。
-            // 注:legacy SupplyDemandGraph 对这类分支仍保留为 Garrison surplus 抽兵源("仍可被抽"),
-            // 合并 solver 取全排除的简化口径 —— 代价是不再从他人持有分支抽超额兵。单领主氏族
-            // (典型玩家氏族)永不触发此分支。改动此处前请勿"只建 origin 不建 demand":那会让
-            // solver 把同氏族封臣的驻军纳入遣散候选(disbandGate),等于擅自遣散他人部队。
+            // #2:排除同氏族其他领主持有的非首府(沿用今天口径,见 handoff §3.7)。
             var capitalOwner = capitalSettlement.Owner;
             var towns = clan.Fiefs
                 .Where(t => t?.Settlement != null && t.Settlement.IsActive && (t.IsTown || t.IsCastle))
@@ -145,33 +157,29 @@ public static class UnifiedGarrisonSolver
                             || t.Settlement.Owner == null
                             || t.Settlement.Owner == capitalOwner)
                 .ToList();
-            if (towns.Count == 0) return result;
+            if (towns.Count == 0) yield break;
 
             var capitalTown = towns.FirstOrDefault(t => t.Settlement == capitalSettlement);
             if (capitalTown == null)
             {
                 Logger.Debug($"UnifiedGarrisonSolver: capital '{capitalSettlement.StringId}' not among clan fiefs");
-                return result;
+                yield break;
             }
+            var townSet = new HashSet<Settlement>(towns.Select(t => t.Settlement));
 
-            // passA 提供时复用 legacy 已算好的预算 / 头数上限(advisor perf 项);
-            // standalone(passA == null)则自算。
-            long clanWageBudget;
-            int budgetTroopCap;
-            if (passA != null)
-            {
-                clanWageBudget = passA.Budget;
-                budgetTroopCap = Math.Max(0, passA.BudgetTroopCap);
-            }
-            else
-            {
-                int wagePerTroop = Math.Max(1, GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, towns));
-                clanWageBudget = GarrisonAllocationSolver.ClanWageBudget(manager!, towns, cfg, wagePerTroop);
-                budgetTroopCap = (int)Math.Max(0L, Math.Min(int.MaxValue, clanWageBudget / wagePerTroop));
-            }
+            // 软预算:wage 进 holding 边费用,作守军的(唯一且很弱的)预算信号(§6.0)。
+            // ⚠️ 单位约定:WagePerTroopAtMaxTier 返回 vanilla【日】工资,而 holding 边代表一个
+            // tick(CapitalLogisticsTickHours,默认 6h)。value 常数同样按 per-tick
+            // 标度调参 —— 故决定去留的 value > wage 比较两侧同标度、当前 tick 尺寸下自洽。
+            // re-tune value 或 wage 时须保持两者同为 per-tick 口径,否则软预算比例失衡。
+            // budget / BudgetTroopCap 走 clanWageBudget/wagePerTroop,两侧均日单位,不受影响。
+            int wagePerTroop = Math.Max(1, GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, towns));
+            long clanWageBudget = GarrisonAllocationSolver.ClanWageBudget(manager!, towns, cfg, wagePerTroop);
 
             var graph = new MinCostFlow();
-            var edgeCat = new Dictionary<(int From, int To), EdgeCat>();
+            var edgeCat = new Dictionary<(int, int), EdgeCat>();
+            var decodeInfo = new Dictionary<(int, int),
+                (DecodeKind Kind, Settlement A, Settlement B, GenericTroopRole Role)>();
             int edgeCount = 0;
             void AddE(int from, int to, int cap, int cost, EdgeCat cat)
             {
@@ -181,254 +189,288 @@ public static class UnifiedGarrisonSolver
                 edgeCount++;
             }
 
-            // #1:本 clan 在飞 ST 队按目标定居点汇总的在途头数 —— 据此 floor-first 削减
-            // demand-tier 容量,避免重复补员已在途的缺口。
-            var inFlightInbound = CollectInFlightInbound(clan);
-
+            // ── 节点(懒分配)──
             int next = 1;
-            int superSource = next++, superSink = next++, budgetGate = next++,
-                bypass = next++, bypassOverflow = next++;
+            int superSource = next++, superSink = next++;
+            var gNode = new Dictionary<(Settlement, GenericTroopRole, int), int>();
+            int G(Settlement s, GenericTroopRole r, int tau)
+            {
+                var key = (s, r, tau);
+                if (!gNode.TryGetValue(key, out var n)) { n = next++; gNode[key] = n; }
+                return n;
+            }
+            var transitNode = new Dictionary<(GenericTroopRole, int), int>();
+            int Transit(GenericTroopRole r, int tau)
+            {
+                var key = (r, tau);
+                if (!transitNode.TryGetValue(key, out var n)) { n = next++; transitNode[key] = n; }
+                return n;
+            }
+            var disbandGate = new Dictionary<(Settlement, int), int>();
 
-            // capital-transit:每首府每 role 一个 —— role-blind 的单 transit 会让 Cav 招募兵
-            // 经 transit 填进 Inf 缺口(见 handoff §3.1)。
-            var transit = new Dictionary<GenericTroopRole, int>();
-            foreach (var role in MatchPolicy.Roles)
-                transit[role] = next++;
+            const int BigCap = 1_000_000;
+            int disbandPerTickCap = Math.Max(0, (int)Math.Round(cfg.DisbandPerDayCap * tickHours / 24.0));
+            int overflowPenalty = Math.Max(1, cfg.BypassOverflowPenalty);
 
-            // 总驻军预算闸:demand-tier 全部经此汇入 superSink,预算口径在头数上限。
-            AddE(budgetGate, superSink, budgetTroopCap, 0, EdgeCat.Internal);
+            GenericTroopRole[] RolesOf(Settlement s) => s == capitalSettlement ? MatchPolicy.Roles : SingleInf;
+            int originSupply = 0;
 
-            // ── demand-tier 节点(每 settlement;首府按 role 拆,分支单一占位 role)──
-            var tiers = new List<DemandTier>();
-            int demandTierCapacity = 0;
+            // ── 初始驻军:superSource → G[S,R,0] ──
+            foreach (var t in towns)
+            {
+                var s = t.Settlement;
+                foreach (var bucket in MatchPolicy.Bucketize(t.GarrisonParty?.MemberRoster))
+                {
+                    if (bucket.Count <= 0 || bucket.Role == GenericTroopRole.Unknown) continue;
+                    var r = s == capitalSettlement ? bucket.Role : GenericTroopRole.Infantry;
+                    AddE(superSource, G(s, r, 0), bucket.Count, 0, EdgeCat.Internal);
+                    originSupply += bucket.Count;
+                }
+            }
+
+            // ── 在飞兵作为到达 supply:superSource → G[dest,Inf,arrivalτ](§6.3 Task4c)──
+            // role-blind:在飞兵一律记 Infantry track(handoff §3.6 近似)。
+            foreach (var (dest, heads, arrivalTau) in CollectInFlightArrivals(clan, tickHours, T))
+            {
+                if (dest == null || !townSet.Contains(dest)) continue;
+                AddE(superSource, G(dest, GenericTroopRole.Infantry, arrivalTau), heads, arrivalTau * K, EdgeCat.Internal);
+                originSupply += heads;
+            }
+
+            // ── holding 边 + 时域出口 + 遣散边(每城)──
+            int demandTierCapL0 = 0;
             foreach (var t in towns)
             {
                 var s = t.Settlement;
                 bool isCapital = s == capitalSettlement;
-                int floor = Math.Max(0, cfg.MinGarrisonFloor);
-                int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
-                int adequate = GarrisonAllocationSolver.AdequateFor(t, cfg, floor, hardCap);
-                if (manualMode)
-                {
-                    // M5:manual 模式 —— 玩家手动目标作 demand 容量上限。adequate = hardCap =
-                    // 手动目标 → surplus 段归零;floor 收窄到不超过手动目标。value 函数照常
-                    // (手动目标只改容量,不改值域口径,见 handoff §3.8)。
-                    int manualTarget = ComputeManualTarget(t, cfg);
-                    hardCap = manualTarget;
-                    adequate = manualTarget;
-                    floor = Math.Min(floor, manualTarget);
-                }
-                float threat = ThreatWeight(s);
-                float strat = StrategicWeight(s, isCapital);
-                int coreSpan = Math.Max(0, adequate - floor);
-                int coreCount = Math.Max(1, cfg.CoreTierCount);
-                int surplusSpan = Math.Max(0, hardCap - adequate);
+                bool besieged = s.IsUnderSiege;
+                bool protectedCity = besieged || IsProtectedFromDisband(s, cfg);
+                var rule = isCapital ? (ConfigurationManager.GetRuleFor(t) ?? TownGarrisonRule.CreateDefault()) : null;
 
-                // (tier 容量, tier value) 序列 —— tier 分层沿用 Pass A 的 floor/core/surplus 口径;
-                // value 基常数用合并 solver 专用的 Merged* 常数(与 Pass A 独立,见 §2)。
-                var tierDefs = new List<(int Cap, float Value)>();
-                if (floor > 0)
-                    tierDefs.Add((floor, cfg.MergedValueFloorBase * threat * strat));
-                for (int k = 0; k < coreCount; k++)
+                for (int tau = 0; tau < T; tau++)
                 {
-                    int cap = coreSpan * (k + 1) / coreCount - coreSpan * k / coreCount;
-                    if (cap <= 0) continue;
-                    float dim = 1.0f - CoreDimRange * ((k + CoreDimMidpoint) / coreCount);
-                    tierDefs.Add((cap, cfg.MergedValueCoreBase * dim * threat * strat));
-                }
-                if (surplusSpan > 0)
-                    tierDefs.Add((surplusSpan, -Math.Max(1, cfg.MergedSurplusEdgeCost)));
-
-                // #1:在飞 inbound 兵将填满高优先 tier → 从 floor 起逐层削减 tier 容量,
-                // solver 只需补其上方的缺口。role-blind 近似(不区分兵种,见 handoff §3.6)。
-                int inflight = inFlightInbound.TryGetValue(s, out var inb) ? inb : 0;
-                for (int ti = 0; ti < tierDefs.Count && inflight > 0; ti++)
-                {
-                    int take = Math.Min(inflight, tierDefs[ti].Cap);
-                    tierDefs[ti] = (tierDefs[ti].Cap - take, tierDefs[ti].Value);
-                    inflight -= take;
-                }
-
-                var rule = isCapital
-                    ? (ConfigurationManager.GetRuleFor(t) ?? TownGarrisonRule.CreateDefault())
-                    : null;
-
-                foreach (var (cap, value) in tierDefs)
-                {
-                    if (cap <= 0) continue;   // 在飞 inbound 削减后可能整层归零
-                    int costInto = K - ClampValue(value);
-                    if (isCapital)
+                    // holding 边:G[S,R,τ]→G[S,R,τ+1],按 tier 拆;费用 = 1·K + wage − value。
+                    foreach (var (cap, value) in TierDefs(t, s, isCapital, tau, cfg, manualMode, forecast))
                     {
-                        // 首府每 tier 的总容量经 MatchPolicy.DesiredCount 按规则比例拆到各 role。
-                        foreach (var role in MatchPolicy.Roles)
+                        if (cap <= 0) continue;
+                        int holdCost = K + wagePerTroop - ClampValue(value);
+                        if (isCapital)
                         {
-                            int roleCap = MatchPolicy.DesiredCount(rule!, role, cap);
-                            if (roleCap <= 0) continue;
-                            int node = next++;
-                            tiers.Add(new DemandTier
+                            foreach (var role in MatchPolicy.Roles)
                             {
-                                Node = node, Settlement = s, IsCapital = true,
-                                Role = role, Capacity = roleCap, CostInto = costInto,
-                            });
-                            AddE(node, budgetGate, roleCap, 0, EdgeCat.Internal);
-                            demandTierCapacity += roleCap;
-                        }
-                    }
-                    else
-                    {
-                        int node = next++;
-                        tiers.Add(new DemandTier
-                        {
-                            Node = node, Settlement = s, IsCapital = false,
-                            Role = GenericTroopRole.Infantry, Capacity = cap, CostInto = costInto,
-                        });
-                        AddE(node, budgetGate, cap, 0, EdgeCat.Internal);
-                        demandTierCapacity += cap;
-                    }
-                }
-            }
-
-            // ── origin 节点 ──
-            var origins = new List<Origin>();
-            int originSupply = 0;
-            void AddOrigin(OriginKind kind, Settlement s, GenericTroopRole role, int count, bool prot)
-            {
-                if (count <= 0 || role == GenericTroopRole.Unknown) return;
-                int node = next++;
-                origins.Add(new Origin
-                {
-                    Node = node, Kind = kind, Settlement = s,
-                    Role = role, Count = count, Protected = prot,
-                });
-                AddE(superSource, node, count, 0, EdgeCat.Internal);
-                originSupply += count;
-            }
-
-            // 现有驻军 origin:每 (settlement, role) 一桶。围城中的城整体跳过 —— 驻军固守,
-            // 既不外调也不接收(复刻 Pass B 的 siege 隔离;接收侧见 origin 出边)。
-            foreach (var t in towns)
-            {
-                var s = t.Settlement;
-                if (s.IsUnderSiege) continue;
-                bool prot = IsProtectedFromDisband(s, cfg);
-                foreach (var bucket in MatchPolicy.Bucketize(t.GarrisonParty?.MemberRoster))
-                    AddOrigin(OriginKind.Garrison, s, bucket.Role, bucket.Count, prot);
-            }
-
-            // 招募 origin:围城中的首府不招募(复刻 Pass B)。
-            if (!capitalSettlement.IsUnderSiege)
-            {
-                // 首府 InPlace(notable 志愿兵)。
-                foreach (var bucket in SupplyDemandGraph.BucketizeCharacters(
-                             SupplyDemandGraph.EnumerateVolunteerTroops(capitalSettlement)))
-                    AddOrigin(OriginKind.InPlace, capitalSettlement, bucket.Role, bucket.Count, false);
-
-                // per-village 候选村(沿用 Phase 1 枚举,在飞征兵队目标村排除)。
-                var inFlight = SupplyDemandGraph.CollectInFlightRecruiterVillages(clan);
-                foreach (var village in SupplyDemandGraph.EnumerateRecruitmentVillages(capitalTown, clan, inFlight))
-                    foreach (var bucket in SupplyDemandGraph.BucketizeCharacters(
-                                 SupplyDemandGraph.EnumerateVolunteerTroops(village)))
-                        AddOrigin(OriginKind.Village, village, bucket.Role, bucket.Count, false);
-            }
-
-            // bypass / bypassOverflow → superSink:容量 ≥ 总 origin 供给,保证每个非保护
-            // origin 都有出路(招募 origin 直连 bypass;现有驻军经 disbandGate 两段)。
-            AddE(bypass, superSink, Math.Max(1, originSupply), 0, EdgeCat.Internal);
-            AddE(bypassOverflow, superSink, Math.Max(1, originSupply), 0, EdgeCat.Internal);
-
-            // ── M4 两段 bypass:每个非保护城一个 disbandGate 节点(懒创建)──
-            // 正常段 disbandGate→bypass:容量 = 每 tick 遣散上限,费用 0(总遣散费 = K)。
-            // 溢出段 disbandGate→bypassOverflow:容量足量,费用 = 溢出罚分(总费 = K + 罚分)。
-            // 正常段费用 < surplus 留驻(K + surplusEdgeCost),罚分 > surplusEdgeCost →
-            // 正常段耗尽后 solver 优先 surplus 留驻,超额遣散被限制在每 tick 上限。
-            // MergedDisbandPerDayCap 是「每天」口径;按 tick 间隔折算成每 tick 上限。
-            int tickHours = Math.Min(24, Math.Max(1, cfg.CapitalLogisticsTickHours));
-            int disbandPerTickCap = Math.Max(0, (int)Math.Round(cfg.MergedDisbandPerDayCap * tickHours / 24.0));
-            int overflowPenalty = Math.Max(1, cfg.MergedBypassOverflowPenalty);
-            var disbandGate = new Dictionary<Settlement, int>();
-            int DisbandGateFor(Settlement s)
-            {
-                if (!disbandGate.TryGetValue(s, out var gate))
-                {
-                    gate = next++;
-                    disbandGate[s] = gate;
-                    // cap 0 时 AddE 跳过正常段 → 该城只能经溢出段遣散(仅塞不下 hardCap 的兵)。
-                    AddE(gate, bypass, disbandPerTickCap, 0, EdgeCat.Internal);
-                    AddE(gate, bypassOverflow, Math.Max(1, originSupply), overflowPenalty, EdgeCat.Internal);
-                }
-                return gate;
-            }
-
-            // ── origin 出边 ──
-            foreach (var o in origins)
-            {
-                if (o.Kind == OriginKind.Garrison)
-                {
-                    foreach (var dt in tiers)
-                    {
-                        // 首府 demand-tier 须 role 匹配;分支 demand-tier 占位 role,接受任意 role。
-                        if (dt.IsCapital && dt.Role != o.Role) continue;
-                        // 不向围城中的城调兵(复刻 Pass B 的 siege 隔离)。
-                        if (dt.Settlement.IsUnderSiege) continue;
-                        int cap = Math.Min(o.Count, dt.Capacity);
-                        if (dt.Settlement == o.Settlement)
-                        {
-                            AddE(o.Node, dt.Node, cap, dt.CostInto, EdgeCat.Stay);
+                                int roleCap = MatchPolicy.DesiredCount(rule!, role, cap);
+                                if (roleCap <= 0) continue;
+                                int from = G(s, role, tau), to = G(s, role, tau + 1);
+                                AddE(from, to, roleCap, holdCost, EdgeCat.Stay);
+                                if (tau == 0)
+                                {
+                                    decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, role);
+                                    demandTierCapL0 += roleCap;
+                                }
+                            }
                         }
                         else
                         {
-                            int routing = RoutingDistance(o.Settlement, dt.Settlement)
-                                          + Math.Max(0, thresholds.McmfTransferOverhead)
-                                          + RouteRiskSurcharge(o.Settlement, dt.Settlement, cfg);
-                            AddE(o.Node, dt.Node, cap, routing + dt.CostInto, EdgeCat.Transfer);
+                            int from = G(s, GenericTroopRole.Infantry, tau), to = G(s, GenericTroopRole.Infantry, tau + 1);
+                            AddE(from, to, cap, holdCost, EdgeCat.Stay);
+                            if (tau == 0)
+                            {
+                                decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, GenericTroopRole.Infantry);
+                                demandTierCapL0 += cap;
+                            }
                         }
                     }
-                    // 保护态(siege / risk≥High / flag-off)不连 disbandGate → 永不被遣散。
-                    // 非保护:经本城 disbandGate 两段 bypass(正常段速率限制 + 溢出段)。
-                    if (!o.Protected)
-                        AddE(o.Node, DisbandGateFor(o.Settlement), o.Count, K, EdgeCat.Bypass);
+
+                    // 遣散边:G[S,R,τ]→disbandGate[S,τ],K 分量 (T−τ)·K。保护城正常段 cap=0。
+                    if (!disbandGate.TryGetValue((s, tau), out var gate))
+                    {
+                        gate = next++;
+                        disbandGate[(s, tau)] = gate;
+                        AddE(gate, superSink, protectedCity ? 0 : disbandPerTickCap, 0, EdgeCat.Bypass);
+                        AddE(gate, superSink, BigCap, overflowPenalty, EdgeCat.Bypass);
+                    }
+                    foreach (var role in RolesOf(s))
+                    {
+                        int from = G(s, role, tau);
+                        // G→gate 标 Internal(非 Bypass):遣散是 G→gate→superSink 两跳,
+                        // 若两段都记 Bypass,BypassFlow 会把同一批遣散兵计两次。只让
+                        // gate→superSink 段计入 Bypass 统计,每个遣散兵恰好计一次。
+                        AddE(from, gate, BigCap, (T - tau) * K, EdgeCat.Internal);
+                        if (tau == 0) decodeInfo[(from, gate)] = (DecodeKind.Disband, s, null!, role);
+                    }
                 }
-                else
-                {
-                    // 招募 origin 经其首府的 transit 入图(role 专属 transit)。
-                    int routing = o.Kind == OriginKind.Village
-                        ? RoutingDistance(o.Settlement, capitalSettlement)
-                          + Math.Max(0, thresholds.McmfRecruiterOverhead)
-                          + RouteRiskSurcharge(o.Settlement, capitalSettlement, cfg)
-                        : 0;   // InPlace 原地招募,routing 0、零暴露
-                    AddE(o.Node, transit[o.Role], o.Count, routing, EdgeCat.Recruit);
-                    // 未被招募的志愿兵名额走 bypass(无指令)。
-                    AddE(o.Node, bypass, o.Count, K, EdgeCat.Bypass);
-                }
+
+                // 时域出口:G[S,R,T]→superSink。
+                foreach (var role in RolesOf(s))
+                    AddE(G(s, role, T), superSink, BigCap, 0, EdgeCat.Internal);
             }
 
-            // ── transit 出边 ──
-            foreach (var role in MatchPolicy.Roles)
+            // ── 调拨边:现有驻军跨城 G[S,R,τ]→G[S',R',τ+d] ──
+            if (allowTransfers)
             {
-                int tn = transit[role];
-                foreach (var dt in tiers)
+                foreach (var ts in towns)
                 {
-                    if (dt.IsCapital)
+                    var s = ts.Settlement;
+                    if (s.IsUnderSiege) continue;            // 围城中的城不外调
+                    foreach (var td in towns)
                     {
-                        if (dt.Role != role) continue;
-                        // 招募兵留首府:招募指令已由 origin→transit 边产出,此边无指令(Internal)。
-                        AddE(tn, dt.Node, dt.Capacity, dt.CostInto, EdgeCat.Internal);
-                    }
-                    else
-                    {
-                        // 不向围城中的分支转发(复刻 Pass B 的 siege 隔离)。
-                        if (dt.Settlement.IsUnderSiege) continue;
-                        // 招募兵经首府转发分支 = transit→分支 demand,decode 成 Transfer。
-                        int routing = RoutingDistance(capitalSettlement, dt.Settlement)
+                        var s2 = td.Settlement;
+                        if (s2 == s || s2.IsUnderSiege) continue;   // 围城中的城不接收
+                        int d = EtaTicks(RoutingDistance(s, s2), tickHours);
+                        int routing = d * K
                                       + Math.Max(0, thresholds.McmfTransferOverhead)
-                                      + RouteRiskSurcharge(capitalSettlement, dt.Settlement, cfg);
-                        AddE(tn, dt.Node, dt.Capacity, routing + dt.CostInto, EdgeCat.Transfer);
+                                      + RouteRiskSurcharge(s, s2, cfg);
+                        foreach (var role in RolesOf(s))
+                        {
+                            var destRole = s2 == capitalSettlement ? role : GenericTroopRole.Infantry;
+                            for (int tau = 0; tau + d <= T - 1; tau++)
+                            {
+                                int from = G(s, role, tau), to = G(s2, destRole, tau + d);
+                                AddE(from, to, BigCap, routing, EdgeCat.Transfer);
+                                if (tau == 0) decodeInfo[(from, to)] = (DecodeKind.Transfer, s, s2, role);
+                            }
+                        }
                     }
                 }
             }
 
-            // ── Solve ──
-            var flow = graph.Solve(superSource, superSink);
+            // ── 招募(围城中的首府不招募)──
+            long recruitStart = sw.ElapsedMilliseconds;
+            if (allowRecruitment && !capitalSettlement.IsUnderSiege)
+            {
+                var capitalRule = ConfigurationManager.GetRuleFor(capitalTown) ?? TownGarrisonRule.CreateDefault();
+                string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(capitalRule, capitalTown);
+
+                // InPlace:首府 notable 志愿兵。RecOrigin[InPlace,R] 单池。
+                foreach (var bucket in RecruitmentTopology.BucketizeCharacters(
+                             RecruitmentTopology.EnumerateVolunteerTroops(capitalSettlement),
+                             capitalRule,
+                             requiredCultureId))
+                {
+                    if (bucket.Count <= 0 || bucket.Role == GenericTroopRole.Unknown) continue;
+                    int origin = next++;
+                    AddE(superSource, origin, bucket.Count, 0, EdgeCat.Internal);
+                    originSupply += bucket.Count;
+                    for (int tau = 0; tau <= T - 1; tau++)
+                    {
+                        int to = Transit(bucket.Role, tau);
+                        AddE(origin, to, bucket.Count, tau * K, EdgeCat.Recruit);
+                        if (tau == 0) decodeInfo[(origin, to)] = (DecodeKind.InPlace, capitalSettlement, null!, bucket.Role);
+                    }
+                    AddE(origin, superSink, bucket.Count, T * K, EdgeCat.Bypass);  // 未招募出口
+                }
+
+                // 候选村:RecOrigin[V,R] 单池;在飞边落 Transit[R,τ_a],τ_a∈[ETA_V,T-1]。
+                var inFlightVillages = RecruitmentTopology.CollectInFlightRecruiterVillages(clan);
+                foreach (var village in RecruitmentTopology.EnumerateRecruitmentVillages(capitalTown, clan, inFlightVillages))
+                {
+                    int etaV = EtaTicks(2 * RoutingDistance(village, capitalSettlement), tickHours);  // 往返
+                    if (etaV > T - 1) continue;
+                    int recRouting = Math.Max(0, thresholds.McmfRecruiterOverhead)
+                                     + RouteRiskSurcharge(village, capitalSettlement, cfg);
+                    foreach (var bucket in RecruitmentTopology.BucketizeCharacters(
+                                 RecruitmentTopology.EnumerateVolunteerTroops(village),
+                                 capitalRule,
+                                 requiredCultureId))
+                    {
+                        if (bucket.Count <= 0 || bucket.Role == GenericTroopRole.Unknown) continue;
+                        int origin = next++;
+                        AddE(superSource, origin, bucket.Count, 0, EdgeCat.Internal);
+                        originSupply += bucket.Count;
+                        for (int arrival = etaV; arrival <= T - 1; arrival++)
+                        {
+                            int to = Transit(bucket.Role, arrival);
+                            AddE(origin, to, bucket.Count, arrival * K + recRouting, EdgeCat.Recruit);
+                            if (arrival == etaV)  // dispatch tick = arrival − etaV == 0
+                                decodeInfo[(origin, to)] = (DecodeKind.Recruiter, village, null!, bucket.Role);
+                        }
+                        AddE(origin, superSink, bucket.Count, T * K, EdgeCat.Bypass);  // 未招募出口
+                    }
+                }
+            }
+            recruitMs = sw.ElapsedMilliseconds - recruitStart;
+
+            // ── transit 出边:招募兵留首府 / 转发分支 ──
+            foreach (var kv in transitNode.ToList())
+            {
+                var (role, tau) = kv.Key;
+                int tn = kv.Value;
+                // 留首府:Transit[R,τ]→G[capital,R,τ]。
+                AddE(tn, G(capitalSettlement, role, tau), BigCap, 0, EdgeCat.Internal);
+                // 转发分支:Transit[R,τ]→G[branch,Inf,τ+d]。
+                if (!allowTransfers) continue;
+                foreach (var t in towns)
+                {
+                    var s = t.Settlement;
+                    if (s == capitalSettlement || s.IsUnderSiege) continue;
+                    int d = EtaTicks(RoutingDistance(capitalSettlement, s), tickHours);
+                    if (tau + d > T - 1) continue;
+                    int routing = d * K
+                                  + Math.Max(0, thresholds.McmfTransferOverhead)
+                                  + RouteRiskSurcharge(capitalSettlement, s, cfg);
+                    int to = G(s, GenericTroopRole.Infantry, tau + d);
+                    AddE(tn, to, BigCap, routing, EdgeCat.Transfer);
+                    if (tau == 0) decodeInfo[(tn, to)] = (DecodeKind.Transfer, capitalSettlement, s, role);
+                }
+            }
+
+            // ── 巡逻 sink:首府盈余兵去巡逻(receding-horizon,decode 只取 τ=0)──
+            // patrol 是 disband 的同构兄弟:从 garrison 流提前退出、代理退出后的 (T−τ) 个 tick。
+            // 边费用 = (T−τ)·K − patrolValue;patrolValue>0 → 胜过 disband(真实费用 0)与 surplus
+            // 留守(真实费用为正),但远小于 core 留守的累计 value → core 守军不被抽走。
+            // patrolHeadroom = (maxPatrols 余量 × PatrolTargetSize),由 CapitalLogisticsManager 传入。
+            if (patrolHeadroom > 0 && !capitalSettlement.IsUnderSiege)
+            {
+                int patrolValue = Math.Max(0, Math.Min(K - 1, cfg.PatrolValue));
+                int patrolSink = next++;
+                AddE(patrolSink, superSink, patrolHeadroom, 0, EdgeCat.Internal);
+                for (int tau = 0; tau < T; tau++)
+                {
+                    foreach (var role in MatchPolicy.Roles)
+                    {
+                        int from = G(capitalSettlement, role, tau);
+                        AddE(from, patrolSink, BigCap, (T - tau) * K - patrolValue, EdgeCat.Patrol);
+                        if (tau == 0)
+                            decodeInfo[(from, patrolSink)] = (DecodeKind.Patrol, capitalSettlement, null!, role);
+                    }
+                }
+            }
+
+            // ── Solve(分帧 SSP)── swSolve 只累计 MoveNext 内的 CPU,排除 yield 帧间隙。
+            long buildMs = sw.ElapsedMilliseconds;
+
+            // 诊断:首府 tick-0 tier 结构。守军止于「tier value ≤ wage」处 —— 对照 wage / adequate
+            // 即知 merged 欠配(tick0Garrison < legacy)是 value/wage 还是 adequate 上限所致。
+            try
+            {
+                int diagFloor = Math.Max(0, cfg.MinGarrisonFloor);
+                int diagHardCap = GarrisonAllocationSolver.HardCapFor(capitalTown, cfg);
+                int diagAdequate = GarrisonAllocationSolver.AdequateFor(capitalTown, cfg, diagFloor, diagHardCap);
+                var diagTiers = TierDefs(capitalTown, capitalSettlement, true, 0, cfg, manualMode, forecast);
+                var sb = new System.Text.StringBuilder();
+                foreach (var (cap, value) in diagTiers) sb.Append($"({cap}@{value:F0}) ");
+                Logger.Info(
+                    $"MERGED-TIERS clan={clan.StringId} wage={wagePerTroop} budget={clanWageBudget} "
+                  + $"floor={diagFloor} adequate={diagAdequate} hardCap={diagHardCap} tier(cap@value)=[ {sb}]");
+            }
+            catch (Exception ex) { Logger.Error("MERGED-TIERS diagnostic failed", ex); }
+
+            var swSolve = new System.Diagnostics.Stopwatch();
+            int sspFrames = 0;
+            int sspYieldEvery = Math.Max(1, cfg.SspYieldEvery);
+            var sspIt = graph.SolveStepwise(superSource, superSink, sspYieldEvery);
+            while (true)
+            {
+                swSolve.Start();
+                bool more = sspIt.MoveNext();
+                swSolve.Stop();
+                if (!more) break;
+                sspFrames++;
+                yield return null;
+            }
+            var flow = graph.LastResult;
+            long solveMs = swSolve.ElapsedMilliseconds;
+            long beforeDecode = sw.ElapsedMilliseconds;
 
             result.Ran = true;
             result.SettlementCount = towns.Count;
@@ -436,30 +478,30 @@ public static class UnifiedGarrisonSolver
             result.EdgeCount = edgeCount;
             result.OriginSupply = originSupply;
             result.Budget = clanWageBudget;
-            result.BudgetTroopCap = budgetTroopCap;
-            result.DemandTierCapacity = demandTierCapacity;
+            result.BudgetTroopCap = (int)Math.Max(0L, Math.Min(int.MaxValue, clanWageBudget / Math.Max(1, wagePerTroop)));
+            result.DemandTierCapacity = demandTierCapL0;
             result.TotalFlow = flow.TotalFlow;
             result.TotalCost = flow.TotalCost;
 
-            // ── decode:flow → 对外契约(Target / 指令 / disband)。每条边一一对应至多一个动作 ──
-            var originByNode = origins.ToDictionary(o => o.Node);
-            var tierByNode = tiers.ToDictionary(d => d.Node);
-            var transitRoleByNode = transit.ToDictionary(kv => kv.Value, kv => kv.Key);
-            foreach (var t in towns) result.Target[t.Settlement] = 0;
+#if DEBUG
+            if (graph.ReducedCostClampHits > 0)
+                Logger.Warn($"MERGED-SOLVER reduced-cost clamp fired {graph.ReducedCostClampHits} times — K-balance bug");
+#endif
 
-            // 跨城调拨按 (源, 目标, role) 聚合后再发指令 —— 现有驻军跨城 + transit→分支 共用。
+            // ── decode:只取 layer-0 边 → Target / 指令 / disband ──
+            // ⚠️ 依赖:同一 (S,R,τ)→(S,R,τ+1) 的 holding 边按 tier(floor/core_k/surplus)拆成
+            // 多条并行边。edgeCat / decodeInfo 以 (from,to) 为键 → 多 tier 同键(同类别、同语义,
+            // last-write 无害);flow.EdgeFlows 也按 (from,to) 聚合并行边流量 → HoldingL0 decode
+            // 读到的是该 tick 该 (S,R) 守军总数。若 MinCostFlow.Solve 改为按边身份记流量,此处会
+            // 静默漏计 —— 改 MinCostFlow 前先看这里。
+            foreach (var t in towns) result.Target[t.Settlement] = 0;
             var transfers = new Dictionary<(Settlement Src, Settlement Dst, GenericTroopRole Role), int>();
-            void AccumTransfer(Settlement src, Settlement dst, GenericTroopRole role, int count)
-            {
-                var key = (src, dst, role);
-                transfers[key] = (transfers.TryGetValue(key, out var c) ? c : 0) + count;
-            }
+            int patrolHeads = 0;
 
             foreach (var kv in flow.EdgeFlows)
             {
                 int f = kv.Value;
                 if (f <= 0) continue;
-                int from = kv.Key.From, to = kv.Key.To;
 
                 if (edgeCat.TryGetValue(kv.Key, out var cat))
                 {
@@ -469,70 +511,105 @@ public static class UnifiedGarrisonSolver
                         case EdgeCat.Transfer: result.TransferFlow += f; break;
                         case EdgeCat.Recruit: result.RecruitFlow += f; break;
                         case EdgeCat.Bypass: result.BypassFlow += f; break;
+                        case EdgeCat.Patrol: result.PatrolFlow += f; break;
                     }
                 }
 
-                // Target:流入 demand-tier(dt → budgetGate 的流 = 该 tier 被填的量)。
-                if (to == budgetGate && tierByNode.TryGetValue(from, out var dtIn))
+                if (!decodeInfo.TryGetValue(kv.Key, out var di)) continue;
+                switch (di.Kind)
                 {
-                    result.DemandFilled += f;
-                    result.Target[dtIn.Settlement] += f;
-                    continue;
-                }
-
-                // origin 出边。
-                if (originByNode.TryGetValue(from, out var o))
-                {
-                    if (o.Kind == OriginKind.Garrison)
-                    {
-                        if (tierByNode.TryGetValue(to, out var dt))
-                        {
-                            // 跨城 = Transfer;同城 = 留(无指令)。
-                            if (dt.Settlement != o.Settlement)
-                                AccumTransfer(o.Settlement, dt.Settlement, o.Role, f);
-                        }
-                        else if (disbandGate.TryGetValue(o.Settlement, out var dg) && to == dg)
-                        {
-                            // 现有驻军 origin → 本城 disbandGate = 遣散(正常段/溢出段对 decode 无别)。
-                            result.Disband[o.Settlement] =
-                                (result.Disband.TryGetValue(o.Settlement, out var d) ? d : 0) + f;
-                        }
-                    }
-                    else if (transitRoleByNode.ContainsKey(to))
-                    {
-                        // 招募 origin → transit:Village → Recruiter;InPlace → InPlace。
-                        if (o.Kind == OriginKind.Village)
-                            result.Instructions.Add(new RecruiterPartyInstruction(
-                                capitalTown, capitalSettlement, o.Settlement, o.Role, f));
-                        else
-                            result.Instructions.Add(new InPlaceRecruitInstruction(
-                                capitalSettlement, o.Role, f));
-                    }
-                    // recruit → bypass:志愿兵名额未被招,无指令(≠ disband)。
-                    continue;
-                }
-
-                // transit → 分支 demand-tier = 招募兵经首府转发,decode 成 Transfer。
-                // transit → 首府 demand-tier = 招募兵留首府(无指令,招募已由 origin→transit 产出)。
-                if (transitRoleByNode.TryGetValue(from, out var trole)
-                    && tierByNode.TryGetValue(to, out var tdt) && !tdt.IsCapital)
-                {
-                    AccumTransfer(capitalSettlement, tdt.Settlement, trole, f);
+                    case DecodeKind.HoldingL0:
+                        result.Target[di.A] = (result.Target.TryGetValue(di.A, out var tg) ? tg : 0) + f;
+                        break;
+                    case DecodeKind.Disband:
+                        result.Disband[di.A] = (result.Disband.TryGetValue(di.A, out var dd) ? dd : 0) + f;
+                        break;
+                    case DecodeKind.Recruiter:
+                        result.Instructions.Add(new RecruiterPartyInstruction(
+                            capitalTown, capitalSettlement, di.A, di.Role, f));
+                        break;
+                    case DecodeKind.InPlace:
+                        result.Instructions.Add(new InPlaceRecruitInstruction(capitalSettlement, di.Role, f));
+                        break;
+                    case DecodeKind.Transfer:
+                        var key = (di.A, di.B, di.Role);
+                        transfers[key] = (transfers.TryGetValue(key, out var c) ? c : 0) + f;
+                        break;
+                    case DecodeKind.Patrol:
+                        patrolHeads += f;
+                        break;
                 }
             }
 
+            result.DemandFilled = result.Target.Values.Sum();
             foreach (var kv in transfers)
                 result.Instructions.Add(new TransferPartyInstruction(
                     kv.Key.Src, kv.Key.Dst, kv.Key.Role, kv.Value));
+            if (patrolHeads > 0)
+                result.Instructions.Add(new PatrolInstruction(capitalSettlement, patrolHeads));
+
+            long decodeMs = sw.ElapsedMilliseconds - beforeDecode;
+            Logger.Info(
+                $"MERGED-TIMING clan={clan.StringId} T={T} nodes={result.NodeCount} edges={result.EdgeCount} "
+              + $"build={buildMs}ms (recruit={recruitMs}ms) solve={solveMs}ms (sspFrames={sspFrames}) "
+              + $"decode={decodeMs}ms wall={sw.ElapsedMilliseconds}ms");
         }
-        catch (Exception ex)
+        finally
         {
-            Logger.Error("UnifiedGarrisonSolver.Solve failed", ex);
+            onResult?.Invoke(result);
         }
-        return result;
     }
 
-    /// <summary>把 tier value(可负)round + clamp 到 [−K, K],保证 K − value ∈ [0, 2K]。</summary>
+    /// <summary>
+    /// 某城某 tick 的 (tier 容量, tier value) 序列 —— floor/core/surplus,沿用今天 Merged* 口径;
+    /// threat 乘子取 <paramref name="forecast"/> 的该 tick 投影。manual 模式用玩家手动目标作容量(M5)。
+    /// </summary>
+    private static List<(int Cap, float Value)> TierDefs(
+        Town t, Settlement s, bool isCapital, int tau,
+        FiscalAutonomyConfig cfg, bool manualMode, IHorizonForecast forecast)
+    {
+        int floor = Math.Max(0, cfg.MinGarrisonFloor);
+        int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
+        int adequate = GarrisonAllocationSolver.AdequateFor(t, cfg, floor, hardCap);
+        if (manualMode)
+        {
+            int manualTarget = ComputeManualTarget(t, cfg);
+            hardCap = manualTarget;
+            adequate = manualTarget;
+            floor = Math.Min(floor, manualTarget);
+        }
+        float threat = ThreatWeightOf(SafeThreatAt(forecast, s, tau), cfg);
+        float strat = StrategicWeight(s, isCapital, cfg);
+        int coreSpan = Math.Max(0, adequate - floor);
+        int coreCount = Math.Max(1, cfg.CoreTierCount);
+        int surplusSpan = Math.Max(0, hardCap - adequate);
+
+        var defs = new List<(int, float)>();
+        if (floor > 0)
+            defs.Add((floor, cfg.ValueFloorBase * threat * strat));
+        for (int k = 0; k < coreCount; k++)
+        {
+            int cap = coreSpan * (k + 1) / coreCount - coreSpan * k / coreCount;
+            if (cap <= 0) continue;
+            float dim = 1.0f - cfg.CoreDimRange * ((k + cfg.CoreDimMidpoint) / coreCount);
+            defs.Add((cap, cfg.ValueCoreBase * dim * threat * strat));
+        }
+        if (surplusSpan > 0)
+            defs.Add((surplusSpan, -Math.Max(1, cfg.SurplusEdgeCost)));
+        return defs;
+    }
+
+    private static RiskLevel SafeThreatAt(IHorizonForecast forecast, Settlement s, int tau)
+    {
+        try { return forecast.ThreatAt(s, tau); }
+        catch (Exception ex)
+        {
+            Logger.Error($"UnifiedGarrisonSolver: forecast.ThreatAt failed for '{s?.StringId}' tick={tau}", ex);
+            return RiskLevel.Low;
+        }
+    }
+
+    /// <summary>把 tier value(可负)round + clamp 到 [−K, K]。</summary>
     private static int ClampValue(float value)
     {
         int v = (int)Math.Round(value);
@@ -541,49 +618,42 @@ public static class UnifiedGarrisonSolver
         return v;
     }
 
-    /// <summary>threat 乘子:RiskAssessmentService 等级映射 Safe .5 / Low 1 / Med 2 / High 4 / Crit 8。
-    /// 与 Pass A 同口径(M3 重定标不动 threat/strat 这类无量纲乘子)。</summary>
-    private static float ThreatWeight(Settlement s)
+    /// <summary>threat 乘子:风险等级映射各 cfg.ThreatWeight* 值。
+    /// 默认 Safe .5 / Low 1 / Med 1.5 / High 2 / Crit 3 —— 战时仍有明显涨兵但不爆炸;
+    /// 和平期驻军规模靠 cfg.ValueCoreBase 定。</summary>
+    private static float ThreatWeightOf(RiskLevel level, FiscalAutonomyConfig cfg)
     {
-        try
+        switch (level)
         {
-            switch (RiskAssessmentService.Assess(s).Level)
-            {
-                case RiskLevel.Safe: return 0.5f;
-                case RiskLevel.Low: return 1.0f;
-                case RiskLevel.Medium: return 2.0f;
-                case RiskLevel.High: return 4.0f;
-                case RiskLevel.Critical: return 8.0f;
-                default: return 1.0f;
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"UnifiedGarrisonSolver.ThreatWeight failed for '{s?.StringId}'", ex);
-            return 1.0f;
+            case RiskLevel.Safe: return cfg.ThreatWeightSafe;
+            case RiskLevel.Low: return cfg.ThreatWeightLow;
+            case RiskLevel.Medium: return cfg.ThreatWeightMedium;
+            case RiskLevel.High: return cfg.ThreatWeightHigh;
+            case RiskLevel.Critical: return cfg.ThreatWeightCritical;
+            default: return cfg.ThreatWeightLow;
         }
     }
 
-    /// <summary>strategic 乘子:(首府 ? 1.3 : 1.0) × clamp(Prosperity / 4000, 0.5, 1.5)。</summary>
-    private static float StrategicWeight(Settlement s, bool isCapital)
+    /// <summary>strategic 乘子:(首府 ? cfg.CapitalStrategicBonus : 1.0)
+    /// × clamp(Prosperity / cfg.ProsperityNormalizer, 0.5, 1.5)。</summary>
+    private static float StrategicWeight(Settlement s, bool isCapital, FiscalAutonomyConfig cfg)
     {
         float prosperity = 0f;
         try { if (s != null && s.IsTown && s.Town != null) prosperity = s.Town.Prosperity; }
         catch { prosperity = 0f; }
 
-        float pf = prosperity / ProsperityNormalizer;
+        float normalizer = cfg.ProsperityNormalizer > 0f ? cfg.ProsperityNormalizer : 4000f;
+        float pf = prosperity / normalizer;
         if (pf < 0.5f) pf = 0.5f;
         if (pf > 1.5f) pf = 1.5f;
-        return (isCapital ? CapitalStrategicBonus : 1.0f) * pf;
+        return (isCapital ? cfg.CapitalStrategicBonus : 1.0f) * pf;
     }
 
-    /// <summary>该城现有驻军是否禁止遣散:功能开关关 / manual 模式 / 围城 / 高危。
-    /// 镜像 DisbandExcessGarrisons Gate 1/2/3/4。</summary>
+    /// <summary>该城现有驻军是否禁止主动遣散:功能开关关 / manual 模式 / 围城 / 高危。
+    /// 保护城仍建 disbandGate,但正常段 cap=0(只 overflow 兜底,见 §6.3)。</summary>
     private static bool IsProtectedFromDisband(Settlement s, FiscalAutonomyConfig cfg)
     {
         if (!cfg.DisbandUnaffordableExcess) return true;
-        // M5:manual 模式玩家自选目标(可能有意 over-garrison)—— 永不遣散,
-        // 镜像 CapitalLogisticsManager.DisbandExcessGarrisons Gate 2。
         if (cfg.AllowManualGarrisonTargets) return true;
         try
         {
@@ -603,10 +673,19 @@ public static class UnifiedGarrisonSolver
         catch { return 1000; }
     }
 
+    /// <summary>地图直线距离换算成 ETA(tick 数)。参考速度取 cfg.ReferenceSpeedPerDay,
+    /// role-blind(§6.4)。最小 1。</summary>
+    private static int EtaTicks(int distance, int tickHours)
+    {
+        float speedPerDay = ConfigurationManager.Current?.FiscalAutonomy?.ReferenceSpeedPerDay ?? 5.0f;
+        if (speedPerDay <= 0f) speedPerDay = 5.0f;
+        float perTick = Math.Max(0.1f, speedPerDay * tickHours / 24f);
+        return Math.Max(1, (int)Math.Round(Math.Max(0, distance) / perTick));
+    }
+
     /// <summary>
     /// D2:路线风险加进 routing 成本。a↔b 端点 + 连线中点处的最大敌对健康兵力
-    /// × <see cref="FiscalAutonomyConfig.DispatchRiskCostScale"/>。`DispatchRiskEnabled`
-    /// 关时返回 0。软成本 —— 危险路线成本升高,solver 自行改选安全村 / 原地招募 / 不招。
+    /// × <see cref="FiscalAutonomyConfig.DispatchRiskCostScale"/>。`DispatchRiskEnabled` 关时返回 0。
     /// </summary>
     private static int RouteRiskSurcharge(Settlement a, Settlement b, FiscalAutonomyConfig cfg)
     {
@@ -633,13 +712,8 @@ public static class UnifiedGarrisonSolver
 
     /// <summary>
     /// M5:manual 模式下玩家配置的目标头数 —— 合并 solver 的 demand 容量上限。
-    /// 城镇:<see cref="TownGarrisonRule.TargetTotalCount"/> × 风险乘子(risk≥High 用
-    /// WartimeMultiplier,否则 PeacetimeMultiplier),round 后 ≥1;城堡:
-    /// <see cref="BranchRule.TargetPower"/> 直接当头数(合并 solver 全程头数口径,
-    /// 见 handoff §3.1)。两者均 clamp 到 <see cref="FiscalAutonomyConfig.MaxGarrisonHardCap"/>
-    /// —— 与 legacy SupplyDemandGraph.BuildSettlementStates 的 manual 口径一致。
-    /// 控制面板的 CapitalLogisticsManager.StashAssessments(展示"玩家目标")复用本方法,
-    /// 单一口径 —— 否则面板展示值与 solver 实采容量乖离。
+    /// 城镇:TargetTotalCount × 风险乘子;城堡:BranchRule.TargetPower 当头数。均 clamp MaxGarrisonHardCap。
+    /// 控制面板 StashAssessments 复用本方法 —— 单一口径。
     /// </summary>
     internal static int ComputeManualTarget(Town t, FiscalAutonomyConfig cfg)
     {
@@ -665,17 +739,18 @@ public static class UnifiedGarrisonSolver
         }
     }
 
-    /// <summary>#1:本 clan 所有在飞 ST 队(Transfer / Recruiter / Sally)按目标定居点
-    /// 汇总的在途头数。Transfer 回程(目标 == 源)记到源城,否则记到目的城;Recruiter /
-    /// Sally 记到各自 home。role-blind:返回总头数,不区分兵种(M-stage 近似,见 handoff §3.6)。
-    /// 镜像 SupplyDemandGraph.AccountInFlight 的口径。</summary>
-    private static Dictionary<Settlement, int> CollectInFlightInbound(Clan clan)
+    /// <summary>
+    /// 本 clan 所有在飞 ST 队按目标定居点 + 估计到达 tick 汇总。Transfer 回程(目标==源)记到源城,
+    /// 否则记目的城;Recruiter / Sally 记各自 home。role-blind(§6.3 / handoff §3.6)。
+    /// </summary>
+    private static List<(Settlement Dest, int Heads, int ArrivalTau)> CollectInFlightArrivals(
+        Clan clan, int tickHours, int horizon)
     {
-        var inbound = new Dictionary<Settlement, int>();
+        var list = new List<(Settlement, int, int)>();
         try
         {
             var parties = MobileParty.AllCustomParties;
-            if (parties == null) return inbound;
+            if (parties == null) return list;
             foreach (var party in parties)
             {
                 if (party == null || !party.IsActive) continue;
@@ -701,13 +776,20 @@ public static class UnifiedGarrisonSolver
                         break;
                 }
                 if (dest == null) continue;
-                inbound[dest] = (inbound.TryGetValue(dest, out var c) ? c : 0) + heads;
+
+                int dist;
+                try { dist = (int)Math.Round((double)(party.GetPosition2D - dest.GetPosition2D).Length); }
+                catch { dist = 1000; }
+                int eta = EtaTicks(dist, tickHours);
+                // 抵达晚于 horizon → 对 tick-0 决策零影响,不建到达边(避免 clamp 高估在飞量)。
+                if (eta > horizon - 1) continue;
+                list.Add((dest, heads, Math.Max(0, eta)));
             }
         }
         catch (Exception ex)
         {
-            Logger.Error("UnifiedGarrisonSolver.CollectInFlightInbound failed", ex);
+            Logger.Error("UnifiedGarrisonSolver.CollectInFlightArrivals failed", ex);
         }
-        return inbound;
+        return list;
     }
 }

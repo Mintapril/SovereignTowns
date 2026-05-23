@@ -20,7 +20,8 @@ namespace SovereignTowns.Patrol;
 /// 设计原则：
 ///   - 仅创建端在此；状态机（防御响应 / 支援 / 抵达 / 卡死）已搬到 <see cref="StPatrolPartyComponent"/>；
 ///   - 所有方法 try-catch，绝不向调用方抛异常；
-///   - 派遣集中在该 clan 的首府（OnHourlyTickSettlement 只在 settlement == 首府时创建新队）；
+///   - 巡逻队由 <see cref="CapitalLogisticsManager"/> 经时间展开调度器(MCMF)派发(<see cref="TryDispatchPatrol"/>);
+///     不再有每小时启发式创建路径；
 ///   - 路径选择委托给该 clan 的 <see cref="ClanPatrolScheduler"/>（全氏族范围、最久未访问 + 距离评分、多队预占互补）。
 ///
 /// 与 vanilla 共存：ST 创建的 <see cref="StPatrolPartyComponent"/> 不进 MobileParty.AllPatrolParties；
@@ -28,12 +29,6 @@ namespace SovereignTowns.Patrol;
 /// </summary>
 public sealed class PatrolDispatcher
 {
-    // 阈值改读 ConfigurationManager.Current.Thresholds；人数阈值由实际驻军比例派生。
-    // 通过封装属性 + 兜底默认值访问，避免 config 加载失败时 NRE。
-    private static float PatrolReserveAfterCreationRatio
-        => ConfigurationManager.Current?.Thresholds?.PatrolReserveAfterCreationRatio ?? 0.8f;
-    private static float PatrolTroopBatchRatio
-        => ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchRatio ?? 0.10f;
     private static int PatrolMinDispatchSize
         => ConfigurationManager.Current?.Thresholds?.PatrolMinDispatchSize ?? 50;
 
@@ -48,190 +43,198 @@ public sealed class PatrolDispatcher
         _capitalRegistry = capitalRegistry;
     }
 
-    /// <summary>
-    /// HourlyTickSettlementEvent 转发：仅在首府上派遣新巡逻队，巡逻范围为全氏族（B7.26）。
-    /// </summary>
-    public void OnHourlyTickSettlement(Settlement settlement)
-    {
-        if (settlement == null) return;
-        if (!settlement.IsTown) return;
+    // ────────── 创建巡逻队 ──────────
 
+    /// <summary>
+    /// 创建一支巡逻队:抽 <paramref name="troopCount"/> 兵、注资、注册、走 scheduler 首站。
+    /// 抽兵 / 注资 / scheduler 任一步失败均回滚并返回 false。
+    /// 调用方负责前置门控(围城 / 队伍上限 / 兵力来源决策)。
+    /// </summary>
+    private bool CreateOnePatrol(Settlement settlement, int troopCount)
+    {
+        if (settlement?.Town == null || troopCount <= 0) return false;
+        var town = settlement.Town;
+        var garrison = town.GarrisonParty;
+        int garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
+
+        // 模板：仅作语义参考（按文化挑兵种），B16.4 起本 dispatcher 不再依赖 vanilla CreatePatrolParty 自动注兵。
+        // 找不到模板仍按 null 创建，兵员从 garrison 直接抽取。
+        PartyTemplateObject? template = TryFindPatrolTemplate(settlement, out var templateId);
+        if (template == null)
+            Logger.Info($"PatrolDispatcher: '{settlement.Name}' PatrolPartyTemplate 未找到（候选 stringId 全 miss）— 沿用 null 模板继续创建 ST 巡逻队");
+
+        MobileParty? created;
         try
         {
-            if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
-                return;
+            created = StPatrolPartyComponent.CreateForTown(settlement, template);
+        }
+        catch (Exception createEx)
+        {
+            Logger.Error($"PatrolDispatcher: StPatrolPartyComponent.CreateForTown threw (template='{templateId}') for '{settlement.Name}'", createEx);
+            return false;
+        }
 
-            // B7.26：派遣集中在首府 — 只在 settlement == 首府时评估
-            var capitalMgr = _capitalRegistry?.GetForSettlement(settlement);
-            if (capitalMgr == null) return;  // 该 settlement 不属任何受管 clan
-            var capital = _capitalRegistry?.GetCapitalForClan(capitalMgr.OwnerClan);
-            if (capital == null || settlement != capital) return;  // 不是该 clan 的首府 → 跳过
+        if (created == null)
+        {
+            Logger.Warn($"PatrolDispatcher: StPatrolPartyComponent.CreateForTown returned null for '{settlement.Name}' (template='{templateId}')");
+            return false;
+        }
 
-            TryCreatePatrolParty(settlement);
+        // 从 garrison 抽兵（skip heroes）
+        var gRoster = garrison?.MemberRoster;
+        var pRoster = created.MemberRoster;
+        int moved = 0;
+        if (gRoster != null && pRoster != null)
+        {
+            moved = TroopTransferHelper.TransferFromGarrison(
+                gRoster, pRoster, troopCount, TroopTransferHelper.SortStrategy.LowestTierFirst);
+        }
+        Logger.Debug($"[DIAG] PatrolDispatcher '{settlement.Name}' transfer: requested={troopCount}, gRoster?={gRoster != null}, pRoster?={pRoster != null}, moved={moved}, garrison-after-transfer={gRoster?.TotalManCount ?? -1}");
+
+        if (moved <= 0)
+        {
+            Logger.Warn($"PatrolDispatcher: '{settlement.Name}' created patrol but moved 0 troops; destroying empty patrol");
+            PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher empty patrol rollback", deferIfInMapEvent: false);
+            return false;
+        }
+
+        // 兵员注入完成 → 快照出发兵员数（基类的 ShouldReturnAndDisband 判定要用）
+        if (created.PartyComponent is StPatrolPartyComponent stc)
+        {
+            stc.SnapshotInitialMembers(created);
+
+            // T1 重整 (doc §20 #1)：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
+            // 玩家路径扣款失败 → 把兵还 garrison 并销毁 party；AI 路径不会失败。
+            if (!StPartyComponent.TrySeedAndBuyInitialFood(
+                stc, created, settlement,
+                ExpenseCategory.PatrolSeed,
+                settlement.OwnerClan,
+                $"patrol_seed home={settlement.StringId}"))
+            {
+                TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
+                PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher seed failed rollback", deferIfInMapEvent: false);
+                return false;
+            }
+        }
+
+        _lifecycle.RegisterTrackedParty(created, settlement, PartyLifecycleManager.KindPatrol);
+
+        // B7.26：新巡逻队的首站走 scheduler。
+        // 2026-05-18 产品语义：巡逻队不允许把 home 当巡逻站（ClanPatrolScheduler 已 filter 排除）。
+        // 若 PickNextStop 返 null（clan 只有 home 一个 settlement，或所有非-home settlement 全被
+        // 过滤）→ 巡逻队无处可去 → 把刚抽出的兵员还回 garrison 并销毁实例，避免在 home 旁傻站浪费。
+        try
+        {
+            var schedulerCapitalMgr = _capitalRegistry?.GetForSettlement(settlement);
+            if (schedulerCapitalMgr != null)
+            {
+                schedulerCapitalMgr.PatrolScheduler.RecordVisit(settlement);  // 标记首府刚访问
+                var nextStop = schedulerCapitalMgr.PatrolScheduler.PickNextStop(created);
+                if (nextStop != null)
+                {
+                    try { created.SetMoveGoToSettlement(nextStop, MobileParty.NavigationType.Default, false); }
+                    catch (Exception navEx) { Logger.Error($"first-hop SetMoveGoToSettlement failed for '{created.Name}' -> '{nextStop.Name}'", navEx); }
+                    Logger.Info($"PatrolDispatcher: '{created.Name}' first hop -> '{nextStop.Name}'");
+                }
+                else
+                {
+                    Logger.Warn($"PatrolDispatcher: '{created.Name}' no non-home candidate at create-time — returning {moved} troops and destroying empty patrol");
+                    PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(created, settlement, "PatrolDispatcher empty patrol rollback (no candidate)");
+                    PartyMergeService.Instance.DisbandAndUntrack(created, "PatrolDispatcher first-hop no candidate");
+                    return false;
+                }
+            }
+        }
+        catch (Exception schedEx)
+        {
+            Logger.Error("PatrolDispatcher: scheduler first-hop assignment failed (party will idle until next tick)", schedEx);
+        }
+
+        DecisionAuditLogger.LogRule(
+            decisionType: "create_patrol_party",
+            inputSummary: $"home={settlement.StringId} garrison={garrisonCount} template={templateId} moved={moved}",
+            decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{created.StringId}\",\"template\":\"{templateId}\",\"moved\":{moved}}}",
+            accepted: true);
+        Logger.Info($"PatrolDispatcher: created ST patrol '{created.StringId}' for '{settlement.Name}' (template='{templateId}', moved={moved} troops)");
+        return true;
+    }
+
+    /// <summary>
+    /// MergedOnly 口径下首府的巡逻 sink 容量(头数)= (哨所派生的巡逻队上限 − 当前活跃巡逻队数)
+    /// × PatrolTargetSize。<see cref="CapitalLogisticsManager"/> 取此值传入 <see cref="UnifiedGarrisonSolver"/>。
+    /// 非城镇 / 围城 / 已满 / 出错 → 0(不建巡逻 sink)。
+    /// </summary>
+    public int PatrolHeadroomHeads(Settlement capital)
+    {
+        try
+        {
+            if (capital?.Town == null || !capital.IsTown) return 0;
+            if (capital.Town.IsUnderSiege) return 0;
+            int cap = _lifecycle.GetCapFor(capital, PartyLifecycleManager.KindPatrol);
+            int free = cap - CountExistingPatrolsAtHome(capital);
+            if (free <= 0) return 0;
+            int size = ConfigurationManager.Current?.Thresholds?.PatrolTargetSize ?? 50;
+            return size <= 0 ? 0 : free * size;
         }
         catch (Exception ex)
         {
-            Logger.Error($"PatrolDispatcher.OnHourlyTickSettlement failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
+            Logger.Error($"PatrolDispatcher.PatrolHeadroomHeads failed for '{PartyNameFormatter.SafeName(capital)}'", ex);
+            return 0;
         }
     }
 
-    // ────────── 创建巡逻队 ──────────
-
-    private void TryCreatePatrolParty(Settlement settlement)
+    /// <summary>
+    /// 由 CapitalLogisticsManager 在 MergedOnly 派发路径调用:消费 MCMF 决定的巡逻总头数,
+    /// 在首府创建一支巡逻队。headcount 已是 MCMF 解出的真·盈余兵 —— 不再叠加比例 / 留守启发式;
+    /// 仍受 PatrolMinDispatchSize 地板(避免微型巡逻队)与 KindPatrol 队伍上限约束。
+    /// </summary>
+    public bool TryDispatchPatrol(Town capitalTown, int headcount)
     {
         try
         {
-            // B17.4 S1：围城下不派巡逻队（出门即冲撞围攻军）。
-            if (settlement?.Town?.IsUnderSiege == true)
-            {
-                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' is under siege — skip patrol creation");
-                return;
-            }
+            if (capitalTown?.Settlement == null || headcount <= 0) return false;
+            var settlement = capitalTown.Settlement;
 
-            // cap 来自首府哨所(Guard House)建筑等级,见 PartyLifecycleManager.GetMaxFor。
-            // 统计该 settlement 的 ST 巡逻队总数；只有 < cap 才允许再创建。
-            // B16.4：vanilla auto-spawn 的 PatrolPartyComponent 不再纳入计数 — 与我们独立共存。
-            int cap = _lifecycle.GetCapFor(settlement, PartyLifecycleManager.KindPatrol);
-            int existing = CountExistingPatrolsAtHome(settlement);
-            if (existing >= cap)
+            if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
             {
-                Logger.Debug($"PatrolDispatcher: '{settlement.Name}' st-patrols={existing}/{cap} (cap from guard house lvl) — skip");
-                return;
+                Logger.Debug($"  PatrolDispatcher: TryDispatchPatrol skipped '{settlement.Name}' — AutoPatrol disabled");
+                return false;
             }
-
-            var town = settlement.Town;
-            var garrison = town?.GarrisonParty;
-            var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
-            int batchSize = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolTroopBatchRatio, minimumWhenPositive: 1);
-            Logger.Debug($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' garrison={garrisonCount} ratio={PatrolTroopBatchRatio:F2} → batch={batchSize}");
-            if (batchSize <= 0)
+            if (capitalTown.IsUnderSiege)
             {
-                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, patrol batch computed 0, defer patrol creation");
-                return;
+                Logger.Info($"  PatrolDispatcher: '{settlement.Name}' is under siege — skip MCMF patrol dispatch");
+                return false;
             }
-
-            // 2026-05-18：hard floor — 算出的 batch 低于 PatrolMinDispatchSize 时延迟创建。
-            // 避免 3-人驻军派 1-人巡逻队遇劫匪秒灭的 case。MinDispatchSize=0 时 no-op。
             int minDispatch = PatrolMinDispatchSize;
-            if (minDispatch > 0 && batchSize < minDispatch)
+            if (minDispatch > 0 && headcount < minDispatch)
             {
-                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize} < PatrolMinDispatchSize={minDispatch} — defer patrol creation");
-                return;
+                Logger.Debug($"  PatrolDispatcher: '{settlement.Name}' MCMF headcount={headcount} < PatrolMinDispatchSize={minDispatch} — defer");
+                return false;
             }
 
-            int reserveAfterCreation = GarrisonThresholdMath.CountFromRatio(garrisonCount, PatrolReserveAfterCreationRatio, minimumWhenPositive: 0);
-            Logger.Debug($"[DIAG] PatrolDispatcher.TryCreate '{settlement.Name}' reserveAfterCreation={reserveAfterCreation} (ratio={PatrolReserveAfterCreationRatio:P0}) garrison-batch={garrisonCount - batchSize}");
-            if (garrisonCount - batchSize < reserveAfterCreation)
-            {
-                Logger.Debug($"[DIAG] PatrolDispatcher: '{settlement.Name}' garrison={garrisonCount}, batch={batchSize}, reserve={reserveAfterCreation} — defer (garrison-batch < reserve)");
-                return;
-            }
+            int targetSize = ConfigurationManager.Current?.Thresholds?.PatrolTargetSize ?? 50;
+            if (targetSize <= 0) targetSize = 50;
 
-            // 模板：仅作语义参考（按文化挑兵种），B16.4 起本 dispatcher 不再依赖 vanilla CreatePatrolParty 自动注兵。
-            // 找不到模板仍按 null 创建，兵员从 garrison 直接抽取。
-            PartyTemplateObject? template = TryFindPatrolTemplate(settlement, out var templateId);
-            if (template == null)
+            // headcount = MCMF 解出的巡逻总头数;按 PatrolTargetSize 切成多支队伍,受 KindPatrol
+            // 队伍上限约束。末尾不足 PatrolMinDispatchSize 的余量留到下个 tick 再解。
+            int remaining = headcount;
+            int dispatched = 0;
+            while (remaining > 0 && _lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindPatrol))
             {
-                Logger.Info($"PatrolDispatcher: '{settlement.Name}' PatrolPartyTemplate 未找到（候选 stringId 全 miss）— 沿用 null 模板继续创建 ST 巡逻队");
+                int chunk = Math.Min(remaining, targetSize);
+                if (minDispatch > 0 && chunk < minDispatch) break;
+                if (!CreateOnePatrol(settlement, chunk)) break;
+                remaining -= chunk;
+                dispatched++;
             }
-
-            MobileParty? created = null;
-            try
-            {
-                created = StPatrolPartyComponent.CreateForTown(settlement, template);
-            }
-            catch (Exception createEx)
-            {
-                Logger.Error($"PatrolDispatcher: StPatrolPartyComponent.CreateForTown threw (template='{templateId}') for '{settlement.Name}'", createEx);
-                return;
-            }
-
-            if (created == null)
-            {
-                Logger.Warn($"PatrolDispatcher: StPatrolPartyComponent.CreateForTown returned null for '{settlement.Name}' (template='{templateId}')");
-                return;
-            }
-
-            // 从 garrison 按比例抽兵（skip heroes）
-            var gRoster = garrison?.MemberRoster;
-            var pRoster = created.MemberRoster;
-            int moved = 0;
-            if (gRoster != null && pRoster != null)
-            {
-                moved = TroopTransferHelper.TransferFromGarrison(
-                    gRoster, pRoster, batchSize, TroopTransferHelper.SortStrategy.LowestTierFirst);
-            }
-            Logger.Debug($"[DIAG] PatrolDispatcher '{settlement.Name}' transfer: requested={batchSize}, gRoster?={gRoster != null}, pRoster?={pRoster != null}, moved={moved}, garrison-after-transfer={gRoster?.TotalManCount ?? -1}");
-
-            if (moved <= 0)
-            {
-                Logger.Warn($"PatrolDispatcher: '{settlement.Name}' created patrol but moved 0 troops; destroying empty patrol");
-                PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher empty patrol rollback", deferIfInMapEvent: false);
-                return;
-            }
-
-            // 兵员注入完成 → 快照出发兵员数（基类的 ShouldReturnAndDisband 判定要用）
-            if (created.PartyComponent is StPatrolPartyComponent stc)
-            {
-                stc.SnapshotInitialMembers(created);
-
-                // T1 重整 (doc §20 #1)：统一走基类 helper 处理"扣款 + 注资 + 买粮"。
-                // 玩家路径扣款失败 → 把兵还 garrison 并销毁 party；AI 路径不会失败。
-                if (!StPartyComponent.TrySeedAndBuyInitialFood(
-                    stc, created, settlement,
-                    ExpenseCategory.PatrolSeed,
-                    settlement.OwnerClan,
-                    $"patrol_seed home={settlement.StringId}"))
-                {
-                    TroopTransferHelper.TransferBackToGarrison(created.MemberRoster, garrison!.MemberRoster);
-                    PartyMergeService.Instance.DestroyAndUntrack(created, "PatrolDispatcher seed failed rollback", deferIfInMapEvent: false);
-                    return;
-                }
-            }
-
-            _lifecycle.RegisterTrackedParty(created, settlement, PartyLifecycleManager.KindPatrol);
-
-            // B7.26：新巡逻队的首站走 scheduler。
-            // 2026-05-18 产品语义：巡逻队不允许把 home 当巡逻站（ClanPatrolScheduler 已 filter 排除）。
-            // 若 PickNextStop 返 null（clan 只有 home 一个 settlement，或所有非-home settlement 全被
-            // 过滤）→ 巡逻队无处可去 → 把刚抽出的兵员还回 garrison 并销毁实例，避免在 home 旁傻站浪费。
-            try
-            {
-                var schedulerCapitalMgr = _capitalRegistry?.GetForSettlement(settlement);
-                if (schedulerCapitalMgr != null)
-                {
-                    schedulerCapitalMgr.PatrolScheduler.RecordVisit(settlement);  // 标记首府刚访问
-                    var nextStop = schedulerCapitalMgr.PatrolScheduler.PickNextStop(created);
-                    if (nextStop != null)
-                    {
-                        try { created.SetMoveGoToSettlement(nextStop, MobileParty.NavigationType.Default, false); }
-                        catch (Exception navEx) { Logger.Error($"first-hop SetMoveGoToSettlement failed for '{created.Name}' -> '{nextStop.Name}'", navEx); }
-                        Logger.Info($"PatrolDispatcher: '{created.Name}' first hop -> '{nextStop.Name}'");
-                    }
-                    else
-                    {
-                        Logger.Warn($"PatrolDispatcher: '{created.Name}' no non-home candidate at create-time — returning {moved} troops and destroying empty patrol");
-                        PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(created, settlement, "PatrolDispatcher empty patrol rollback (no candidate)");
-                        PartyMergeService.Instance.DisbandAndUntrack(created, "PatrolDispatcher first-hop no candidate");
-                        return;
-                    }
-                }
-            }
-            catch (Exception schedEx)
-            {
-                Logger.Error("PatrolDispatcher: scheduler first-hop assignment failed (party will idle until next tick)", schedEx);
-            }
-
-            DecisionAuditLogger.LogRule(
-                decisionType: "create_patrol_party",
-                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} template={templateId} moved={moved}",
-                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{created.StringId}\",\"template\":\"{templateId}\",\"moved\":{moved}}}",
-                accepted: true);
-            Logger.Info($"PatrolDispatcher: created ST patrol '{created.StringId}' for '{settlement.Name}' (template='{templateId}', moved={moved} troops)");
+            if (dispatched == 0)
+                Logger.Info($"  PatrolDispatcher: '{settlement.Name}' MCMF headcount={headcount} — 0 patrol(s) dispatched (cap reached / create failed)");
+            return dispatched > 0;
         }
         catch (Exception ex)
         {
-            Logger.Error($"PatrolDispatcher.TryCreatePatrolParty failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
+            Logger.Error($"PatrolDispatcher.TryDispatchPatrol failed for '{PartyNameFormatter.SafeName(capitalTown?.Settlement)}'", ex);
+            return false;
         }
     }
 

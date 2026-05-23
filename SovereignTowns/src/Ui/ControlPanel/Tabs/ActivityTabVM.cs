@@ -1,6 +1,8 @@
 using System;
+using TaleWorlds.CampaignSystem;
 using TaleWorlds.Library;
 using SovereignTowns.Audit;
+using SovereignTowns.Economy;
 using SovereignTowns.WebConfig;
 using Logger = SovereignTowns.Logging.Logger;
 
@@ -71,6 +73,31 @@ public sealed class ActivityTabVM : ViewModel
 
     [DataSourceProperty] public bool HasNoFiscal => !_hasFiscal;
 
+    // ── 金库主动存取 ──
+    [DataSourceProperty] public string TreasuryActionTitle { get; }
+    [DataSourceProperty] public string TreasuryActionHint { get; }
+    [DataSourceProperty] public string DepositSmallLabel { get; }
+    [DataSourceProperty] public string DepositMediumLabel { get; }
+    [DataSourceProperty] public string DepositLargeLabel { get; }
+    [DataSourceProperty] public string DepositAllLabel { get; }
+    [DataSourceProperty] public string WithdrawSmallLabel { get; }
+    [DataSourceProperty] public string WithdrawMediumLabel { get; }
+    [DataSourceProperty] public string WithdrawLargeLabel { get; }
+    [DataSourceProperty] public string WithdrawAllLabel { get; }
+
+    private string _treasuryActionStatus = "";
+    [DataSourceProperty]
+    public string TreasuryActionStatus
+    {
+        get => _treasuryActionStatus;
+        private set { if (_treasuryActionStatus != value) { _treasuryActionStatus = value; OnPropertyChanged(nameof(TreasuryActionStatus)); OnPropertyChanged(nameof(HasTreasuryActionStatus)); } }
+    }
+    [DataSourceProperty] public bool HasTreasuryActionStatus => !string.IsNullOrEmpty(_treasuryActionStatus);
+
+    // 大额取款时,首次点击不直接执行 —— 设 _pendingLargeWithdraw=amount 并显示警告;
+    // 再次点击同金额的取款按钮才放行。任何其他操作清零。
+    private long _pendingLargeWithdraw = 0;
+
     public ActivityTabVM()
     {
         Title = ControlPanelLoc.Tr("状态一览", "Overview");
@@ -88,6 +115,126 @@ public sealed class ActivityTabVM : ViewModel
             "暂无调度数据 —— 调度器尚未运行（载入存档后等一个游戏日）。",
             "No dispatch data yet — the dispatcher has not run (wait one in-game day after loading a save).");
 
+        TreasuryActionTitle = ControlPanelLoc.Tr("金库存取", "Treasury deposit / withdraw");
+        TreasuryActionHint  = ControlPanelLoc.Tr(
+            "金库与你的个人金币之间不再自动结算 —— 收入只单向流入金库,工资也只从金库支付。要在两者之间转账请用以下按钮。",
+            "The treasury no longer auto-settles with your personal gold — income flows in only, garrison wages flow out only. Use the buttons below to move funds between the two.");
+        DepositSmallLabel    = ControlPanelLoc.Tr("存入 100",   "Deposit 100");
+        DepositMediumLabel   = ControlPanelLoc.Tr("存入 1000",  "Deposit 1000");
+        DepositLargeLabel    = ControlPanelLoc.Tr("存入 10000", "Deposit 10000");
+        DepositAllLabel      = ControlPanelLoc.Tr("存入全部",   "Deposit all");
+        WithdrawSmallLabel   = ControlPanelLoc.Tr("取出 100",   "Withdraw 100");
+        WithdrawMediumLabel  = ControlPanelLoc.Tr("取出 1000",  "Withdraw 1000");
+        WithdrawLargeLabel   = ControlPanelLoc.Tr("取出 10000", "Withdraw 10000");
+        WithdrawAllLabel     = ControlPanelLoc.Tr("取出全部",   "Withdraw all");
+
+        Refresh();
+    }
+
+    // ── 存款命令(预设金额)──
+    public void ExecuteDepositSmall()  => DoDeposit(100);
+    public void ExecuteDepositMedium() => DoDeposit(1000);
+    public void ExecuteDepositLarge()  => DoDeposit(10000);
+    public void ExecuteDepositAll()
+    {
+        try { DoDeposit(Hero.MainHero?.Gold ?? 0); }
+        catch (Exception ex) { Logger.Error("ExecuteDepositAll failed", ex); }
+    }
+
+    // ── 取款命令(预设金额 + 大额二次确认)──
+    public void ExecuteWithdrawSmall()  => DoWithdraw(100);
+    public void ExecuteWithdrawMedium() => DoWithdraw(1000);
+    public void ExecuteWithdrawLarge()  => DoWithdraw(10000);
+    public void ExecuteWithdrawAll()
+    {
+        try
+        {
+            long bal = ResolveTreasuryBalance();
+            if (bal > 0) DoWithdraw(bal);
+        }
+        catch (Exception ex) { Logger.Error("ExecuteWithdrawAll failed", ex); }
+    }
+
+    private long ResolveTreasuryBalance()
+    {
+        try
+        {
+            var clan = Clan.PlayerClan;
+            if (clan == null) return 0;
+            return Capital.CapitalRegistry.Instance?.GetForClan(clan)?.Treasury?.Balance ?? 0;
+        }
+        catch { return 0; }
+    }
+
+    private void DoDeposit(long amount)
+    {
+        // 存款不涉及大额警告 —— 直接执行。
+        _pendingLargeWithdraw = 0;
+        if (amount <= 0)
+        {
+            TreasuryActionStatus = ControlPanelLoc.Tr("无金币可存。", "No gold to deposit.");
+            Refresh();
+            return;
+        }
+        bool ok = TreasuryUserActions.TryDeposit(amount, out var reason, out long bal, out int gold);
+        if (ok)
+        {
+            TreasuryActionStatus = string.Format(
+                ControlPanelLoc.Tr("存入 {0}d → 金库 {1}d,金币 {2}d", "Deposited {0}d → treasury {1}d, gold {2}d"),
+                amount, bal, gold);
+        }
+        else
+        {
+            TreasuryActionStatus = ControlPanelLoc.Tr("存款失败:", "Deposit failed: ") + reason;
+        }
+        Refresh();
+    }
+
+    private void DoWithdraw(long amount)
+    {
+        if (amount <= 0)
+        {
+            TreasuryActionStatus = ControlPanelLoc.Tr("金库无金币可取。", "Nothing to withdraw.");
+            _pendingLargeWithdraw = 0;
+            Refresh();
+            return;
+        }
+
+        // 大额警告:amount > min(balance × 0.5, TrailingDailyExpense × 7) → 首次提示,需二次点击同金额。
+        long bal = ResolveTreasuryBalance();
+        long avg = 0;
+        try
+        {
+            var clan = Clan.PlayerClan;
+            if (clan != null)
+                avg = Capital.CapitalRegistry.Instance?.GetForClan(clan)?.Treasury?.TrailingDailyExpense() ?? 0;
+        }
+        catch { avg = 0; }
+        long warnThreshold = Math.Min(bal / 2, avg * 7);
+        if (warnThreshold > 0 && amount > warnThreshold && _pendingLargeWithdraw != amount)
+        {
+            _pendingLargeWithdraw = amount;
+            TreasuryActionStatus = string.Format(
+                ControlPanelLoc.Tr(
+                    "⚠ 取出 {0}d 可能让驻军欠饷(逃兵)。再次点击同一按钮以确认。",
+                    "⚠ Withdrawing {0}d may leave the garrison unpaid (desertion). Click the same button again to confirm."),
+                amount);
+            Refresh();
+            return;
+        }
+        _pendingLargeWithdraw = 0;
+
+        bool ok = TreasuryUserActions.TryWithdraw(amount, out var reason, out long balAfter, out int goldAfter);
+        if (ok)
+        {
+            TreasuryActionStatus = string.Format(
+                ControlPanelLoc.Tr("取出 {0}d → 金库 {1}d,金币 {2}d", "Withdrew {0}d → treasury {1}d, gold {2}d"),
+                amount, balAfter, goldAfter);
+        }
+        else
+        {
+            TreasuryActionStatus = ControlPanelLoc.Tr("取款失败:", "Withdraw failed: ") + reason;
+        }
         Refresh();
     }
 

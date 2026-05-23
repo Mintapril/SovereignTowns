@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
@@ -24,7 +25,7 @@ namespace SovereignTowns.Parties;
 /// <summary>
 /// 征兵队伍组件（B16.3）。显式 RecruiterPhase 状态机（Dispatching / AtVillage / Travelling / Returning）。
 ///
-/// 招募行程由 MCMF（SupplyDemandGraph）决定：<see cref="_itinerary"/> 是派遣时静态确定的多站村庄
+/// 招募行程由 MCMF（UnifiedGarrisonSolver）决定：<see cref="_itinerary"/> 是派遣时静态确定的多站村庄
 /// 序列，<see cref="_itineraryIndex"/> 是当前进度。征兵队不再运行时打分选村，只按行程逐站访问。
 /// <see cref="_itinerary"/> 用 List&lt;Settlement&gt;（vanilla SaveSystem 不直接支持 HashSet；容器声明
 /// 见 SovereignTownsTypeDefiner.DefineContainerDefinitions）。
@@ -398,7 +399,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         {
             if (village == null || home == null) return false;
             if (!village.IsVillage || !village.IsActive) return false;
-            // 与 SupplyDemandGraph.EnumerateRecruitmentVillages 的入图过滤口径一致 —— 允许"同阵营
+            // 与 RecruitmentTopology.EnumerateRecruitmentVillages 的入图过滤口径一致 —— 允许"同阵营
             // 友军 / 中立第三方"村庄（非交战即可），不要求 MapFaction 严格相等。MCMF 已按此口径选村，
             // 本函数仅复检"行程途中村庄状态是否变化"（沦陷 / 开战 / 被劫）。
             var villageFaction = village.MapFaction;
@@ -475,10 +476,12 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             // B7.22 Fix per-role 饱和：预测「征兵队回家合并后」各 role 总人数。
             var snapGarrison = GenericTroopMatcher.Snapshot(garrisonRoster);
             var snapRecruiter = GenericTroopMatcher.Snapshot(recruitingParty.MemberRoster);
-            int rTargetCav = (int)Math.Round((rule?.CavalryRatio  ?? 0f) * targetTotal);
-            int rTargetHa  = (int)Math.Round((rule?.HorseArcherRatio ?? 0f) * targetTotal);
-            int rTargetInf = (int)Math.Round((rule?.InfantryRatio ?? 0f) * targetTotal);
-            int rTargetRng = (int)Math.Round((rule?.RangedRatio ?? 0f) * targetTotal);
+            // 角色配额与 MCMF 图(MatchPolicy.DesiredCount)同口径:精确模板模式用模板角色分布、
+            // 通用模式用比例滑条。否则图按模板派本队来招某 role、本队却按通用比例判「已饱和」→ 0 招募。
+            int rTargetCav = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Cavalry, targetTotal) : 0;
+            int rTargetHa  = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.HorseArcher, targetTotal) : 0;
+            int rTargetInf = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Infantry, targetTotal) : 0;
+            int rTargetRng = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Ranged, targetTotal) : 0;
             int rGainCav = 0, rGainHa = 0, rGainInf = 0, rGainRng = 0;
 
             // 通用匹配文化过滤：home 即征兵队所属首府，解析一次玩家面板的文化策略（null = 不过滤）。
@@ -521,11 +524,14 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
                     candidatesScanned++;
                     if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
-                    // MCMF 定向招募：只招指定 role（MCMF 派本队来此村正是为该 role）。
+                    // MCMF 定向招募：只招可服务指定 role 的兵。精确模板模式下服务 role
+                    // 取可升级模板目标,与 solver 建图分桶保持一致。
                     if (_assignedRole != GenericTroopRole.Unknown
-                        && GenericTroopMatcher.GetRole(troop) != _assignedRole) continue;
-                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
-                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
+                        && !TroopTemplateMatcher.CanServeRole(troop, rule, _assignedRole)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。仅通用匹配模式生效 ——
+                    // 精确模板模式下模板即显式白名单,玩家点名的跨文化兵种不应被 GenericCultureFilter 否决。
+                    if ((rule == null || rule.UseGenericMatching)
+                        && !GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
                     float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
                     if (float.IsNegativeInfinity(score)) continue;
                     scoredCandidates.Add((troop, volunteerTypes, i, score));
@@ -541,7 +547,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 if (candidate.Slots[candidate.SlotIndex] == null) continue;
 
                 // B7.22 Fix per-role 饱和检查
-                var roleOfCand = GenericTroopMatcher.GetRole(candidate.Troop);
+                var roleOfCand = TroopTemplateMatcher.GetServiceRole(candidate.Troop, rule);
                 int projected, target;
                 switch (roleOfCand)
                 {

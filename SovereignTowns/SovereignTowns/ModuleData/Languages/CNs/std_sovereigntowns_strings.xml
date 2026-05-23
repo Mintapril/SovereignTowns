@@ -20,6 +20,7 @@
     <string id="ST_PartySizeLimit_Transfer" text="主权城镇 调拨队容量上限" />
     <string id="ST_PartySizeLimit_Sally" text="主权城镇 出击队容量上限" />
     <string id="ST_PartySizeLimit_Patrol" text="主权城镇 巡逻队容量上限" />
+    <string id="ST_ClanFinanceSettlement" text="主权城镇 金库结算" />
 
     <!-- 城镇/城堡菜单选项。 -->
     <string id="ST_Menu_CapitalStatus_Active" text="主权城镇：当前首府 ★ ({CAPITAL})" />

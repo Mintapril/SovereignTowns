@@ -71,6 +71,36 @@ public static class TroopTemplateMatcher
         return result;
     }
 
+    /// <summary>
+    /// Role a recruit should fill under the active rule. Generic mode uses the troop's
+    /// current battlefield role; exact-template mode uses the highest-tier template
+    /// target this troop can upgrade into. This keeps MCMF planning and execution on
+    /// the same role contract.
+    /// </summary>
+    public static GenericTroopRole GetServiceRole(CharacterObject? troop, TownGarrisonRule? rule)
+    {
+        if (troop is null) return GenericTroopRole.Unknown;
+        if (rule is null || rule.UseGenericMatching) return GenericTroopMatcher.GetRole(troop);
+        if (!BaseEligible(troop, rule)) return GenericTroopRole.Unknown;
+
+        foreach (var target in TroopTemplateModeService.ResolveExactTemplateTargets(rule)
+                     .OrderByDescending(GenericTroopMatcher.GetTierBucket)
+                     .ThenBy(t => t.StringId ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            if (!CanUpgradeToTarget(troop, target)) continue;
+            var role = GenericTroopMatcher.GetRole(target);
+            if (role != GenericTroopRole.Unknown) return role;
+        }
+
+        return GenericTroopRole.Unknown;
+    }
+
+    public static bool CanServeRole(CharacterObject? troop, TownGarrisonRule? rule, GenericTroopRole role)
+    {
+        if (role == GenericTroopRole.Unknown) return false;
+        return GetServiceRole(troop, rule) == role;
+    }
+
     public static Dictionary<CharacterObject, int> GetExactTemplateDeficits(
         TownGarrisonRule? rule,
         TroopRoster? currentRoster,

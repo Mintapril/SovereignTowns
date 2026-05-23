@@ -120,6 +120,24 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
         try { SovereignTowns.Evaluators.EvaluatorCache.Reset(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} EvaluatorCache.Reset threw: {ex.Message}"); }
 
+        try
+        {
+            if (SovereignTowns.Algorithm.MinCostFlow.SelfTest(out var mcfMessage))
+            {
+                if (_loggerInitialized) Logger.Info(mcfMessage);
+            }
+            else
+            {
+                if (_loggerInitialized) Logger.Error(mcfMessage);
+                TrySafeDebugPrint($"{Tag} {mcfMessage}");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            if (_loggerInitialized) Logger.Error("MinCostFlow self-test threw", ex);
+            TrySafeDebugPrint($"{Tag} MinCostFlow self-test threw: {ex.Message}");
+        }
+
         try { base.OnGameStart(game, gameStarterObject); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnGameStart threw: {ex}"); }
 
@@ -183,6 +201,22 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
         catch (System.Exception ex)
         {
             TrySafeDebugPrint($"{Tag} OnGameStart body threw: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 每帧驱动 AsyncSimulator —— SSP 分帧求解的时间源。异常绝不外逃。
+    /// </summary>
+    protected override void OnApplicationTick(float dt)
+    {
+        try { base.OnApplicationTick(dt); }
+        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnApplicationTick threw: {ex.Message}"); }
+
+        try { SovereignTowns.Common.AsyncSimulator.Update(dt); }
+        catch (System.Exception ex)
+        {
+            if (_loggerInitialized) Logger.Error("AsyncSimulator.Update threw", ex);
+            TrySafeDebugPrint($"{Tag} AsyncSimulator.Update threw: {ex.Message}");
         }
     }
 

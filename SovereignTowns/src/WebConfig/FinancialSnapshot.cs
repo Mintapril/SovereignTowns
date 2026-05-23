@@ -36,7 +36,6 @@ internal static class FinancialSnapshot
         public string ClanId { get; set; } = "";
         public string ClanName { get; set; } = "";
         public long TreasuryBalance { get; set; }
-        public long BufferCap { get; set; }
         public long TrailingDailyExpense { get; set; }
         public long TotalIncome { get; set; }
         public long TotalGarrisonWage { get; set; }
@@ -92,6 +91,51 @@ internal static class FinancialSnapshot
         catch (Exception ex)
         {
             Logger.Error($"FinancialSnapshot.ReplaceClan failed (clan={clanId})", ex);
+        }
+    }
+
+    /// <summary>
+    /// 主线程调用:把当前 snapshot 中该 clan 的 TreasuryBalance 替换为 <paramref name="newBalance"/>,
+    /// 其余字段保持。用于玩家主动存款/取款后立即反映到 UI(不必等下一次 daily 全量重算)。
+    /// 该 clan 不在 snapshot 中 → no-op(下一次 EvaluateClan 会建条目)。
+    /// </summary>
+    public static void PatchTreasuryBalance(string clanId, long newBalance)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(clanId)) return;
+            var previous = Volatile.Read(ref _snapshot);
+            if (previous == null) return;
+            // 复制并替换该 clan 条目;其余条目共享引用(snapshot 只在主线程写,HTTP 线程只读)。
+            var fresh = new List<ClanFinance>(previous.Count);
+            bool found = false;
+            foreach (var cf in previous)
+            {
+                if (cf.ClanId == clanId)
+                {
+                    fresh.Add(new ClanFinance
+                    {
+                        ClanId = cf.ClanId,
+                        ClanName = cf.ClanName,
+                        TreasuryBalance = newBalance,
+                        TrailingDailyExpense = cf.TrailingDailyExpense,
+                        TotalIncome = cf.TotalIncome,
+                        TotalGarrisonWage = cf.TotalGarrisonWage,
+                        GarrisonWageBudget = cf.GarrisonWageBudget,
+                        Settlements = cf.Settlements,
+                    });
+                    found = true;
+                }
+                else
+                {
+                    fresh.Add(cf);
+                }
+            }
+            if (found) Volatile.Write(ref _snapshot, fresh);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"FinancialSnapshot.PatchTreasuryBalance failed (clan={clanId})", ex);
         }
     }
 }

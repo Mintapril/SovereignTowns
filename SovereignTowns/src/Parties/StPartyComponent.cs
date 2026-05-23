@@ -281,7 +281,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             if (lossRatio >= 0.5f) { color = Colors.Red; verdict = new TextObject("{=ST_Battle_Verdict_Heavy}took heavy losses"); }
             else if (lossRatio >= 0.2f) { color = new Color(1.0f, 0.6f, 0.2f); verdict = new TextObject("{=ST_Battle_Verdict_Damaged}suffered damage"); }
             else { color = Colors.Yellow; verdict = new TextObject("{=ST_Battle_Verdict_Won}completed the battle"); }
-            var partyName = (TextObject?)Name ?? new TextObject(GetType().Name);
+            var partyName = (TextObject?)Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             var template = new TextObject(
                 "{=ST_Msg_Battle_Report}[Sovereign Towns] {PARTY_NAME} {VERDICT}: troops {CURRENT}/{INITIAL}, wounded {WOUNDED}.");
             template.SetTextVariable("PARTY_NAME", partyName);
@@ -481,7 +481,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             int refundAmount = TeamFunds;  // 退款数 = 当前队伍资金（即将被 TryRefundOnDestroy 退还）
             var ownerNameObj = (TextObject?)home?.OwnerClan?.Leader?.Name
                 ?? new TextObject("{=ST_Common_CapitalOwner}the capital owner");
-            var partyNameObj = (TextObject?)Name ?? new TextObject(GetType().Name);
+            var partyNameObj = (TextObject?)Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             var homeNameObj = (TextObject?)home?.Name ?? new TextObject("{=ST_Common_Unknown}unknown");
             var template = new TextObject(
                 "{=ST_Msg_Disband_Report}[Sovereign Towns] {PARTY_NAME} returned to {HOME} and disbanded: merged {TROOPS} troops into the garrison, sold goods for +{SOLD}d, refunded {REFUND}d to {OWNER}.");
@@ -590,7 +590,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             var destroyerNameObj = (TextObject?)destroyer?.Name
                 ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             int refundAmount = TeamFunds;
-            var partyNameObj = (TextObject?)Name ?? new TextObject(GetType().Name);
+            var partyNameObj = (TextObject?)Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             TextObject template;
             if (refundAmount > 0)
             {

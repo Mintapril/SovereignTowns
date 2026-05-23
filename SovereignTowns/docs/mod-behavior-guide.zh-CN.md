@@ -6,7 +6,7 @@
 
 - 入口与事件：`src/SovereignTownsSubModule.cs`，`src/Campaign/SovereignTownsCampaignBehavior.cs`
 - 首府：`src/Capital/CapitalManager.cs`，`src/Capital/CapitalRegistry.cs`
-- 每日驻军调度：`src/Managers/CapitalLogisticsManager.cs`
+- 首府后勤调度：`src/Managers/CapitalLogisticsManager.cs`
 - 征兵：`src/Recruitment/*`，`src/Parties/StRecruiterPartyComponent.cs`
 - 巡逻：`src/Patrol/*`，`src/Parties/StPatrolPartyComponent.cs`
 - 调拨：`src/Transfer/*`，`src/Parties/StTransferPartyComponent.cs`
@@ -20,7 +20,7 @@
 
 “首府”只能是城市，不能是城堡。代码里的硬条件是 `settlement.IsTown == true`。城堡可以被纳入驻军评估、兵力调拨和 vanilla 自动招募抑制，但不能作为首府，也不能作为首府派出征兵队、巡逻队的中心。
 
-如果玩家氏族没有城市，Mod 对这个氏族处于“无首府”状态。无首府时每日后勤、首府招募、外派征兵、巡逻派遣等首府制行为都会自动停住。
+如果玩家氏族没有城市，Mod 对这个氏族处于“无首府”状态。无首府时首府后勤、首府招募、外派征兵、巡逻派遣等首府制行为都会自动停住。
 
 ### 实际驻军
 
@@ -31,9 +31,10 @@
 Mod 主要依赖这些游戏事件：
 
 - 游戏载入战役后初始化配置、首府、队伍生命周期、Web 面板。
-- 每日 tick：做首府级后勤评估，决定招募、升级、调拨。
+- 每日 tick：处理 Web 配置同步、每日活动汇总等日级事务。
+- 小时 tick：按 `FiscalAutonomy.CapitalLogisticsTickHours` 做无状态间隔门控，触发首府级后勤评估；默认每 6 小时一次。
 - 每个定居点小时 tick：尝试创建巡逻队、主动出击队。
-- 每个定居点每日 tick：作为小时 tick 漏触发时的兜底，统一兜底四条路径：XP 注入、俘虏转化、巡逻派遣、出击派遣。其中 XP 注入和俘虏转化只在首府上跑；巡逻派遣和出击派遣的真实执行条件仍按各自创建前提判定。
+- 每个定居点每日 tick：作为小时 tick 漏触发时的兜底，推进出击评估，并在首府上执行 XP 注入和俘虏转化；首府后勤调度不再挂在这里。
 - 每个队伍小时 tick：推进 Mod 自建队伍的状态机。
 - 战斗结束：处理巡逻/出击战利品，并让相关队伍判断是否回家。
 - 城镇易主、宣战、玩家换氏族：触发迁移、撤退或重新建首府管理器。
@@ -181,7 +182,7 @@ Mod 主要依赖这些游戏事件：
 | 字段 | 默认 | 行为 |
 | --- | --- | --- |
 | 允许俘虏转化 | 开 | 每日首府地牢俘虏转驻军是否允许 |
-| 允许自动升级 | 开 | 每日后勤评估时是否尝试升级首府驻军 |
+| 允许自动升级 | 开 | 首府后勤评估时是否尝试升级首府驻军 |
 
 ### 单领地覆盖
 
@@ -240,9 +241,11 @@ Web UI 当前把原本的“数量预算”和“资源调度”合并在同一�
 - 征兵队在路上发现目标村庄风险达到 High，会放弃这个目标并重选。
 - 调拨队目的地风险达到 Critical，会改返源城。
 
-## 5. 每日首府后勤总流程
+## 5. 首府后勤总流程
 
-每天 `CapitalLogisticsManager.EvaluateAll` 会对每个受管氏族做一次评估。
+`CapitalLogisticsManager.EvaluateAll` 由小时 tick 的无状态间隔门控触发，间隔由
+`FiscalAutonomy.CapitalLogisticsTickHours` 决定，默认 6 小时。它对每个受管氏族启动一次
+时间展开 MCMF 求解；求解可能跨帧完成，完成回调再派发 tick-0 指令。
 
 一个氏族会被跳过的情况：
 
@@ -253,60 +256,17 @@ Web UI 当前把原本的“数量预算”和“资源调度”合并在同一�
 
 有效时，流程固定为：
 
-1. 收集该氏族所有自有城市和城堡作为后勤节点。
-2. 给每个节点计算风险、当前驻军、目标驻军、是否首府。
-3. 把在途征兵队和调拨队计入 inbound/outbound。
-4. 记录一份日志快照。
-5. 尝试升级首府驻军。
-6. 协调招募：先首府原地招募，再决定是否派征兵队。
-7. 因为招募可能改变首府驻军，所以重新构建节点。
-8. 协调兵力调拨。
+1. 刷新财政快照，供控制面板和 Web API 读取。
+2. 构造 `FlatForecast` 或 `ThreatForecast`。
+3. 根据巡逻开关和当前巡逻队上限计算 patrol headroom。
+4. 启动 `UnifiedGarrisonSolver.SolveCoroutine`。
+5. solver 在时间展开图里同时权衡驻军保留、招募、调拨、巡逻和遣散。
+6. 完成后重查首府是否仍归属该氏族；若首府已变更，丢弃结果。
+7. 派发 tick-0 指令，并执行 tick-0 遣散。
 
-### 目标、缺口和富余
-
-每个后勤节点的目标人数：
-
-`DesiredTarget = round(TargetTotalCount × multiplier)`
-
-其中：
-
-- 风险 High/Critical 用 `WartimeMultiplier`。
-- 其他风险用 `PeacetimeMultiplier`。
-- 最低结果为 1。
-
-在途兵员计算：
-
-- 调拨队从源城出发：源城记录 outbound，目的地记录 inbound。
-- 调拨队如果正在返回源城：源城记录 inbound。
-- 征兵队：home 记录 inbound，队伍现有人数全部算作将来会回到 home。
-
-预计驻军：
-
-`ProjectedMen = CurrentMen + Inbound`
-
-这里不扣 outbound。也就是说，缺口判断只看现有兵加将到兵；调拨容量另算。
-
-缺口：
-
-`Demand = max(0, DesiredTarget - ProjectedMen)`
-
-危急阈值：
-
-`CriticalThreshold = round(DesiredTarget × TransferCriticalProjectedRatio)`
-
-默认 `TransferCriticalProjectedRatio = 0.24`。如果比例大于 0，阈值至少为 1。
-
-危急缺口：
-
-`CriticalDemand = max(0, CriticalThreshold - ProjectedMen)`
-
-可调出容量：
-
-`TransferCapacity = max(0, CurrentMen - DesiredTarget)`
-
-调拨优先级：
-
-`Priority = (CriticalDemand > 0 ? 1000 : 0) + RiskLevel × 100 + Demand + CriticalDemand × 2`
+求解结果中的“推荐驻军”是 tick-0 holding 边流量，不再是旧的
+`TargetTotalCount × threat multiplier` 公式。预算在当前实现里是软约束：驻军工资作为
+holding 边成本参与比较，`BudgetTroopCap` 只用于诊断展示。
 
 ## 6. 首府原地招募
 
@@ -315,7 +275,7 @@ Web UI 当前把原本的“数量预算”和“资源调度”合并在同一�
 触发条件：
 
 1. 该氏族有有效首府。
-2. 当前每日后勤评估发现总缺口或危急缺口大于 0。
+2. 当前首府后勤评估产出原地招募指令。
 3. 自动招募开启。
 4. 首府是城市。
 5. 首府属于受管氏族。
@@ -556,7 +516,7 @@ Returning：
 
 ## 8. 兵力调拨队
 
-调拨由每日首府后勤统一决定。它会在同氏族自有城市/城堡之间运兵。
+调拨由首府后勤统一决定。它会在同氏族自有城市/城堡之间运兵。
 
 ### 目的地排序
 
@@ -1010,7 +970,7 @@ XP 注入前提：
 
 ### 后勤里的自动升级
 
-每日后勤会先尝试升级首府：
+首府后勤会尝试升级首府：
 
 1. 当前规则 `AllowAutoUpgrade` 必须开启。
 2. 首府驻军总数大于 0。

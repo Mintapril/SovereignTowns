@@ -24,7 +24,7 @@ namespace SovereignTowns.Configuration;
 public static class ConfigurationManager
 {
     /// <summary>当前内置 schema 版本号。与磁盘 JSON 的 ConfigVersion 字段比对；不匹配即重置默认。</summary>
-    public const int CurrentConfigVersion = 21;
+    public const int CurrentConfigVersion = 22;
 
     private const string ModuleId = "SovereignTowns";
     private const string ConfigSubDir = "Configs";
@@ -38,6 +38,22 @@ public static class ConfigurationManager
     private static GlobalConfig _current = GlobalConfig.CreateDefault();
     private static bool _initialized;
     private static string _lastValidationError = "";
+
+    // 中英双语 reason 助手 —— 玩家可见的校验失败原因在 WebUI 弹窗中原样显示。
+    // 项目模式见 ActivityNarrator.cs / Ui/ControlPanel/ControlPanelLoc.cs：探测语言一次缓存,
+    // 故意内联复制而非抽到共享类（YAGNI）。
+    private static bool? _isZh;
+    private static bool IsChinese
+    {
+        get
+        {
+            if (_isZh.HasValue) return _isZh.Value;
+            try { _isZh = new TextObject("{=ST_WebUiLang}en").ToString() == "zh"; }
+            catch { _isZh = false; }
+            return _isZh.Value;
+        }
+    }
+    private static string Tr(string zh, string en) => IsChinese ? zh : en;
 
     /// <summary>
     /// B17.4 B1 / Issue #1：GlobalDefaults 或 BranchDefaults 变更后触发。
@@ -248,7 +264,7 @@ public static class ConfigurationManager
         }
         catch (Exception ex)
         {
-            reason = $"validation threw: {ex.Message}";
+            reason = Tr("校验抛出异常：", "validation threw: ") + ex.Message;
             lock (_gate) _lastValidationError = reason;
             Logger.Error("TryValidateCurrent failed", ex);
             return false;
@@ -333,7 +349,7 @@ public static class ConfigurationManager
         changed = false;
         if (newConfig is null)
         {
-            reason = "newConfig is null";
+            reason = Tr("newConfig 为 null", "newConfig is null");
             return false;
         }
 
@@ -373,7 +389,7 @@ public static class ConfigurationManager
                     // 避免"内存已换、磁盘是旧的"导致重启后玩家配置静默丢失。
                     _current = previousConfig;
                     changed = false;
-                    reason = $"WriteToDisk failed: {writeEx.Message}";
+                    reason = Tr("写入磁盘失败：", "WriteToDisk failed: ") + writeEx.Message;
                     Logger.Error("ReplaceAndSave: write failed; rolled back in-memory config", writeEx);
                     return false;
                 }
@@ -392,7 +408,7 @@ public static class ConfigurationManager
         }
         catch (Exception ex)
         {
-            reason = $"ReplaceAndSave threw: {ex.Message}";
+            reason = Tr("ReplaceAndSave 抛出异常：", "ReplaceAndSave threw: ") + ex.Message;
             changed = false;
             Logger.Error("ReplaceAndSave failed", ex);
             return false;
@@ -419,7 +435,7 @@ public static class ConfigurationManager
                 string configPath = GetConfigFilePath();
                 if (!File.Exists(configPath))
                 {
-                    reason = $"config file not found: {configPath}";
+                    reason = Tr("配置文件不存在：", "config file not found: ") + configPath;
                     Logger.Warn($"Reload requested but '{configPath}' does not exist; keeping current in-memory config");
                     return false;
                 }
@@ -427,7 +443,7 @@ public static class ConfigurationManager
                 var loaded = TryLoadFromDisk(configPath);
                 if (loaded is null)
                 {
-                    reason = "config load/parse/validation failed (see logs); kept previous in-memory config";
+                    reason = Tr("配置加载/解析/校验失败（详见日志）；保留之前的内存配置", "config load/parse/validation failed (see logs); kept previous in-memory config");
                     Logger.Warn("Reload failed; keeping previous in-memory config");
                     return false;
                 }
@@ -447,7 +463,7 @@ public static class ConfigurationManager
         }
         catch (Exception ex)
         {
-            reason = $"reload threw: {ex.Message}";
+            reason = Tr("重新加载抛出异常：", "reload threw: ") + ex.Message;
             Logger.Error("ConfigurationManager.Reload failed", ex);
             return false;
         }
@@ -675,7 +691,7 @@ public static class ConfigurationManager
     {
         if (config.GlobalDefaults is null)
         {
-            reason = "GlobalDefaults is null";
+            reason = Tr("GlobalDefaults 为 null", "GlobalDefaults is null");
             return false;
         }
         if (!ValidateRule(config.GlobalDefaults, "GlobalDefaults", out reason))
@@ -684,7 +700,7 @@ public static class ConfigurationManager
         }
         if (config.BranchDefaults is null)
         {
-            reason = "BranchDefaults is null";
+            reason = Tr("BranchDefaults 为 null", "BranchDefaults is null");
             return false;
         }
         if (!ValidateBranchRule(config.BranchDefaults, "BranchDefaults", out reason))
@@ -694,7 +710,7 @@ public static class ConfigurationManager
 
         if (config.VillageCooldownHours < 12 || config.VillageCooldownHours > 240)
         {
-            reason = $"VillageCooldownHours invalid ({config.VillageCooldownHours}); [12, 240]";
+            reason = Tr($"VillageCooldownHours 非法 ({config.VillageCooldownHours})；范围 [12, 240]", $"VillageCooldownHours invalid ({config.VillageCooldownHours}); [12, 240]");
             return false;
         }
         if (config.Thresholds != null && !ValidateThresholds(config.Thresholds, out reason))
@@ -722,15 +738,15 @@ public static class ConfigurationManager
     private static bool ValidateClanPatrol(ClanPatrolConfig c, out string reason)
     {
         if (!IsNonNegativeFloat(c.EtaBufferHours) || c.EtaBufferHours > 168f)
-        { reason = $"ClanPatrol.EtaBufferHours invalid ({c.EtaBufferHours}); [0, 168]"; return false; }
+        { reason = Tr($"ClanPatrol.EtaBufferHours 非法 ({c.EtaBufferHours})；范围 [0, 168]", $"ClanPatrol.EtaBufferHours invalid ({c.EtaBufferHours}); [0, 168]"); return false; }
         if (!IsNonNegativeFloat(c.StuckTimeoutHours) || c.StuckTimeoutHours > 720f || c.StuckTimeoutHours < 1f)
-        { reason = $"ClanPatrol.StuckTimeoutHours invalid ({c.StuckTimeoutHours}); [1, 720]"; return false; }
+        { reason = Tr($"ClanPatrol.StuckTimeoutHours 非法 ({c.StuckTimeoutHours})；范围 [1, 720]", $"ClanPatrol.StuckTimeoutHours invalid ({c.StuckTimeoutHours}); [1, 720]"); return false; }
         if (!IsNonNegativeFloat(c.MinVisitGapHours) || c.MinVisitGapHours > 720f)
-        { reason = $"ClanPatrol.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"; return false; }
+        { reason = Tr($"ClanPatrol.MinVisitGapHours 非法 ({c.MinVisitGapHours})；范围 [0, 720]", $"ClanPatrol.MinVisitGapHours invalid ({c.MinVisitGapHours}); [0, 720]"); return false; }
         if (!IsNonNegativeFloat(c.DistanceWeightHoursPerTile) || c.DistanceWeightHoursPerTile > 100f)
-        { reason = $"ClanPatrol.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"; return false; }
+        { reason = Tr($"ClanPatrol.DistanceWeightHoursPerTile 非法 ({c.DistanceWeightHoursPerTile})；范围 [0, 100]", $"ClanPatrol.DistanceWeightHoursPerTile invalid ({c.DistanceWeightHoursPerTile}); [0, 100]"); return false; }
         if (!IsNonNegativeFloat(c.SupportEtaThresholdHours) || c.SupportEtaThresholdHours > 168f)
-        { reason = $"ClanPatrol.SupportEtaThresholdHours invalid ({c.SupportEtaThresholdHours}); [0, 168]"; return false; }
+        { reason = Tr($"ClanPatrol.SupportEtaThresholdHours 非法 ({c.SupportEtaThresholdHours})；范围 [0, 168]", $"ClanPatrol.SupportEtaThresholdHours invalid ({c.SupportEtaThresholdHours}); [0, 168]"); return false; }
         reason = "";
         return true;
     }
@@ -753,7 +769,7 @@ public static class ConfigurationManager
         {
             if (val < lo || val > hi)
             {
-                reason = $"BuildingBonus.{name} invalid ({val}); [{lo}, {hi}]";
+                reason = Tr($"BuildingBonus.{name} 非法 ({val})；范围 [{lo}, {hi}]", $"BuildingBonus.{name} invalid ({val}); [{lo}, {hi}]");
                 return false;
             }
         }
@@ -764,31 +780,65 @@ public static class ConfigurationManager
     private static bool ValidateFiscalAutonomy(FiscalAutonomyConfig f, out string reason)
     {
         if (f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
-        { reason = $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1, 1.0]"; return false; }
-        if (f.TreasuryBufferDays < 0 || f.TreasuryBufferDays > 120)
-        { reason = $"FiscalAutonomy.TreasuryBufferDays invalid ({f.TreasuryBufferDays}); [0, 120]"; return false; }
+        { reason = Tr($"FiscalAutonomy.GarrisonWageBudgetRatio 非法 ({f.GarrisonWageBudgetRatio})；范围 [0.1, 1.0]", $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1, 1.0]"); return false; }
         if (f.MinGarrisonFloor < 0 || f.MinGarrisonFloor > 500)
-        { reason = $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0, 500]"; return false; }
+        { reason = Tr($"FiscalAutonomy.MinGarrisonFloor 非法 ({f.MinGarrisonFloor})；范围 [0, 500]", $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0, 500]"); return false; }
         if (f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
-        { reason = $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0, 3.0]"; return false; }
-        if (f.SurplusEdgeCost < 1 || f.SurplusEdgeCost > 1000)
-        { reason = $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1, 1000]"; return false; }
+        { reason = Tr($"FiscalAutonomy.DisbandExcessThreshold 非法 ({f.DisbandExcessThreshold})；范围 [1.0, 3.0]", $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0, 3.0]"); return false; }
         if (f.CoreTierCount < 1 || f.CoreTierCount > 20)
-        { reason = $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1, 20]"; return false; }
+        { reason = Tr($"FiscalAutonomy.CoreTierCount 非法 ({f.CoreTierCount})；范围 [1, 20]", $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1, 20]"); return false; }
         if (f.AdequateProsperityDivisor < 1 || f.AdequateProsperityDivisor > 1000)
-        { reason = $"FiscalAutonomy.AdequateProsperityDivisor invalid ({f.AdequateProsperityDivisor}); [1, 1000]"; return false; }
+        { reason = Tr($"FiscalAutonomy.AdequateProsperityDivisor 非法 ({f.AdequateProsperityDivisor})；范围 [1, 1000]", $"FiscalAutonomy.AdequateProsperityDivisor invalid ({f.AdequateProsperityDivisor}); [1, 1000]"); return false; }
         if (f.AdequateThreatWeight < 0 || f.AdequateThreatWeight > 1000)
-        { reason = $"FiscalAutonomy.AdequateThreatWeight invalid ({f.AdequateThreatWeight}); [0, 1000]"; return false; }
+        { reason = Tr($"FiscalAutonomy.AdequateThreatWeight 非法 ({f.AdequateThreatWeight})；范围 [0, 1000]", $"FiscalAutonomy.AdequateThreatWeight invalid ({f.AdequateThreatWeight}); [0, 1000]"); return false; }
         if (f.MaxGarrisonHardCap < f.MinGarrisonFloor || f.MaxGarrisonHardCap > 2000)
-        { reason = $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor, 2000]"; return false; }
+        { reason = Tr($"FiscalAutonomy.MaxGarrisonHardCap 非法 ({f.MaxGarrisonHardCap})；范围 [MinGarrisonFloor, 2000]", $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor, 2000]"); return false; }
         if (f.AdequateBase < f.MinGarrisonFloor || f.AdequateBase > f.MaxGarrisonHardCap)
-        { reason = $"FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor, MaxGarrisonHardCap]"; return false; }
-        if (f.ValueCoreBase < 1 || f.ValueCoreBase > 100000)
-        { reason = $"FiscalAutonomy.ValueCoreBase invalid ({f.ValueCoreBase}); [1, 100000]"; return false; }
-        if (f.ValueFloorBase < 1 || f.ValueFloorBase > 1000000)
-        { reason = $"FiscalAutonomy.ValueFloorBase invalid ({f.ValueFloorBase}); [1, 1000000]"; return false; }
-        if (f.ValueFloorBase <= f.ValueCoreBase)
-        { reason = $"FiscalAutonomy.ValueFloorBase must exceed ValueCoreBase (floor must dominate core)"; return false; }
+        { reason = Tr("FiscalAutonomy.AdequateBase 必须落在 [MinGarrisonFloor, MaxGarrisonHardCap] 区间内", "FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor, MaxGarrisonHardCap]"); return false; }
+
+        // ── 时间展开调度器 value 函数 ──
+        if (f.ValueFloorBase < 0 || f.ValueFloorBase > 20000)
+        { reason = Tr($"FiscalAutonomy.ValueFloorBase 非法 ({f.ValueFloorBase})；范围 [0, 20000]", $"FiscalAutonomy.ValueFloorBase invalid ({f.ValueFloorBase}); [0, 20000]"); return false; }
+        if (f.ValueCoreBase < 0 || f.ValueCoreBase > 10000)
+        { reason = Tr($"FiscalAutonomy.ValueCoreBase 非法 ({f.ValueCoreBase})；范围 [0, 10000]", $"FiscalAutonomy.ValueCoreBase invalid ({f.ValueCoreBase}); [0, 10000]"); return false; }
+        if (f.SurplusEdgeCost < 1 || f.SurplusEdgeCost > 1000)
+        { reason = Tr($"FiscalAutonomy.SurplusEdgeCost 非法 ({f.SurplusEdgeCost})；范围 [1, 1000]", $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1, 1000]"); return false; }
+        if (f.PatrolValue < 0 || f.PatrolValue > 5000)
+        { reason = Tr($"FiscalAutonomy.PatrolValue 非法 ({f.PatrolValue})；范围 [0, 5000]", $"FiscalAutonomy.PatrolValue invalid ({f.PatrolValue}); [0, 5000]"); return false; }
+        if (f.DisbandPerDayCap < 0 || f.DisbandPerDayCap > 200)
+        { reason = Tr($"FiscalAutonomy.DisbandPerDayCap 非法 ({f.DisbandPerDayCap})；范围 [0, 200]", $"FiscalAutonomy.DisbandPerDayCap invalid ({f.DisbandPerDayCap}); [0, 200]"); return false; }
+        if (f.BypassOverflowPenalty < 0 || f.BypassOverflowPenalty > 10000)
+        { reason = Tr($"FiscalAutonomy.BypassOverflowPenalty 非法 ({f.BypassOverflowPenalty})；范围 [0, 10000]", $"FiscalAutonomy.BypassOverflowPenalty invalid ({f.BypassOverflowPenalty}); [0, 10000]"); return false; }
+        if (f.HorizonTicks < 1 || f.HorizonTicks > 64)
+        { reason = Tr($"FiscalAutonomy.HorizonTicks 非法 ({f.HorizonTicks})；范围 [1, 64]", $"FiscalAutonomy.HorizonTicks invalid ({f.HorizonTicks}); [1, 64]"); return false; }
+        if (f.SspYieldEvery < 1 || f.SspYieldEvery > 64)
+        { reason = Tr($"FiscalAutonomy.SspYieldEvery 非法 ({f.SspYieldEvery})；范围 [1, 64]", $"FiscalAutonomy.SspYieldEvery invalid ({f.SspYieldEvery}); [1, 64]"); return false; }
+        if (!IsFiniteFloat(f.ThreatForecastScanRadius) || f.ThreatForecastScanRadius < 0f || f.ThreatForecastScanRadius > 500f)
+        { reason = Tr($"FiscalAutonomy.ThreatForecastScanRadius 非法 ({f.ThreatForecastScanRadius})；范围 [0, 500]", $"FiscalAutonomy.ThreatForecastScanRadius invalid ({f.ThreatForecastScanRadius}); [0, 500]"); return false; }
+
+        // ── value 函数曲线 tunables ──
+        foreach (var (name, val) in new (string, float)[]
+        {
+            ("ThreatWeightSafe", f.ThreatWeightSafe),
+            ("ThreatWeightLow", f.ThreatWeightLow),
+            ("ThreatWeightMedium", f.ThreatWeightMedium),
+            ("ThreatWeightHigh", f.ThreatWeightHigh),
+            ("ThreatWeightCritical", f.ThreatWeightCritical),
+        })
+        {
+            if (!IsFiniteFloat(val) || val < 0f || val > 8f)
+            { reason = Tr($"FiscalAutonomy.{name} 非法 ({val})；范围 [0, 8]", $"FiscalAutonomy.{name} invalid ({val}); [0, 8]"); return false; }
+        }
+        if (!IsFiniteFloat(f.CoreDimRange) || f.CoreDimRange < 0f || f.CoreDimRange > 1f)
+        { reason = Tr($"FiscalAutonomy.CoreDimRange 非法 ({f.CoreDimRange})；范围 [0, 1]", $"FiscalAutonomy.CoreDimRange invalid ({f.CoreDimRange}); [0, 1]"); return false; }
+        if (!IsFiniteFloat(f.CoreDimMidpoint) || f.CoreDimMidpoint < 0f || f.CoreDimMidpoint > 1f)
+        { reason = Tr($"FiscalAutonomy.CoreDimMidpoint 非法 ({f.CoreDimMidpoint})；范围 [0, 1]", $"FiscalAutonomy.CoreDimMidpoint invalid ({f.CoreDimMidpoint}); [0, 1]"); return false; }
+        if (!IsFiniteFloat(f.ProsperityNormalizer) || f.ProsperityNormalizer < 500f || f.ProsperityNormalizer > 20000f)
+        { reason = Tr($"FiscalAutonomy.ProsperityNormalizer 非法 ({f.ProsperityNormalizer})；范围 [500, 20000]", $"FiscalAutonomy.ProsperityNormalizer invalid ({f.ProsperityNormalizer}); [500, 20000]"); return false; }
+        if (!IsFiniteFloat(f.CapitalStrategicBonus) || f.CapitalStrategicBonus < 1f || f.CapitalStrategicBonus > 3f)
+        { reason = Tr($"FiscalAutonomy.CapitalStrategicBonus 非法 ({f.CapitalStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.CapitalStrategicBonus invalid ({f.CapitalStrategicBonus}); [1, 3]"); return false; }
+        if (!IsFiniteFloat(f.ReferenceSpeedPerDay) || f.ReferenceSpeedPerDay < 1f || f.ReferenceSpeedPerDay > 20f)
+        { reason = Tr($"FiscalAutonomy.ReferenceSpeedPerDay 非法 ({f.ReferenceSpeedPerDay})；范围 [1, 20]", $"FiscalAutonomy.ReferenceSpeedPerDay invalid ({f.ReferenceSpeedPerDay}); [1, 20]"); return false; }
         reason = "";
         return true;
     }
@@ -796,109 +846,87 @@ public static class ConfigurationManager
     private static bool ValidateThresholds(PartyThresholds t, out string reason)
     {
         if (!IsRatio(t.PartyReturnSizeRatio))
-        { reason = $"Thresholds.PartyReturnSizeRatio invalid ({t.PartyReturnSizeRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.PartyReturnSizeRatio 非法 ({t.PartyReturnSizeRatio})；必须在 [0,1] 区间", $"Thresholds.PartyReturnSizeRatio invalid ({t.PartyReturnSizeRatio}); must be in [0,1]"); return false; }
         if (!IsRatio(t.PartyReturnWoundedRatio))
-        { reason = $"Thresholds.PartyReturnWoundedRatio invalid ({t.PartyReturnWoundedRatio}); must be in [0,1]"; return false; }
-        if (!IsRatio(t.PatrolReserveAfterCreationRatio))
-        { reason = $"Thresholds.PatrolReserveAfterCreationRatio invalid ({t.PatrolReserveAfterCreationRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.PartyReturnWoundedRatio 非法 ({t.PartyReturnWoundedRatio})；必须在 [0,1] 区间", $"Thresholds.PartyReturnWoundedRatio invalid ({t.PartyReturnWoundedRatio}); must be in [0,1]"); return false; }
         if (!IsRatio(t.PatrolTroopBatchRatio))
-        { reason = $"Thresholds.PatrolTroopBatchRatio invalid ({t.PatrolTroopBatchRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.PatrolTroopBatchRatio 非法 ({t.PatrolTroopBatchRatio})；必须在 [0,1] 区间", $"Thresholds.PatrolTroopBatchRatio invalid ({t.PatrolTroopBatchRatio}); must be in [0,1]"); return false; }
         if (!IsRatio(t.RecruiterEscortRatio))
-        { reason = $"Thresholds.RecruiterEscortRatio invalid ({t.RecruiterEscortRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.RecruiterEscortRatio 非法 ({t.RecruiterEscortRatio})；必须在 [0,1] 区间", $"Thresholds.RecruiterEscortRatio invalid ({t.RecruiterEscortRatio}); must be in [0,1]"); return false; }
         if (t.RecruiterReturnRecruitedCount < 1)
-        { reason = $"Thresholds.RecruiterReturnRecruitedCount invalid ({t.RecruiterReturnRecruitedCount}); must be >= 1"; return false; }
+        { reason = Tr($"Thresholds.RecruiterReturnRecruitedCount 非法 ({t.RecruiterReturnRecruitedCount})；必须 >= 1", $"Thresholds.RecruiterReturnRecruitedCount invalid ({t.RecruiterReturnRecruitedCount}); must be >= 1"); return false; }
         if (t.RecruiterReturnRecruitedCount > 1000)
-        { reason = $"Thresholds.RecruiterReturnRecruitedCount {t.RecruiterReturnRecruitedCount} 超过上限 1000"; return false; }
-        if (!IsRatio(t.TransferCriticalProjectedRatio))
-        { reason = $"Thresholds.TransferCriticalProjectedRatio invalid ({t.TransferCriticalProjectedRatio}); must be in [0,1]"; return false; }
-        if (!IsRatio(t.TransferRatio))
-        { reason = $"Thresholds.TransferRatio invalid ({t.TransferRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.RecruiterReturnRecruitedCount {t.RecruiterReturnRecruitedCount} 超过上限 1000", $"Thresholds.RecruiterReturnRecruitedCount {t.RecruiterReturnRecruitedCount} exceeds upper bound 1000"); return false; }
         if (!IsRatio(t.TransferMaxTroopsPerTaskRatio))
-        { reason = $"Thresholds.TransferMaxTroopsPerTaskRatio invalid ({t.TransferMaxTroopsPerTaskRatio}); must be in [0,1]"; return false; }
-        if (!IsRatio(t.TransferMinTroopRatio))
-        { reason = $"Thresholds.TransferMinTroopRatio invalid ({t.TransferMinTroopRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.TransferMaxTroopsPerTaskRatio 非法 ({t.TransferMaxTroopsPerTaskRatio})；必须在 [0,1] 区间", $"Thresholds.TransferMaxTroopsPerTaskRatio invalid ({t.TransferMaxTroopsPerTaskRatio}); must be in [0,1]"); return false; }
         if (!IsRatio(t.RecruitmentMinDemandRatio))
-        { reason = $"Thresholds.RecruitmentMinDemandRatio invalid ({t.RecruitmentMinDemandRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.RecruitmentMinDemandRatio 非法 ({t.RecruitmentMinDemandRatio})；必须在 [0,1] 区间", $"Thresholds.RecruitmentMinDemandRatio invalid ({t.RecruitmentMinDemandRatio}); must be in [0,1]"); return false; }
         if (!IsRatio(t.SallyExtractionRatio))
-        { reason = $"Thresholds.SallyExtractionRatio invalid ({t.SallyExtractionRatio}); must be in [0,1]"; return false; }
+        { reason = Tr($"Thresholds.SallyExtractionRatio 非法 ({t.SallyExtractionRatio})；必须在 [0,1] 区间", $"Thresholds.SallyExtractionRatio invalid ({t.SallyExtractionRatio}); must be in [0,1]"); return false; }
         if (!IsNonNegativeFloat(t.SallyTargetPartySizeMultiplier))
-        { reason = $"Thresholds.SallyTargetPartySizeMultiplier invalid ({t.SallyTargetPartySizeMultiplier})"; return false; }
+        { reason = Tr($"Thresholds.SallyTargetPartySizeMultiplier 非法 ({t.SallyTargetPartySizeMultiplier})", $"Thresholds.SallyTargetPartySizeMultiplier invalid ({t.SallyTargetPartySizeMultiplier})"); return false; }
         // C (DeepSeek audit 2026-05-18)：与前端 thresholdSpecs max=5 对齐。原 100 上限远超合理范围。
         if (t.SallyTargetPartySizeMultiplier > 5f)
-        { reason = $"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} 超过上限 5"; return false; }
+        { reason = Tr($"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} 超过上限 5", $"Thresholds.SallyTargetPartySizeMultiplier {t.SallyTargetPartySizeMultiplier} exceeds upper bound 5"); return false; }
         if (t.SallyCreateMinPartyCount < 1)
-        { reason = $"Thresholds.SallyCreateMinPartyCount invalid ({t.SallyCreateMinPartyCount}); must be >= 1"; return false; }
+        { reason = Tr($"Thresholds.SallyCreateMinPartyCount 非法 ({t.SallyCreateMinPartyCount})；必须 >= 1", $"Thresholds.SallyCreateMinPartyCount invalid ({t.SallyCreateMinPartyCount}); must be >= 1"); return false; }
         if (t.SallyCreateMinPartyCount > 1000)
-        { reason = $"Thresholds.SallyCreateMinPartyCount {t.SallyCreateMinPartyCount} 超过上限 1000"; return false; }
+        { reason = Tr($"Thresholds.SallyCreateMinPartyCount {t.SallyCreateMinPartyCount} 超过上限 1000", $"Thresholds.SallyCreateMinPartyCount {t.SallyCreateMinPartyCount} exceeds upper bound 1000"); return false; }
 
         // Issue #5：B17.4 新增阈值校验。
         if (t.RecruiterMinHomeGarrison < 0)
-        { reason = $"Thresholds.RecruiterMinHomeGarrison invalid ({t.RecruiterMinHomeGarrison}); must be >= 0"; return false; }
+        { reason = Tr($"Thresholds.RecruiterMinHomeGarrison 非法 ({t.RecruiterMinHomeGarrison})；必须 >= 0", $"Thresholds.RecruiterMinHomeGarrison invalid ({t.RecruiterMinHomeGarrison}); must be >= 0"); return false; }
         if (t.RecruiterMinHomeGarrison > 500)
-        { reason = $"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} 超过上限 500"; return false; }
+        { reason = Tr($"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} 超过上限 500", $"Thresholds.RecruiterMinHomeGarrison {t.RecruiterMinHomeGarrison} exceeds upper bound 500"); return false; }
         if (t.PartyPrisonerCap < 0)
-        { reason = $"Thresholds.PartyPrisonerCap invalid ({t.PartyPrisonerCap}); must be >= 0"; return false; }
+        { reason = Tr($"Thresholds.PartyPrisonerCap 非法 ({t.PartyPrisonerCap})；必须 >= 0", $"Thresholds.PartyPrisonerCap invalid ({t.PartyPrisonerCap}); must be >= 0"); return false; }
         if (t.PartyPrisonerCap > 500)
-        { reason = $"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} 超过上限 500"; return false; }
+        { reason = Tr($"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} 超过上限 500", $"Thresholds.PartyPrisonerCap {t.PartyPrisonerCap} exceeds upper bound 500"); return false; }
         if (!IsNonNegativeFloat(t.StuckTeleportHours))
-        { reason = $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"; return false; }
+        { reason = Tr($"Thresholds.StuckTeleportHours 非法 ({t.StuckTeleportHours})；必须 >= 0", $"Thresholds.StuckTeleportHours invalid ({t.StuckTeleportHours}); must be >= 0"); return false; }
         if (t.StuckTeleportHours > 168f)
-        { reason = $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 168"; return false; }
+        { reason = Tr($"Thresholds.StuckTeleportHours {t.StuckTeleportHours} 超过上限 168", $"Thresholds.StuckTeleportHours {t.StuckTeleportHours} exceeds upper bound 168"); return false; }
         if (!IsNonNegativeFloat(t.PatrolMaxLifetimeHours) || t.PatrolMaxLifetimeHours > 720f)
-        { reason = $"Thresholds.PatrolMaxLifetimeHours invalid ({t.PatrolMaxLifetimeHours}); [0, 720]"; return false; }
+        { reason = Tr($"Thresholds.PatrolMaxLifetimeHours 非法 ({t.PatrolMaxLifetimeHours})；范围 [0, 720]", $"Thresholds.PatrolMaxLifetimeHours invalid ({t.PatrolMaxLifetimeHours}); [0, 720]"); return false; }
         if (t.PatrolMinDispatchSize < 0)
-        { reason = $"Thresholds.PatrolMinDispatchSize invalid ({t.PatrolMinDispatchSize}); must be >= 0"; return false; }
+        { reason = Tr($"Thresholds.PatrolMinDispatchSize 非法 ({t.PatrolMinDispatchSize})；必须 >= 0", $"Thresholds.PatrolMinDispatchSize invalid ({t.PatrolMinDispatchSize}); must be >= 0"); return false; }
         if (t.PatrolMinDispatchSize > 500)
-        { reason = $"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} 超过上限 500"; return false; }
+        { reason = Tr($"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} 超过上限 500", $"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} exceeds upper bound 500"); return false; }
         if (!IsNonNegativeFloat(t.FoodReplenishMinDays))
-        { reason = $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"; return false; }
+        { reason = Tr($"Thresholds.FoodReplenishMinDays 非法 ({t.FoodReplenishMinDays})", $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"); return false; }
         if (t.FoodReplenishMinDays > 365f)
-        { reason = $"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} 超过上限 365"; return false; }
+        { reason = Tr($"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} 超过上限 365", $"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} exceeds upper bound 365"); return false; }
         if (!IsNonNegativeFloat(t.FoodReplenishTopUpDays))
-        { reason = $"Thresholds.FoodReplenishTopUpDays invalid ({t.FoodReplenishTopUpDays})"; return false; }
+        { reason = Tr($"Thresholds.FoodReplenishTopUpDays 非法 ({t.FoodReplenishTopUpDays})", $"Thresholds.FoodReplenishTopUpDays invalid ({t.FoodReplenishTopUpDays})"); return false; }
         if (t.FoodReplenishTopUpDays > 365f)
-        { reason = $"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} 超过上限 365"; return false; }
+        { reason = Tr($"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} 超过上限 365", $"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} exceeds upper bound 365"); return false; }
 
         // DeepSeek audit 2026-05-18 新增字段校验
         if (!IsNonNegativeFloat(t.IdleHoursBeforeForceReturn) || t.IdleHoursBeforeForceReturn < 1f || t.IdleHoursBeforeForceReturn > 720f)
-        { reason = $"Thresholds.IdleHoursBeforeForceReturn invalid ({t.IdleHoursBeforeForceReturn}); [1, 720]"; return false; }
+        { reason = Tr($"Thresholds.IdleHoursBeforeForceReturn 非法 ({t.IdleHoursBeforeForceReturn})；范围 [1, 720]", $"Thresholds.IdleHoursBeforeForceReturn invalid ({t.IdleHoursBeforeForceReturn}); [1, 720]"); return false; }
         if (!IsNonNegativeFloat(t.IdleHoursBeforeDisband) || t.IdleHoursBeforeDisband < 1f || t.IdleHoursBeforeDisband > 720f)
-        { reason = $"Thresholds.IdleHoursBeforeDisband invalid ({t.IdleHoursBeforeDisband}); [1, 720]"; return false; }
+        { reason = Tr($"Thresholds.IdleHoursBeforeDisband 非法 ({t.IdleHoursBeforeDisband})；范围 [1, 720]", $"Thresholds.IdleHoursBeforeDisband invalid ({t.IdleHoursBeforeDisband}); [1, 720]"); return false; }
         if (t.IdleHoursBeforeDisband < t.IdleHoursBeforeForceReturn)
-        { reason = $"Thresholds.IdleHoursBeforeDisband ({t.IdleHoursBeforeDisband}) 必须 ≥ IdleHoursBeforeForceReturn ({t.IdleHoursBeforeForceReturn})"; return false; }
+        { reason = Tr($"Thresholds.IdleHoursBeforeDisband ({t.IdleHoursBeforeDisband}) 必须 ≥ IdleHoursBeforeForceReturn ({t.IdleHoursBeforeForceReturn})", $"Thresholds.IdleHoursBeforeDisband ({t.IdleHoursBeforeDisband}) must be >= IdleHoursBeforeForceReturn ({t.IdleHoursBeforeForceReturn})"); return false; }
         if (!IsNonNegativeFloat(t.SallyDetectionRadius) || t.SallyDetectionRadius < 10f || t.SallyDetectionRadius > 500f)
-        { reason = $"Thresholds.SallyDetectionRadius invalid ({t.SallyDetectionRadius}); [10, 500]"; return false; }
+        { reason = Tr($"Thresholds.SallyDetectionRadius 非法 ({t.SallyDetectionRadius})；范围 [10, 500]", $"Thresholds.SallyDetectionRadius invalid ({t.SallyDetectionRadius}); [10, 500]"); return false; }
         if (!IsNonNegativeFloat(t.SallyCooldownHours) || t.SallyCooldownHours > 168f)
-        { reason = $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"; return false; }
+        { reason = Tr($"Thresholds.SallyCooldownHours 非法 ({t.SallyCooldownHours})；范围 [0, 168]", $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"); return false; }
         if (t.SallyMinSustainedTicks < 1 || t.SallyMinSustainedTicks > 48)
-        { reason = $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"; return false; }
-        if (!IsRatio(t.TransferCapacityWeight))
-        { reason = $"Thresholds.TransferCapacityWeight invalid ({t.TransferCapacityWeight}); [0, 1]"; return false; }
-        if (!IsNonNegativeFloat(t.TransferBranchToBranchPenalty) || t.TransferBranchToBranchPenalty > 100f)
-        { reason = $"Thresholds.TransferBranchToBranchPenalty invalid ({t.TransferBranchToBranchPenalty}); [0, 100]"; return false; }
-        if (!IsNonNegativeFloat(t.TransferCapitalSourcePenalty) || t.TransferCapitalSourcePenalty > 100f)
-        { reason = $"Thresholds.TransferCapitalSourcePenalty invalid ({t.TransferCapitalSourcePenalty}); [0, 100]"; return false; }
+        { reason = Tr($"Thresholds.SallyMinSustainedTicks 非法 ({t.SallyMinSustainedTicks})；范围 [1, 48]", $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"); return false; }
         if (!IsRatio(t.AutoUpgradeMinTierRatio))
-        { reason = $"Thresholds.AutoUpgradeMinTierRatio invalid ({t.AutoUpgradeMinTierRatio}); [0, 1]"; return false; }
+        { reason = Tr($"Thresholds.AutoUpgradeMinTierRatio 非法 ({t.AutoUpgradeMinTierRatio})；范围 [0, 1]", $"Thresholds.AutoUpgradeMinTierRatio invalid ({t.AutoUpgradeMinTierRatio}); [0, 1]"); return false; }
         if (t.AutoUpgradeMinBudget < 0 || t.AutoUpgradeMinBudget > 50000)
-        { reason = $"Thresholds.AutoUpgradeMinBudget invalid ({t.AutoUpgradeMinBudget}); [0, 50000]"; return false; }
+        { reason = Tr($"Thresholds.AutoUpgradeMinBudget 非法 ({t.AutoUpgradeMinBudget})；范围 [0, 50000]", $"Thresholds.AutoUpgradeMinBudget invalid ({t.AutoUpgradeMinBudget}); [0, 50000]"); return false; }
         if (t.AutoUpgradeMaxPerCall < 1 || t.AutoUpgradeMaxPerCall > 500)
-        { reason = $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"; return false; }
+        { reason = Tr($"Thresholds.AutoUpgradeMaxPerCall 非法 ({t.AutoUpgradeMaxPerCall})；范围 [1, 500]", $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"); return false; }
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruiterVillageCandidateCap < 4 || t.RecruiterVillageCandidateCap > 300)
-        { reason = $"Thresholds.RecruiterVillageCandidateCap invalid ({t.RecruiterVillageCandidateCap}); [4, 300]"; return false; }
-        if (t.McmfHardPenalty < 0 || t.McmfHardPenalty > 10000)
-        { reason = $"Thresholds.McmfHardPenalty invalid ({t.McmfHardPenalty}); [0, 10000]"; return false; }
-        if (t.McmfTierPenalty < 0 || t.McmfTierPenalty > 10000)
-        { reason = $"Thresholds.McmfTierPenalty invalid ({t.McmfTierPenalty}); [0, 10000]"; return false; }
-        if (!IsRatio(t.McmfLeniency))
-        { reason = $"Thresholds.McmfLeniency invalid ({t.McmfLeniency}); [0, 1]"; return false; }
-        if (t.McmfUnmetCost < 0 || t.McmfUnmetCost > 10000)
-        { reason = $"Thresholds.McmfUnmetCost invalid ({t.McmfUnmetCost}); [0, 10000]"; return false; }
+        { reason = Tr($"Thresholds.RecruiterVillageCandidateCap 非法 ({t.RecruiterVillageCandidateCap})；范围 [4, 300]", $"Thresholds.RecruiterVillageCandidateCap invalid ({t.RecruiterVillageCandidateCap}); [4, 300]"); return false; }
         if (t.McmfRecruiterOverhead < 0 || t.McmfRecruiterOverhead > 10000)
-        { reason = $"Thresholds.McmfRecruiterOverhead invalid ({t.McmfRecruiterOverhead}); [0, 10000]"; return false; }
+        { reason = Tr($"Thresholds.McmfRecruiterOverhead 非法 ({t.McmfRecruiterOverhead})；范围 [0, 10000]", $"Thresholds.McmfRecruiterOverhead invalid ({t.McmfRecruiterOverhead}); [0, 10000]"); return false; }
         if (t.McmfTransferOverhead < 0 || t.McmfTransferOverhead > 10000)
-        { reason = $"Thresholds.McmfTransferOverhead invalid ({t.McmfTransferOverhead}); [0, 10000]"; return false; }
+        { reason = Tr($"Thresholds.McmfTransferOverhead 非法 ({t.McmfTransferOverhead})；范围 [0, 10000]", $"Thresholds.McmfTransferOverhead invalid ({t.McmfTransferOverhead}); [0, 10000]"); return false; }
 
         reason = "";
         return true;
@@ -917,29 +945,29 @@ public static class ConfigurationManager
     {
         if (rule.TargetTotalCount < 0)
         {
-            reason = $"{ctx}.TargetTotalCount < 0";
+            reason = Tr($"{ctx}.TargetTotalCount 小于 0", $"{ctx}.TargetTotalCount < 0");
             return false;
         }
         if (rule.TargetTotalCount > 100_000)
         {
-            reason = $"{ctx}.TargetTotalCount {rule.TargetTotalCount} 超过上限 100000";
+            reason = Tr($"{ctx}.TargetTotalCount {rule.TargetTotalCount} 超过上限 100000", $"{ctx}.TargetTotalCount {rule.TargetTotalCount} exceeds upper bound 100000");
             return false;
         }
         if (rule.ExactTroopTemplate is null)
         {
-            reason = $"{ctx}.ExactTroopTemplate is null";
+            reason = Tr($"{ctx}.ExactTroopTemplate 为 null", $"{ctx}.ExactTroopTemplate is null");
             return false;
         }
         foreach (var kv in rule.ExactTroopTemplate)
         {
             if (string.IsNullOrWhiteSpace(kv.Key))
             {
-                reason = $"{ctx}.ExactTroopTemplate contains empty troop id";
+                reason = Tr($"{ctx}.ExactTroopTemplate 包含空的兵种 id", $"{ctx}.ExactTroopTemplate contains empty troop id");
                 return false;
             }
             if (float.IsNaN(kv.Value) || float.IsInfinity(kv.Value) || kv.Value < 0f || kv.Value > 1f)
             {
-                reason = $"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} 不在 [0,1] 占比范围";
+                reason = Tr($"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} 不在 [0,1] 占比范围", $"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} not in ratio range [0,1]");
                 return false;
             }
         }
@@ -952,7 +980,7 @@ public static class ConfigurationManager
             }
             if (exactTemplateSum < RatioSumMin || exactTemplateSum > RatioSumMax)
             {
-                reason = $"{ctx}.ExactTroopTemplate ratio sum={exactTemplateSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
+                reason = Tr($"{ctx}.ExactTroopTemplate 占比合计={exactTemplateSum:F3} 超出 [{RatioSumMin},{RatioSumMax}] 区间", $"{ctx}.ExactTroopTemplate ratio sum={exactTemplateSum:F3} outside [{RatioSumMin},{RatioSumMax}]");
                 return false;
             }
         }
@@ -960,57 +988,57 @@ public static class ConfigurationManager
         // 上限设 6 防止玩家手填 7 后通用匹配始终查不到兵种、模式静默失效。
         if (rule.MinTier < 1 || rule.MinTier > 6)
         {
-            reason = $"{ctx}.MinTier {rule.MinTier} 必须在 [1,6]";
+            reason = Tr($"{ctx}.MinTier {rule.MinTier} 必须在 [1,6]", $"{ctx}.MinTier {rule.MinTier} must be in [1,6]");
             return false;
         }
         if (rule.MaxTier > 6)
         {
-            reason = $"{ctx}.MaxTier {rule.MaxTier} 超过 vanilla 上限 6";
+            reason = Tr($"{ctx}.MaxTier {rule.MaxTier} 超过 vanilla 上限 6", $"{ctx}.MaxTier {rule.MaxTier} exceeds vanilla upper bound 6");
             return false;
         }
         if (rule.MaxTier < rule.MinTier)
         {
-            reason = $"{ctx}.MaxTier {rule.MaxTier} < MinTier {rule.MinTier}";
+            reason = Tr($"{ctx}.MaxTier {rule.MaxTier} 小于 MinTier {rule.MinTier}", $"{ctx}.MaxTier {rule.MaxTier} < MinTier {rule.MinTier}");
             return false;
         }
         if (!IsRatio(rule.MinimumDefenderRatio))
         {
-            reason = $"{ctx}.MinimumDefenderRatio invalid ({rule.MinimumDefenderRatio}); must be in [0,1]";
+            reason = Tr($"{ctx}.MinimumDefenderRatio 非法 ({rule.MinimumDefenderRatio})；必须在 [0,1] 区间", $"{ctx}.MinimumDefenderRatio invalid ({rule.MinimumDefenderRatio}); must be in [0,1]");
             return false;
         }
         if (rule.BudgetLimit < 0)
         {
-            reason = $"{ctx}.BudgetLimit < 0";
+            reason = Tr($"{ctx}.BudgetLimit 小于 0", $"{ctx}.BudgetLimit < 0");
             return false;
         }
         if (rule.BudgetLimit > 10_000_000)
         {
-            reason = $"{ctx}.BudgetLimit {rule.BudgetLimit} 超过上限 10000000";
+            reason = Tr($"{ctx}.BudgetLimit {rule.BudgetLimit} 超过上限 10000000", $"{ctx}.BudgetLimit {rule.BudgetLimit} exceeds upper bound 10000000");
             return false;
         }
         if (rule.WartimeMultiplier < 0f || rule.PeacetimeMultiplier < 0f)
         {
-            reason = $"{ctx}.WartimeMultiplier/PeacetimeMultiplier must be >= 0";
+            reason = Tr($"{ctx}.WartimeMultiplier/PeacetimeMultiplier 必须 >= 0", $"{ctx}.WartimeMultiplier/PeacetimeMultiplier must be >= 0");
             return false;
         }
         if (rule.WartimeMultiplier > 10f)
         {
-            reason = $"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} 超过上限 10";
+            reason = Tr($"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} 超过上限 10", $"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} exceeds upper bound 10");
             return false;
         }
         if (rule.PeacetimeMultiplier > 10f)
         {
-            reason = $"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} 超过上限 10";
+            reason = Tr($"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} 超过上限 10", $"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} exceeds upper bound 10");
             return false;
         }
         if (!IsFiniteFloat(rule.FoodSafetyThreshold))
         {
-            reason = $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须是有限数值（排 NaN/Infinity）";
+            reason = Tr($"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须是有限数值（排 NaN/Infinity）", $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} must be a finite number (no NaN/Infinity)");
             return false;
         }
         if (rule.FoodSafetyThreshold < -1000f || rule.FoodSafetyThreshold > 1000f)
         {
-            reason = $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须在 [-1000, 1000]";
+            reason = Tr($"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须在 [-1000, 1000]", $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} must be in [-1000, 1000]");
             return false;
         }
         if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)
@@ -1024,7 +1052,7 @@ public static class ConfigurationManager
         float troopSum = rule.CavalryRatio + rule.HorseArcherRatio + rule.InfantryRatio + rule.RangedRatio;
         if (troopSum < RatioSumMin || troopSum > RatioSumMax)
         {
-            reason = $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]";
+            reason = Tr($"{ctx} 兵种占比合计={troopSum:F3} 超出 [{RatioSumMin},{RatioSumMax}] 区间", $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]");
             return false;
         }
 
@@ -1035,11 +1063,11 @@ public static class ConfigurationManager
     private static bool ValidateBranchRule(BranchRule rule, string ctx, out string reason)
     {
         if (rule.TargetPower < 0)
-        { reason = $"{ctx}.TargetPower < 0"; return false; }
+        { reason = Tr($"{ctx}.TargetPower 小于 0", $"{ctx}.TargetPower < 0"); return false; }
         if (rule.TargetPower > 100_000)
-        { reason = $"{ctx}.TargetPower {rule.TargetPower} 超过上限 100000"; return false; }
+        { reason = Tr($"{ctx}.TargetPower {rule.TargetPower} 超过上限 100000", $"{ctx}.TargetPower {rule.TargetPower} exceeds upper bound 100000"); return false; }
         if (!IsRatio(rule.LowTierMinFraction))
-        { reason = $"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} 必须在 [0,1]"; return false; }
+        { reason = Tr($"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} 必须在 [0,1]", $"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} must be in [0,1]"); return false; }
         reason = "";
         return true;
     }
@@ -1048,7 +1076,7 @@ public static class ConfigurationManager
     {
         if (float.IsNaN(value) || float.IsInfinity(value) || value < 0f || value > 1f)
         {
-            reason = $"{field} invalid ({value})";
+            reason = Tr($"{field} 非法 ({value})", $"{field} invalid ({value})");
             return false;
         }
 

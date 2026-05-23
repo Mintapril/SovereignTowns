@@ -11,8 +11,14 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Models;
 
 /// <summary>
-/// 仅对玩家氏族：把受管领地的收入(税+关税+村庄+项目)与驻军军饷从家族金币中抽出,
-/// 改走每氏族 <see cref="Economy.ClanTreasury"/>,只把缓冲上限以上的溢出返还家族金币。
+/// 仅对玩家氏族:把受管领地的收入(税+关税+村庄+项目)与驻军军饷从家族金币中抽出,
+/// 改走每氏族 <see cref="Economy.ClanTreasury"/>。
+///
+/// 2026-05-23 起金库与 Hero.Gold 之间不再有自动通道:
+///   - 收入单向流入金库(不再"超过缓冲就溢出回流玩家金币")
+///   - 工资单向流出金库;金库余额不足以付当日工资 → 差额 unpaid 真欠付,
+///     vanilla GarrisonParty 的 morale 会随欠饷下降并自动逃兵(vanilla 既有行为)
+///   - 玩家通过 <see cref="Economy.TreasuryUserActions"/> 主动存款/取款来调度个人金币与金库
 ///
 /// 关键时序(2026-05-21 advisor 复核):收入/军饷必须在 <c>base.CalculateClanGoldChange</c>
 /// 之前算。vanilla 的 <see cref="DefaultClanFinanceModel.CalculateTownIncomeFromTariffs"/> /
@@ -59,37 +65,97 @@ public sealed class STClanFinanceModel : DefaultClanFinanceModel
 
             long income = handle.Income;
             long wage = handle.Wage;
-            int bufferDays = ConfigurationManager.Current?.FiscalAutonomy?.TreasuryBufferDays ?? 30;
             var treasury = handle.Treasury;
 
-            long overflow, shortfall;
+            // 金库实际付出的工资仅在 applyWithdrawals=true 时落账(daily 真实结算);
+            // applyWithdrawals=false 是 UI 预览,不动金库。两种情况下对玩家 Hero.Gold
+            // 的净影响都是 0:income 单向进金库不进玩家钱包,wage 单向从金库出不从玩家钱包扣,
+            // 金库不足以付工资的部分 unpaid 真欠付(不再从 Hero.Gold 兜底)。
+            long unpaid = 0;
             if (applyWithdrawals)
             {
                 treasury.RollDay();
                 treasury.Credit(income);
-                shortfall = treasury.Debit(wage);
-                overflow = treasury.SkimAboveBufferCap(bufferDays);
-            }
-            else
-            {
-                long projected = treasury.Balance + income - wage;
-                long cap = treasury.BufferCap(bufferDays);
-                overflow = projected > cap ? projected - cap : 0;
-                shortfall = projected < 0 ? -projected : 0;
+                unpaid = treasury.Debit(wage);  // 不足时扣到 0,返回 shortfall;不再兜底
             }
 
-            // base 已把 +income 和 -wage 计入 en。要改走金库:
-            //   -income  撤掉 base 加的收入
-            //   +wage    撤掉 base 扣的军饷(base 减了 wage,这里加回)
-            //   +overflow 把金库缓冲上限以上的溢出返还家族金币
-            //   -shortfall 金库余额不足以付军饷的欠款由家族金币兜底
-            en.Add(-income + wage + overflow - shortfall, TreasuryLine);
+            // base 已把 +income 和 -wage 计入 en。玩家钱包对受管领地收支零参与,故撤回这两项:
+            //   -income:全进金库,不进玩家钱包
+            //   +wage:全由金库出(或欠付),不从玩家钱包扣
+            // adjustment 与 unpaid 无关 —— unpaid 是金库 vs garrison wage 之间的事,
+            // 跟玩家钱包无关。玩家想要金库的钱必须走 TreasuryUserActions 主动取款。
+            en.Add(-income + wage, TreasuryLine);
+
+            // ── garrison 欠饷 → morale 惩罚补救 ──
+            // vanilla 内部 ApplyMoraleEffect 已在 base.CalculateClanGoldChange 中按
+            // `clan.Gold + 累计 income ≥ wage` 判断 ── 看不到金库,所以基本不会触发。
+            // 我们在金库视角下重跑一次:如果金库不足以付 wage(unpaid > 0),手动给该 clan
+            // 的每个 garrison party 追加 vanilla 等价的 morale penalty + HasUnpaidWages。
+            // 完全镜像 vanilla `_research/Vanilla/...DefaultClanFinanceModel.decompiled.cs:892-914`。
+            // 仅 applyWithdrawals=true 触发(预览不动 morale,同 vanilla 行为)。
+            if (applyWithdrawals && unpaid > 0 && wage > 0)
+                ApplyTreasuryShortfallMorale(clan, unpaid, wage);
         }
         catch (Exception ex)
         {
             Logger.Error("STClanFinanceModel settlement failed; fell back to base", ex);
         }
         return en;
+    }
+
+    /// <summary>
+    /// 金库视角下 garrison 欠饷的 morale 补救。镜像 vanilla
+    /// <c>DefaultClanFinanceModel.ApplyMoraleEffect</c>(`_research/...DefaultClanFinanceModel.decompiled.cs:892-914`):
+    ///   ratio = unpaid / totalWage
+    ///   penalty = GetDailyNoWageMoralePenalty × ratio
+    ///   若 HasUnpaidWages &lt; ratio,额外再加 penalty × (ratio − oldHasUnpaidWages)(escalating)
+    ///   HasUnpaidWages := ratio
+    /// 每个 garrison party 平摊整体 ratio —— 简化处理(细分到每城需要重做 base 的 budget 推演,
+    /// 不值得)。
+    /// </summary>
+    private static void ApplyTreasuryShortfallMorale(Clan clan, long unpaid, long totalWage)
+    {
+        try
+        {
+            if (clan == null || unpaid <= 0 || totalWage <= 0) return;
+            float ratio = (float)unpaid / totalWage;
+            if (ratio < 0f) ratio = 0f;
+            if (ratio > 1f) ratio = 1f;
+            if (ratio <= 0f) return;
+
+            var pm = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.PartyMoraleModel;
+            if (pm == null) return;
+
+            foreach (var fief in clan.Fiefs)
+            {
+                var gp = fief?.GarrisonParty;
+                if (gp == null || !gp.IsActive || gp.TotalWage <= 0) continue;
+                try
+                {
+                    float dailyPenalty;
+                    try { dailyPenalty = pm.GetDailyNoWageMoralePenalty(gp); }
+                    catch (Exception modelEx)
+                    {
+                        Logger.Error($"STClanFinanceModel: PartyMoraleModel.GetDailyNoWageMoralePenalty failed for garrison '{fief?.Settlement?.StringId}'", modelEx);
+                        continue;
+                    }
+
+                    float penalty = dailyPenalty * ratio;
+                    if (gp.HasUnpaidWages < ratio)
+                        penalty += dailyPenalty * (ratio - gp.HasUnpaidWages);
+                    gp.RecentEventsMorale += penalty;
+                    gp.HasUnpaidWages = ratio;
+                }
+                catch (Exception innerEx)
+                {
+                    Logger.Error($"STClanFinanceModel: garrison morale apply failed for '{fief?.Settlement?.StringId}'", innerEx);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("STClanFinanceModel.ApplyTreasuryShortfallMorale failed", ex);
+        }
     }
 
     /// <summary>base 之前的快照:玩家受管氏族才返回非空 Treasury;否则 default(不结算)。</summary>

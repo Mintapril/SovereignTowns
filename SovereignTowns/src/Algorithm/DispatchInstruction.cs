@@ -67,3 +67,16 @@ public sealed class TransferPartyInstruction : DispatchInstruction
     public Settlement Source { get; }
     public Settlement Destination { get; }
 }
+
+public sealed class PatrolInstruction : DispatchInstruction
+{
+    /// <summary>巡逻队派发指令。<see cref="DispatchInstruction.Count"/> = MCMF 决定的本 tick
+    /// 巡逻总头数(跨 role 求和);role 不参与巡逻语义,取 Infantry 占位。</summary>
+    public PatrolInstruction(Settlement capital, int headcount)
+        : base(GenericTroopRole.Infantry, headcount)
+    {
+        Capital = capital;
+    }
+
+    public Settlement Capital { get; }
+}

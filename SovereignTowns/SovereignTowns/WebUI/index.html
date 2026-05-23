@@ -937,6 +937,37 @@
               </div>
             </div>
 
+            <!-- 金库存取（2026-05-23） -->
+            <div x-show="finance?.fiscal" class="ornate-frame p-5 mb-8">
+              <h3 class="font-display text-gold-200 text-base mb-2 tracking-wide" x-text="tr('金库存取', 'Treasury deposit / withdraw')"></h3>
+              <p class="text-parchment-300 text-xs mb-4"
+                 x-text="tr('金库与你的个人金币之间不再自动结算 —— 收入只单向流入金库，工资也只从金库支付。要在两者之间转账请用以下按钮。', 'The treasury no longer auto-settles with your personal gold — income flows in only, garrison wages flow out only. Use the controls below to move funds between the two.')"></p>
+              <div class="flex flex-wrap items-center gap-3 mb-3">
+                <label class="text-parchment-200 text-sm" x-text="tr('金额', 'Amount')"></label>
+                <input type="number" min="1" step="1"
+                       class="bg-ink-900 border border-gold-600/40 text-gold-100 px-2 py-1.5 w-32 text-right focus:border-gold-300 focus:outline-none"
+                       x-model.number="treasuryAmount"
+                       @input="_resetTreasuryPending()" />
+                <button class="px-3 py-1.5 bg-ink-700 border border-gold-600/40 text-gold-100 hover:border-gold-300 disabled:opacity-50"
+                        :disabled="treasuryBusy"
+                        @click="treasuryDeposit()" x-text="tr('存入', 'Deposit')"></button>
+                <button class="px-3 py-1.5 bg-ink-700 border border-gold-600/40 text-gold-100 hover:border-gold-300 disabled:opacity-50"
+                        :disabled="treasuryBusy"
+                        @click="treasuryWithdraw()" x-text="tr('取出', 'Withdraw')"></button>
+                <button class="px-3 py-1.5 bg-ink-700 border border-gold-600/40 text-gold-100 hover:border-gold-300 disabled:opacity-50 text-xs"
+                        :disabled="treasuryBusy"
+                        @click="treasuryWithdrawAll()" x-text="tr('取出全部', 'Withdraw all')"></button>
+              </div>
+              <div x-show="treasuryStatus" x-transition class="text-sm"
+                   :class="{
+                     'text-sage-400': treasuryStatusTone === 'ok',
+                     'text-danger-500': treasuryStatusTone === 'err',
+                     'text-gold-200': treasuryStatusTone === 'warn',
+                     'text-parchment-200': treasuryStatusTone === 'info'
+                   }"
+                   x-text="treasuryStatus"></div>
+            </div>
+
             <!-- 各领地状态 -->
             <div x-show="finance?.fiscal" class="ornate-frame p-5 mb-8">
               <h3 class="font-display text-gold-200 text-base mb-3 tracking-wide" x-text="tr('各领地状态', 'Holdings status')"></h3>
@@ -1042,7 +1073,7 @@
             { label: this.tr('策略参数', 'Strategy') },
             { label: this.tr('兵种编制', 'Composition') },
             { label: this.tr('兵员模板', 'Templates') },
-            { label: this.tr('非首府驻军', 'Branches') },
+            { label: this.tr('非首府驻军', 'Branches') },
             { label: this.tr('状态一览', 'Overview') },
           ];
         },
@@ -1068,6 +1099,13 @@
         activityError: '',
         assessment: null,       // 手动驻军目标评估（/api/assessment）
         assessmentError: '',
+
+        // 金库存取（2026-05-23）
+        treasuryAmount: 1000,
+        treasuryStatus: '',       // 操作回执 / 警告（双语）
+        treasuryStatusTone: 'info', // 'info' | 'ok' | 'err' | 'warn'
+        _treasuryPendingLargeWithdraw: 0, // 上次大额取款的金额；再次点同金额放行
+        treasuryBusy: false,
 
         troopSearch: '',
         troopCultureFilter: '',
@@ -1369,6 +1407,89 @@
             }
           } catch (e) {
             this.assessmentError = this.tr('加载失败：', 'Load failed: ') + (e?.message || String(e));
+          }
+        },
+
+        // ========= 金库存取（2026-05-23） =========
+        // 任何非取款操作都会清掉 pending-large-withdraw 二次确认状态。
+        _resetTreasuryPending() { this._treasuryPendingLargeWithdraw = 0; },
+
+        async treasuryDeposit() {
+          this._resetTreasuryPending();
+          const amt = Math.floor(Number(this.treasuryAmount) || 0);
+          if (amt <= 0) {
+            this.treasuryStatus = this.tr('请输入正整数金额。', 'Please enter a positive amount.');
+            this.treasuryStatusTone = 'warn';
+            return;
+          }
+          await this._postTreasury('/api/treasury/deposit', amt, this.tr('存入', 'Deposit'));
+        },
+        async treasuryWithdraw() {
+          const amt = Math.floor(Number(this.treasuryAmount) || 0);
+          if (amt <= 0) {
+            this.treasuryStatus = this.tr('请输入正整数金额。', 'Please enter a positive amount.');
+            this.treasuryStatusTone = 'warn';
+            return;
+          }
+          // 大额警告：amount > min(balance × 0.5, dailyExpense × 7) → 首次仅提示，再次同金额放行。
+          const bal = (this.finance?.fiscal?.TreasuryBalance ?? 0);
+          const avg = (this.finance?.fiscal?.TrailingDailyExpense ?? 0);
+          const warnThreshold = Math.min(Math.floor(bal / 2), avg * 7);
+          if (warnThreshold > 0 && amt > warnThreshold && this._treasuryPendingLargeWithdraw !== amt) {
+            this._treasuryPendingLargeWithdraw = amt;
+            this.treasuryStatus = this.tr(
+              `⚠ 取出 ${amt}d 可能让驻军欠饷（vanilla 会自动逃兵）。再次点击「取出」以确认。`,
+              `⚠ Withdrawing ${amt}d may leave the garrison unpaid (vanilla will desert). Click Withdraw again to confirm.`);
+            this.treasuryStatusTone = 'warn';
+            return;
+          }
+          this._treasuryPendingLargeWithdraw = 0;
+          await this._postTreasury('/api/treasury/withdraw', amt, this.tr('取出', 'Withdraw'));
+        },
+        async treasuryDepositAll() {
+          // 不知道 hero gold，让后端校验 — 这里直接发个超大数让后端拒绝并回报实际 hero gold？
+          // 更友好：本地暂不掌握 hero gold，提示玩家手填。
+          this.treasuryStatus = this.tr(
+            '请直接在输入框填写你想存入的金额并点击「存入」。',
+            'Enter the amount you want to deposit and click Deposit.');
+          this.treasuryStatusTone = 'info';
+        },
+        async treasuryWithdrawAll() {
+          const bal = (this.finance?.fiscal?.TreasuryBalance ?? 0);
+          if (bal <= 0) {
+            this.treasuryStatus = this.tr('金库无金币可取。', 'Nothing to withdraw.');
+            this.treasuryStatusTone = 'warn';
+            return;
+          }
+          this.treasuryAmount = bal;
+          await this.treasuryWithdraw();
+        },
+        async _postTreasury(path, amount, verb) {
+          if (this.treasuryBusy) return;
+          this.treasuryBusy = true;
+          try {
+            const r = await this.http('POST', path, { amount });
+            if (r.ok && r.body?.success) {
+              this.treasuryStatus = this.tr(
+                `${verb} ${amount}d → 金库 ${r.body.treasuryBalance}d，个人金币 ${r.body.heroGold}d`,
+                `${verb} ${amount}d → treasury ${r.body.treasuryBalance}d, gold ${r.body.heroGold}d`);
+              this.treasuryStatusTone = 'ok';
+              // 同步刷一次 finance，UI 立刻反映新余额。
+              await this.loadFinance();
+            } else {
+              const reason = r.body?.reason || r.body?.message || '?';
+              this.treasuryStatus = this.tr(
+                `${verb}失败：${reason}`,
+                `${verb} failed: ${reason}`);
+              this.treasuryStatusTone = 'err';
+            }
+          } catch (e) {
+            this.treasuryStatus = this.tr(
+              `${verb}失败：`,
+              `${verb} failed: `) + (e?.message || String(e));
+            this.treasuryStatusTone = 'err';
+          } finally {
+            this.treasuryBusy = false;
           }
         },
 

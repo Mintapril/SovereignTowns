@@ -2,6 +2,7 @@ using System;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
 using SovereignTowns.Evaluators;
+using SovereignTowns.Templates;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Roster;
 using TaleWorlds.CampaignSystem.Settlements;
@@ -29,15 +30,21 @@ namespace SovereignTowns.Recruitment;
 public static class CapitalInPlaceRecruiter
 {
     /// <summary>
-    /// 在 daily tick 上对首府执行一次"本城招募"。失败、被围、未启用 → no-op。
-    /// 全方法 try-catch，绝不抛。
+    /// 对首府执行一次"本城招募",招 <paramref name="count"/> 名可服务于 <paramref name="role"/> 的
+    /// 志愿兵。role/count 由 CapitalLogisticsManager 从 MCMF in-place 指令直接透传 —— 招募器不再
+    /// 自行重算 role 配额。失败、被围、未启用 → no-op。全方法 try-catch,绝不抛。
+    ///
+    /// "可服务于 role"判定:精确模板模式 = 能升级进某个 role 相符的模板目标兵(与
+    /// <see cref="TroopTemplateMatcher"/> 升级路径同口径);通用模式 = 志愿兵当前 role 即该 role。
     /// </summary>
-    public static int RecruitFromCapitalNotables(Settlement? capital, int? desiredTotalCount = null, string reason = "")
+    public static int RecruitFromCapitalNotables(Settlement? capital, GenericTroopRole role, int count)
     {
         int recruited = 0;
         try
         {
             if (capital == null || !capital.IsTown) { Logger.Info("CapitalInPlace: 跳过 — null/non-town"); return recruited; }
+            if (role == GenericTroopRole.Unknown || count <= 0)
+            { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 无效 role/count ({role}/{count})"); return recruited; }
             // B7.15 multi-clan：广义到受管 clan；外层 OnDailyTickSettlement 已按"settlement == 该 clan 首府"路由
             var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
             if (registry != null)
@@ -84,29 +91,13 @@ public static class CapitalInPlaceRecruiter
             var volunteerModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.VolunteerModel;
             if (volunteerModel == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — volunteerModel==null"); return recruited; }
 
-            int desired = Math.Max(1, desiredTotalCount ?? rule.TargetTotalCount);
-            int cap = Math.Min(partySizeLimit, desired);
-            if (currentMen >= cap) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — 已达调度目标 {currentMen}/{cap} reason='{reason}'"); return recruited; }
-
-            // B7.23：撤紧急模式 — mod 不应自作主张突破玩家配置的 Tier 过滤。
-            // 招不到合规候选时只 Warn 提示玩家放宽规则。
-
-            // B7.22 Fix per-role 饱和：先快照当前 garrison 各 role 人数，每招一个就预测下一次
-            // 是否仍有缺口，避免「远程 40/20 还在继续招」。
-            var snap = GenericTroopMatcher.Snapshot(memberRoster);
-            int targetCav = (int)Math.Round(rule.CavalryRatio  * cap);
-            int targetHa  = (int)Math.Round(rule.HorseArcherRatio * cap);
-            int targetInf = (int)Math.Round(rule.InfantryRatio * cap);
-            int targetRng = (int)Math.Round(rule.RangedRatio * cap);
-            int gainedCav = 0, gainedHa = 0, gainedInf = 0, gainedRng = 0;
-
             int candidatesScanned = 0;
             int notablesScanned = 0;
             int notablesEligible = 0;
 
             var notables = capital.Notables;
             if (notables == null) { Logger.Info($"CapitalInPlace '{capital.Name}': 跳过 — Notables==null"); return recruited; }
-            Logger.Info($"CapitalInPlace '{capital.Name}': 开始扫描 {notables.Count} 个 notable，garrison={currentMen}/{cap}, owner.Gold={ownerHero.Gold}, role 配额 cav/ha/inf/rng={targetCav}/{targetHa}/{targetInf}/{targetRng}, reason='{reason}'");
+            Logger.Info($"CapitalInPlace '{capital.Name}': 开始扫描 {notables.Count} 个 notable,garrison={currentMen}/{partySizeLimit}, owner.Gold={ownerHero.Gold}, 目标 role={role} count={count}");
 
             // 通用匹配文化过滤：解析一次玩家面板的文化策略 → 必须匹配的文化 id（null = 不过滤）。
             string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, capital.Town);
@@ -147,25 +138,20 @@ public static class CapitalInPlaceRecruiter
                     candidatesScanned++;
 
                     // 容量钳制：每招一个重新读 TotalManCount，避免漂移
-                    if (memberRoster.TotalManCount + 1 > cap) return recruited;
+                    if (memberRoster.TotalManCount + 1 > partySizeLimit) return recruited;
 
                     // 通用匹配：按规则过滤文化/贵族/禁用项，再看兵种桶 + Tier 范围 + 比例。
                     if (!TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
-                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）
-                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。仅通用匹配模式生效：
+                    // 精确模板模式下模板本身即显式白名单,玩家点名的跨文化兵种(如 khuzait_*)
+                    // 不应被 GenericCultureFilter 二次否决。
+                    if (rule.UseGenericMatching
+                        && !GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
 
-                    // B7.22 Fix per-role 饱和：检查该 role 是否已达模板配额。
-                    var roleOfTroop = GenericTroopMatcher.GetRole(troop);
-                    int currentRole, targetRole;
-                    switch (roleOfTroop)
-                    {
-                        case GenericTroopRole.Cavalry:  currentRole = snap.Cavalry  + gainedCav; targetRole = targetCav; break;
-                        case GenericTroopRole.HorseArcher: currentRole = snap.HorseArcher + gainedHa; targetRole = targetHa; break;
-                        case GenericTroopRole.Infantry: currentRole = snap.Infantry + gainedInf; targetRole = targetInf; break;
-                        case GenericTroopRole.Ranged: currentRole = snap.Ranged + gainedRng; targetRole = targetRng; break;
-                        default: continue; // 未知 role 跳过
-                    }
-                    if (currentRole >= targetRole) continue; // 该 role 已饱和 → 跳过此候选
+                    // MCMF 指定了 role:只招能服务该 role 的志愿兵(精确模式认升级路径,
+                    // 与 MatchesRule 同口径 —— T1 新兵 role=Infantry,但若可升级成 sharpshooter
+                    // 即服务于 Ranged)。招满 MCMF 请求量即止,不自行重算 role 配额。
+                    if (!TroopTemplateMatcher.CanServeRole(troop, rule, role)) continue;
 
                     // B7.27：原地招募也要扣费（与外派对齐）。玩家氏族扣 5 denar，AI clan 免费。
                     // 顺序：先 Charge → 再 AddToCounts。原来反向写在 rollback 抛异常时会留下
@@ -198,23 +184,17 @@ public static class CapitalInPlaceRecruiter
                     // 仅在成功 Add 后清 slot；过滤跳过的保留供下个 tick / 玩家手动招
                     volunteerTypes[i] = null;
                     recruited++;
-                    // 同步 per-role 计数，下个候选基于新值判定
-                    switch (roleOfTroop)
-                    {
-                        case GenericTroopRole.Cavalry:  gainedCav++; break;
-                        case GenericTroopRole.HorseArcher: gainedHa++; break;
-                        case GenericTroopRole.Infantry: gainedInf++; break;
-                        case GenericTroopRole.Ranged: gainedRng++; break;
-                    }
+                    if (recruited >= count) return recruited; // 招满 MCMF 请求量
                 }
             }
 
-            Logger.Info($"CapitalInPlace '{capital.Name}': recruited={recruited} 候选扫描={candidatesScanned} notables {notablesEligible}/{notablesScanned} eligible (现 garrison={memberRoster.TotalManCount}/{cap})");
+            Logger.Info($"CapitalInPlace '{capital.Name}': recruited={recruited}/{count} role={role} 候选扫描={candidatesScanned} notables {notablesEligible}/{notablesScanned} eligible (现 garrison={memberRoster.TotalManCount})");
 
-            // B7.23：玩家可见的预警 — 招募 0 但候选 > 0 = 全被规则过滤掉了，提示玩家放宽
+            // 玩家可见预警 — 扫到候选但 0 招募 = 无志愿兵能服务该 role(被 Tier 过滤,或没有兵种
+            // 能升级到该 role 的模板目标)。MCMF 会持续请求该 role → 反复刷此行即说明 in-place 对该 role 无解。
             if (recruited == 0 && candidatesScanned > 0)
             {
-                Logger.Warn($"CapitalInPlace '{capital.Name}': 扫到 {candidatesScanned} 个候选但 0 招募 — 兵种被规则过滤（Tier {rule.MinTier}-{rule.MaxTier} / 比例为 0 的兵种 / 已饱和 role）。考虑放宽 MinTier 或调整兵种比例。");
+                Logger.Warn($"CapitalInPlace '{capital.Name}': 扫到 {candidatesScanned} 个候选但 0 招募 — 无志愿兵可服务 role={role}（Tier {rule.MinTier}-{rule.MaxTier} 过滤 / 无兵种能升级到该 role 的模板目标）。");
             }
         }
         catch (Exception ex)

@@ -301,7 +301,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _capitalLogisticsManager = new CapitalLogisticsManager(
                 _capitalRegistry,
                 _recruitmentDispatcher,
-                _transferDispatcher);
+                _transferDispatcher,
+                _patrolDispatcher);
 
             // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
             // 时序：必须在 RecruitmentDispatcher 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
@@ -480,7 +481,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            _patrolDispatcher?.OnHourlyTickSettlement(settlement);
+            // 巡逻队不再每小时启发式创建 —— 由 CapitalLogisticsManager 经时间展开调度器派发。
             _sallyDispatcher?.OnHourlyTickSettlement(settlement);
         }
         catch (Exception ex)
@@ -499,10 +500,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         {
             DrainWebConfigSync();
             _sallyDispatcher?.OnHourlyTickSettlement(settlement);
-            // Round-1 P0-1：玩家驻自家首府时 vanilla 跳 HourlyTickSettlement → patrol 永远不新派。
-            // PatrolDispatcher 内部已有 cap 检查（CountExistingPatrolsAtHome），daily 多调一次幂等。
-            _patrolDispatcher?.OnHourlyTickSettlement(settlement);
-            // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨由 CapitalLogisticsManager 在 DailyTick 统一调度。
+            // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨/巡逻由 CapitalLogisticsManager 在 DailyTick 统一调度。
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
             var mgr = _capitalRegistry?.GetForSettlement(settlement);
             var capitalSettlement = _capitalRegistry?.GetCapitalForClan(mgr?.OwnerClan);

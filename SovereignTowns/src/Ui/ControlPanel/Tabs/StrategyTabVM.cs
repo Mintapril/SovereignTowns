@@ -183,6 +183,9 @@ public sealed class StrategyTabVM : ViewModel
         object boxed = p.PropertyType == typeof(int) ? (object)(int)System.Math.Round(v)
                      : p.PropertyType == typeof(bool) ? (object)(v != 0.0)
                      : p.PropertyType == typeof(float) ? (object)(float)v
+                     // 枚举旋钮（ForecastMode）：反射 SetValue 要求装箱值正是枚举类型；
+                     // 直接塞 double 会抛，须经 Enum.ToObject 转过去。
+                     : p.PropertyType.IsEnum ? System.Enum.ToObject(p.PropertyType, (int)System.Math.Round(v))
                      : (object)v;
         p.SetValue(o, boxed);
     }

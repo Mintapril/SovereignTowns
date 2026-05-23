@@ -21,6 +21,7 @@
     <string id="ST_PartySizeLimit_Transfer" text="Sovereign Towns transfer party size limit" />
     <string id="ST_PartySizeLimit_Sally" text="Sovereign Towns sally party size limit" />
     <string id="ST_PartySizeLimit_Patrol" text="Sovereign Towns patrol party size limit" />
+    <string id="ST_ClanFinanceSettlement" text="Sovereign Towns treasury settlement" />
 
     <!-- Town/castle game-menu options. -->
     <string id="ST_Menu_CapitalStatus_Active" text="Sovereign Towns: current capital ★ ({CAPITAL})" />

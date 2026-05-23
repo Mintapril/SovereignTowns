@@ -440,6 +440,105 @@ internal static class WebConfigEndpoints
         }
     }
 
+    /// <summary>POST /api/treasury/deposit body={"amount":N} → 玩家主动从 Hero.Gold 存入金库。</summary>
+    public static void PostTreasuryDeposit(HttpListenerContext ctx)
+        => HandleTreasuryAction(ctx, isDeposit: true);
+
+    /// <summary>POST /api/treasury/withdraw body={"amount":N} → 玩家主动从金库取出到 Hero.Gold。</summary>
+    public static void PostTreasuryWithdraw(HttpListenerContext ctx)
+        => HandleTreasuryAction(ctx, isDeposit: false);
+
+    private const int TreasuryActionTimeoutMs = 3000;
+
+    /// <summary>
+    /// 解析 amount → 经 <see cref="WebConfigGameThreadSync.EnqueueAction"/> 排到主线程跑
+    /// <see cref="Economy.TreasuryUserActions.TryDeposit"/> / <see cref="Economy.TreasuryUserActions.TryWithdraw"/>,
+    /// 拿结果同步返给 HTTP response。3 秒主线程不到 → 504。
+    /// </summary>
+    private static void HandleTreasuryAction(HttpListenerContext ctx, bool isDeposit)
+    {
+        try
+        {
+            string contentType = ctx.Request.ContentType ?? "";
+            if (!contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase))
+            {
+                WebConfigServer.WriteError(ctx, 415, "unsupported_media_type",
+                    $"Content-Type must be application/json (got '{contentType}')");
+                return;
+            }
+            string body = ReadBody(ctx.Request);
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                WebConfigServer.WriteError(ctx, 400, "empty_body", "POST requires a JSON body {\"amount\":N}");
+                return;
+            }
+
+            TreasuryActionRequest? req;
+            try { req = JsonConvert.DeserializeObject<TreasuryActionRequest>(body); }
+            catch (JsonException jex)
+            {
+                WebConfigServer.WriteError(ctx, 400, "bad_json", jex.Message);
+                return;
+            }
+            if (req == null || req.Amount <= 0)
+            {
+                WebConfigServer.WriteError(ctx, 400, "invalid_amount", "amount must be a positive integer");
+                return;
+            }
+
+            // 主线程执行 + 等结果。
+            bool success = false;
+            string reason = "";
+            long treasuryAfter = 0;
+            int heroAfter = 0;
+            using var done = new System.Threading.ManualResetEventSlim(false);
+            WebConfigGameThreadSync.EnqueueAction(() =>
+            {
+                if (isDeposit)
+                    success = Economy.TreasuryUserActions.TryDeposit(req.Amount, out reason, out treasuryAfter, out heroAfter);
+                else
+                    success = Economy.TreasuryUserActions.TryWithdraw(req.Amount, out reason, out treasuryAfter, out heroAfter);
+            }, done, isDeposit ? "POST /api/treasury/deposit" : "POST /api/treasury/withdraw");
+
+            if (!done.Wait(TreasuryActionTimeoutMs))
+            {
+                WebConfigServer.WriteError(ctx, 504, "main_thread_timeout",
+                    $"main-thread action did not complete within {TreasuryActionTimeoutMs}ms (campaign tick stalled?)");
+                return;
+            }
+
+            if (!success)
+            {
+                WebConfigServer.WriteJson(ctx, 422, new
+                {
+                    success = false,
+                    reason,
+                    treasuryBalance = treasuryAfter,
+                    heroGold = heroAfter,
+                });
+                return;
+            }
+
+            WebConfigServer.WriteJson(ctx, 200, new
+            {
+                success = true,
+                treasuryBalance = treasuryAfter,
+                heroGold = heroAfter,
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"HandleTreasuryAction (deposit={isDeposit}) threw", ex);
+            WebConfigServer.WriteError(ctx, 500, "internal_error", ex.Message);
+        }
+    }
+
+    private sealed class TreasuryActionRequest
+    {
+        [JsonProperty("amount")]
+        public long Amount { get; set; }
+    }
+
     // ---------------- helpers ----------------
 
     private static string? _uiLang;
