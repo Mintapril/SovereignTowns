@@ -1,14 +1,46 @@
+# =============================================================================
 # C# / .NET build outputs
+# =============================================================================
 **/bin/
 **/obj/
 *.user
 *.suo
+*.userprefs
 .vs/
+.vscode/
+.idea/
 
+# Solution-level user settings
+*.sln.docstates
+*.sln.iml
+
+# JetBrains Rider
+_ReSharper.Caches/
+_TeamCity*/
+
+# =============================================================================
 # Decompiled vanilla & 3rd-party mod sources — kept locally as reference,
 # but excluded from git (third-party copyright + repo bloat).
+# =============================================================================
+_research/
 **/_research/
 
-# Git worktrees for isolated subagent work
+# =============================================================================
+# AI tooling artefacts — local-only conventions / scratch state, not project code.
+# Anything Claude Code / Anthropic Agent SDK / similar drops in the repo.
+# =============================================================================
+.claude/
 .worktrees/
-.claude/worktrees/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+RTK.md
+
+# =============================================================================
+# OS / editor cruft
+# =============================================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~

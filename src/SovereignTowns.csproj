@@ -97,25 +97,25 @@
 
   <!-- 构建后自动部署到 Modules/SovereignTowns/ -->
   <!--
-    路径说明：
-      - csproj 位于 $(MSBuildProjectDirectory) = .../SovereignTowns/src
-      - 工作目录根 = .../SovereignTowns
-      - GUI 源目录在工作目录根的 SovereignTowns/GUI/Prefabs（即 src 的兄弟目录 SovereignTowns）
+    路径说明（2026-05-23 扁平化后）：
+      - csproj 位于 $(MSBuildProjectDirectory) = <repo>/src
+      - 工作目录根 = <repo>
+      - 游戏侧 module 源资源在 <repo>/Module/{SubModule.xml, GUI/Prefabs, ModuleData/Languages, WebUI}
       - $(ModuleDeployPath) = $(BannerlordPath)\Modules\SovereignTowns (来自 Directory.Build.props)
-      - 因此 prefab 部署目标是 $(ModuleDeployPath)\GUI\Prefabs（ModuleDeployPath 已含 SovereignTowns 这一层）
+      - prefab 部署目标 $(ModuleDeployPath)\GUI\Prefabs（ModuleDeployPath 已含 SovereignTowns 这一层）
   -->
   <Target Name="DeployToGame" AfterTargets="Build">
     <ItemGroup>
-      <_SubModuleXml Include="$(MSBuildProjectDirectory)\..\SubModule.xml" />
+      <_SubModuleXml Include="$(MSBuildProjectDirectory)\..\Module\SubModule.xml" />
       <_ModDll      Include="$(OutputPath)$(AssemblyName).dll" />
       <_ModPdb      Include="$(OutputPath)$(AssemblyName).pdb" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
-      <_PrefabXmls  Include="$(MSBuildProjectDirectory)\..\SovereignTowns\GUI\Prefabs\*.xml" />
+      <_PrefabXmls  Include="$(MSBuildProjectDirectory)\..\Module\GUI\Prefabs\*.xml" />
       <!-- B7.4: WebUI bundle (HTML / JS / CSS) served by WebConfigServer. Recursive glob keeps subdirs. -->
-      <_WebUIFiles  Include="$(MSBuildProjectDirectory)\..\SovereignTowns\WebUI\**\*.*" />
+      <_WebUIFiles  Include="$(MSBuildProjectDirectory)\..\Module\WebUI\**\*.*" />
       <!-- Localization: ModuleData/Languages/<lang>/{language_data.xml, std_sovereigntowns_strings.xml}.
            Bannerlord auto-discovers any <ModuleId>/ModuleData/Languages/**/language_data.xml at boot;
            no SubModule.xml <Xmls> entry needed. Recursive glob preserves the EN/ and CNs/ subdirs. -->
-      <_LangFiles   Include="$(MSBuildProjectDirectory)\..\SovereignTowns\ModuleData\Languages\**\*.xml" />
+      <_LangFiles   Include="$(MSBuildProjectDirectory)\..\Module\ModuleData\Languages\**\*.xml" />
     </ItemGroup>
     <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs;$(ModuleDeployPath)\WebUI;$(ModuleDeployPath)\ModuleData\Languages" />
     <Copy SourceFiles="@(_SubModuleXml)" DestinationFolder="$(ModuleDeployPath)" SkipUnchangedFiles="true" />
