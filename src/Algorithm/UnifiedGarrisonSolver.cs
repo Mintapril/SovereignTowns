@@ -148,19 +148,11 @@ public static class UnifiedGarrisonSolver
             int T = Math.Min(64, Math.Max(1, cfg.HorizonTicks));
             int tickHours = Math.Min(24, Math.Max(1, cfg.CapitalLogisticsTickHours));
 
-            // #2:管理范围过滤。默认仅纳入"首府所有者 hero"持有的非首府城镇/城堡;
-            // 同氏族其他 hero 名下的领地不动 —— 这是项目原始口径(handoff §3.7)。
-            // 当 EnabledFeatures.ManageAllClanBranches = true 时,放宽到整个 clan.Fiefs
-            // (clan 级别范围),无论谁持有。
-            var capitalOwner = capitalSettlement.Owner;
-            bool manageAllBranches = features.ManageAllClanBranches;
+            // 2026-05-23 Plan B 起：管理范围 = 整个 clan.Fiefs，不再按 settlement.Owner（首府所有者 hero）
+            // 做过滤。理由：方案 B 下所有 clan.Fiefs 的收入统一走 vanilla Clan.Gold，
+            // 区分"首府所有者持有"vs"兄弟/子嗣持有"已无经济意义。
             var towns = clan.Fiefs
                 .Where(t => t?.Settlement != null && t.Settlement.IsActive && (t.IsTown || t.IsCastle))
-                .Where(t => manageAllBranches
-                            || t.Settlement == capitalSettlement
-                            || capitalOwner == null
-                            || t.Settlement.Owner == null
-                            || t.Settlement.Owner == capitalOwner)
                 .ToList();
             if (towns.Count == 0) yield break;
 

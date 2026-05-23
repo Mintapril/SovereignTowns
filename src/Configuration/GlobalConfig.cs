@@ -107,16 +107,6 @@ public sealed class EnabledFeatures
     public bool ApplyToAiSettlementsToo { get; set; } = false;
 
     /// <summary>
-    /// 管理范围：是否把同氏族里"非首府所有者 hero"持有的非首府城镇/城堡也纳入 ST 管理。
-    /// false（默认，当前行为）：仅管理首府所有者 hero 自己持有的领地 —— 同氏族兄弟 / 子嗣
-    /// 名下的非首府 settlement 由 vanilla 处理，ST 不动。
-    /// true：clan.Fiefs 内所有非首府城镇/城堡都被纳入管理（驻军补员、调拨、巡逻、出击），
-    /// 无论由哪位 hero 持有。
-    /// 过滤点在 <see cref="SovereignTowns.Algorithm.UnifiedGarrisonSolver"/>（fief 枚举处）。
-    /// </summary>
-    public bool ManageAllClanBranches { get; set; } = false;
-
-    /// <summary>
     /// B7.27：玩家金币不足时（&lt; amount）拒绝扣款 / 派遣 / 升级。开启时 mod 自动暂停可推迟的支出，
     /// 防止"派出去又因没钱半截失败"的混乱体验。关闭时允许金币负余额（与 vanilla 玩家自身行为一致）。
     /// </summary>
