@@ -22,13 +22,14 @@ Your clan picks one settlement as a **capital**. From there the mod runs everyth
 
 ### Clan economy
 
-The treasury **is** vanilla `Clan.Gold` — same number the in-game Clan Finance tab shows.
+Vanilla has no separate "clan treasury" — `Clan.Gold` is a computed property `=> Leader?.Gold ?? 0`. For your clan that's `Hero.MainHero.Gold`. The mod treats it as the single source of truth.
 
 - Vanilla pours all `clan.Fiefs` income into `Clan.Gold` (no mod interception).
-- Mod outflows — party seed funds, recruit-per-head wages, equipment upgrades — debit `Clan.Gold` directly.
-- **Hero ↔ Clan.Gold transfer** in both control panels; vanilla doesn't provide this UI.
-- A "pause when broke" guard rail (default on) holds mod spending when the clan would go negative.
-- Workshops and caravans keep flowing to your `Hero.Gold` per vanilla — they don't enter clan gold.
+- Mod outflows — party seed funds, recruit-per-head wages, equipment upgrades — debit `Clan.Gold` (= `Hero.MainHero.Gold`) directly via `Hero.ChangeHeroGold`.
+- Each dispatched party (Recruiter / Patrol / Sally / Transfer) carries vanilla `MobileParty.PartyTradeGold` as its operating budget: buys food and stock mounts en route, sells loot back into it, returns whatever's left to the clan leader on disband. The economy stays closed against vanilla `Settlement.Gold` — same path vanilla caravans use.
+- "Pause when broke" guard rail (default on) holds mod spending when the clan would go negative.
+- Workshops and caravans keep flowing to your `Hero.Gold` per vanilla — same account, no separate ledger.
+- Each food purchase posts a bottom-left log: `[Sovereign Towns] {Party} bought {N} {item} at {Where} (-{N}d)` (player-clan parties only).
 
 ### Knobs and observability
 
@@ -117,7 +118,8 @@ Layer 2.5 Algorithm kernels  MinCostFlow, UnifiedGarrisonSolver,
 Layer 1   Infrastructure     SubModule, CampaignBehavior, TypeDefiner,
                              ConfigurationManager, Logger, DecisionAuditLogger
 Supporting                   Models/ (vanilla GameModel overrides),
-                             Economy/ (ModTreasury + ClanGoldAccess reflection),
+                             Economy/ (ModTreasury wrapper over Hero.ChangeHeroGold +
+                                       ledger / audit; ClanGoldAccess thin facade),
                              Settlement/ (vanilla suppression),
                              Templates/, Upgrades/, Patches/, Coordination/, Common/
 ```

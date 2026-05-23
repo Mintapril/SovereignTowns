@@ -22,13 +22,14 @@
 
 ### 氏族经济
 
-金库 **就是** vanilla `Clan.Gold` —— 与游戏内"氏族财政"标签页显示的同一个数字。
+vanilla 没有独立的"氏族金库"概念 —— `Clan.Gold` 是计算属性 `=> Leader?.Gold ?? 0`。对玩家氏族就是 `Hero.MainHero.Gold`，mod 以此为唯一真相。
 
 - vanilla 把 `clan.Fiefs` 全部收入汇入 `Clan.Gold`（mod 不拦截）。
-- mod 自身支出 —— 派出队伍种子金、招募人头费、装备升级费 —— 直接从 `Clan.Gold` 扣。
-- 两端控制面板都暴露 **Hero ↔ Clan.Gold 转账**；vanilla 没提供这层 UI。
+- mod 自身支出 —— 派出队伍种子金、招募人头费、装备升级费 —— 走 vanilla `Hero.ChangeHeroGold` 直接从 `Clan.Gold`（即 `Hero.MainHero.Gold`）扣。
+- 每支派出队伍（征兵 / 巡逻 / 出击 / 调拨）携带 vanilla `MobileParty.PartyTradeGold` 作为运行预算：用它在路途买食物、补松散坐骑，把战利品卖回钱袋，解散时余款归还氏族领袖。整条经济与 vanilla `Settlement.Gold` 闭环 —— 与 vanilla 商队走同一通道。
 - "金币不足时暂停支出"开关（默认开）阻止 mod 把 `Clan.Gold` 扣到负。
-- 作坊 / 商队仍按 vanilla 走 `Hero.Gold`，不进氏族金币。
+- 作坊 / 商队仍按 vanilla 走 `Hero.Gold` —— 与上面是同一个账户，没有独立账本。
+- 每次买食物在左下角推一条日志：`[Sovereign Towns] {队伍} bought {N} {物品} at {地点} (-{N}d)`（仅玩家氏族部队）。
 
 ### 旋钮与可观测性
 
@@ -117,7 +118,8 @@ Layer 2.5 算法核              MinCostFlow、UnifiedGarrisonSolver、
 Layer 1   Infrastructure     SubModule、CampaignBehavior、TypeDefiner、
                              ConfigurationManager、Logger、DecisionAuditLogger
 支撑层                        Models/（vanilla GameModel 覆盖）、
-                             Economy/（ModTreasury + ClanGoldAccess 反射）、
+                             Economy/（ModTreasury 走 vanilla Hero.ChangeHeroGold +
+                                      ledger / audit；ClanGoldAccess 薄 facade）、
                              Settlement/（vanilla 招募抑制）、
                              Templates/、Upgrades/、Patches/、Coordination/、Common/
 ```
