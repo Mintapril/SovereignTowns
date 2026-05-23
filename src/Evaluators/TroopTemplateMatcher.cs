@@ -114,21 +114,27 @@ public static class TroopTemplateMatcher
             .OrderByDescending(e => e.Character.Tier)
             .ToList();
 
+        // 目标按 tier 降序排序一次，避免在 outer foreach 内每元素重复分配一个排序列表。
+        // 内层判 deficits 当前是否还含该 target（外循环可能已 Remove），保持原 mutate 语义。
+        var sortedTargets = deficits.Keys.OrderByDescending(t => t.Tier).ToList();
+
         foreach (var element in rosterElements)
         {
             var character = element.Character;
             int remaining = element.Number;
             if (character is null || remaining <= 0) continue;
 
-            foreach (var target in deficits.Keys.OrderByDescending(t => t.Tier).ToList())
+            foreach (var target in sortedTargets)
             {
                 if (remaining <= 0) break;
+                if (!deficits.TryGetValue(target, out var need) || need <= 0) continue;
                 if (!CanUpgradeToTarget(character, target)) continue;
 
-                int used = Math.Min(remaining, deficits[target]);
+                int used = Math.Min(remaining, need);
                 remaining -= used;
-                deficits[target] -= used;
-                if (deficits[target] <= 0) deficits.Remove(target);
+                int after = need - used;
+                if (after <= 0) deficits.Remove(target);
+                else deficits[target] = after;
             }
         }
 

@@ -40,20 +40,8 @@ public static class ConfigurationManager
     private static string _lastValidationError = "";
 
     // 中英双语 reason 助手 —— 玩家可见的校验失败原因在 WebUI 弹窗中原样显示。
-    // 项目模式见 ActivityNarrator.cs / Ui/ControlPanel/ControlPanelLoc.cs：探测语言一次缓存,
-    // 故意内联复制而非抽到共享类（YAGNI）。
-    private static bool? _isZh;
-    private static bool IsChinese
-    {
-        get
-        {
-            if (_isZh.HasValue) return _isZh.Value;
-            try { _isZh = new TextObject("{=ST_WebUiLang}en").ToString() == "zh"; }
-            catch { _isZh = false; }
-            return _isZh.Value;
-        }
-    }
-    private static string Tr(string zh, string en) => IsChinese ? zh : en;
+    // 语言探测合并到 SovereignTowns.Common.LanguageProbe（commit 2026-05-23 审计去重）。
+    private static string Tr(string zh, string en) => SovereignTowns.Common.LanguageProbe.Tr(zh, en);
 
     /// <summary>
     /// B17.4 B1 / Issue #1：GlobalDefaults 或 BranchDefaults 变更后触发。

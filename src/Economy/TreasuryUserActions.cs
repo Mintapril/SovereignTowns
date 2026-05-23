@@ -1,7 +1,7 @@
 using System;
 using SovereignTowns.Audit;
+using SovereignTowns.Common;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.Localization;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Economy;
@@ -23,24 +23,8 @@ namespace SovereignTowns.Economy;
 /// </summary>
 public static class TreasuryUserActions
 {
-    // 本地化探针 — 与 ActivityNarrator / ControlPanelLoc 重复（刻意 YAGNI，不抽公共助手）。
-    // 第一次访问触发一次 {=ST_WebUiLang} 解析，失败默认 false（英文）。
-    private static bool? _isZh;
-
-    private static bool IsChinese
-    {
-        get
-        {
-            if (_isZh == null)
-            {
-                try { _isZh = new TextObject("{=ST_WebUiLang}en").ToString() == "zh"; }
-                catch { _isZh = false; }
-            }
-            return _isZh.Value;
-        }
-    }
-
-    private static string Tr(string zh, string en) => IsChinese ? zh : en;
+    // 本地化探针合并到 LanguageProbe（commit 2026-05-23 审计去重）。
+    private static string Tr(string zh, string en) => LanguageProbe.Tr(zh, en);
 
     /// <summary>
     /// 玩家主动从 Hero.MainHero.Gold 存入 <paramref name="amount"/> 金币到玩家氏族 Clan.Gold。

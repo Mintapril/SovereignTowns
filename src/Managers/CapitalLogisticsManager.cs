@@ -617,17 +617,19 @@ public sealed class CapitalLogisticsManager
 
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
 
+            // 一次性物化 clan 的活跃 fiefs；预算计算和单城 P&L 共用同一份列表，避免重复 LINQ 分配。
+            var fiefs = clan.Fiefs?.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList()
+                        ?? new List<Town>();
+
             // 驻军工资预算:复用调度器同一口径(GarrisonAllocationSolver.ClanWageBudget)——
             // 调度器求解是 async/跨帧,看板不等求解;此处同步重算与求解所用一致的预算值。
             long garrisonWageBudget = 0;
             try
             {
-                var budgetFiefs = clan.Fiefs?.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList()
-                                  ?? new List<Town>();
-                if (budgetFiefs.Count > 0)
+                if (fiefs.Count > 0)
                 {
-                    int wagePerTroop = Math.Max(1, GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, budgetFiefs));
-                    garrisonWageBudget = GarrisonAllocationSolver.ClanWageBudget(manager!, budgetFiefs, cfg, wagePerTroop);
+                    int wagePerTroop = Math.Max(1, GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, fiefs));
+                    garrisonWageBudget = GarrisonAllocationSolver.ClanWageBudget(manager!, fiefs, cfg, wagePerTroop);
                 }
             }
             catch (Exception budgetEx)
@@ -648,8 +650,6 @@ public sealed class CapitalLogisticsManager
                 GarrisonWageBudget = garrisonWageBudget,
             };
 
-            var fiefs = clan.Fiefs?.Where(t => t?.Settlement != null && t.Settlement.IsActive).ToList()
-                        ?? new List<Town>();
             foreach (var town in fiefs)
             {
                 try
