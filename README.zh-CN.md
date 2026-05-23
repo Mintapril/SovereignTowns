@@ -3,12 +3,17 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 为 **骑马与砍杀 II：霸主 v1.3.15**（Mount & Blade II: Bannerlord v1.3.15）
-设计的端到端 **氏族级城镇治理 mod**。每个受管理的氏族选取一个定居点作为
-**首府**（capital），mod 全面接管：驻军构成、志愿兵招募、俘虏转化、
-跨定居点兵力调拨、巡逻、出击迎敌、金库财政、按分支配置的兵种构成模板 ——
-覆盖玩家氏族 **以及** 所有持有首府的 AI 氏族。最小费用流（MCMF）求解器
-规划氏族网络内的日级兵力流动；AI 氏族在 vanilla 渠道的招志愿兵被屏蔽，
-全部改由 mod 自身的招募/调拨/转化渠道供应。
+设计的端到端 **氏族级城镇治理 mod**。玩家氏族选取一个定居点作为
+**首府**（capital），mod 围绕首府全面接管：驻军构成、志愿兵招募、
+俘虏转化、跨定居点兵力调拨、巡逻、出击迎敌、金库财政、按分支配置的
+兵种构成模板。最小费用流（MCMF）求解器规划玩家氏族网络内的日级兵力流动。
+
+> **当前作用范围**：**仅玩家氏族**。AI 氏族管理在代码层已完整实装
+> （`CapitalRegistry` / `VanillaSuppressionManager` 都有对称的 AI 路径），
+> 但默认关闭 —— 由 `GlobalConfig.ApplyToAiSettlementsToo` 控制，默认 `false`，
+> 且故意未在游戏内/网页控制面板暴露该开关，等待后续平衡测试完成。
+> 开关一旦开启，会启用 AI 氏族完整接管（首府选择、驻军再平衡、招募、
+> 巡逻、出击、俘虏转化），同时屏蔽其 vanilla 渠道的招志愿兵。
 
 > **兼容性**：SovereignTowns 治理的 vanilla 范围（驻军构成、巡逻/出击队、
 > AI 氏族招募）与 `ImprovedGarrisons` (IG) 和 `GarrisonDoSomething` (GDS)

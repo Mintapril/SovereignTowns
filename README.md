@@ -3,14 +3,22 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 An end-to-end **clan-level town governance** mod for
-**Mount & Blade II: Bannerlord v1.3.15**. Each managed clan elects one of
+**Mount & Blade II: Bannerlord v1.3.15**. The player clan elects one of
 its settlements as a **capital**, and the mod takes over garrison
 composition, volunteer recruitment, prisoner conversion, cross-settlement
 troop logistics, patrolling, sally-forth, treasury, and per-branch
-composition templates — for the player clan *and* for every AI clan that
-owns a capital. A min-cost-flow (MCMF) solver plans daily troop movement
-across the clan's settlement network; vanilla volunteer-recruitment is
-suppressed for AI clans and routed exclusively through the mod's channels.
+composition templates around it. A min-cost-flow (MCMF) solver plans the
+daily troop movement across the player's settlement network.
+
+> **Scope**: currently **player-clan only**. AI-clan management is
+> code-complete (CapitalRegistry / VanillaSuppressionManager have
+> symmetric AI paths) but disabled by default — gated behind
+> `GlobalConfig.ApplyToAiSettlementsToo`, which defaults to `false` and
+> is intentionally not exposed in the in-game / web control panels
+> pending further balance testing. Flipping the flag enables full
+> AI-clan takeover (capital election, garrison rebalancing, recruitment,
+> patrols, sallies, prisoner conversion) and suppresses vanilla
+> volunteer-recruitment for those clans.
 
 > **Compatibility**: SovereignTowns governs the same vanilla surfaces —
 > garrison composition, patrol/sally parties, AI-clan recruitment — that
