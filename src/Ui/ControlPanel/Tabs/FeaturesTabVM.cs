@@ -42,6 +42,11 @@ public sealed class FeaturesTabVM : ViewModel
             "The capital coordinates reinforcement between your own towns and castles.",
             () => ef.TroopTransfers, v => ef.TroopTransfers = v);
 
+        Add("管理同氏族所有领地", "Manage entire clan's holdings",
+            "开启：同氏族所有非首府城镇/城堡都被管理，无论由哪位 hero 持有。\n关闭（默认）：仅管理首府所有者 hero 自己持有的领地；同氏族兄弟 / 子嗣名下的非首府城镇/城堡由 vanilla 处理，ST 不动。",
+            "On: every non-capital town/castle the clan owns is managed, regardless of which family member holds it.\nOff (default): only settlements held by the same hero who owns the capital are managed; non-capital fiefs held by brothers or children of the clan are left to vanilla.",
+            () => ef.ManageAllClanBranches, v => ef.ManageAllClanBranches = v);
+
         Add("主动出击", "Sally forth",
             "附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击",
             "Attack out of the settlement when a hostile force is nearby and the garrison, cooldown and sustained-visibility conditions are met.",

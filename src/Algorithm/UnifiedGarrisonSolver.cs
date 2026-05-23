@@ -148,11 +148,16 @@ public static class UnifiedGarrisonSolver
             int T = Math.Min(64, Math.Max(1, cfg.HorizonTicks));
             int tickHours = Math.Min(24, Math.Max(1, cfg.CapitalLogisticsTickHours));
 
-            // #2:排除同氏族其他领主持有的非首府(沿用今天口径,见 handoff §3.7)。
+            // #2:管理范围过滤。默认仅纳入"首府所有者 hero"持有的非首府城镇/城堡;
+            // 同氏族其他 hero 名下的领地不动 —— 这是项目原始口径(handoff §3.7)。
+            // 当 EnabledFeatures.ManageAllClanBranches = true 时,放宽到整个 clan.Fiefs
+            // (clan 级别范围),无论谁持有。
             var capitalOwner = capitalSettlement.Owner;
+            bool manageAllBranches = features.ManageAllClanBranches;
             var towns = clan.Fiefs
                 .Where(t => t?.Settlement != null && t.Settlement.IsActive && (t.IsTown || t.IsCastle))
-                .Where(t => t.Settlement == capitalSettlement
+                .Where(t => manageAllBranches
+                            || t.Settlement == capitalSettlement
                             || capitalOwner == null
                             || t.Settlement.Owner == null
                             || t.Settlement.Owner == capitalOwner)
