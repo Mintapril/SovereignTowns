@@ -131,7 +131,8 @@ public sealed class FiscalAutonomyConfig
     public int CostWeightStrategic { get; set; } = 1;
 
     /// <summary>每 tick 占用一个 driver slot 的"时间机会成本"。替代旧硬编码 K。
-    /// 必须满足 TickHoldingValueK × HorizonTicks ≤ int.MaxValue（≈ 134M for HorizonTicks=16）
-    /// 且 TickHoldingValueK > 任意 per-edge strategic value（防符号反转）。默认 20_000_000 与旧 K 同值。</summary>
+    /// 必须满足 TickHoldingValueK × HorizonTicks ≤ int.MaxValue（solver 把 T clamp 到 64，
+    /// 故上限 ≈ 33M；默认 T=16 时余量到 134M）且 TickHoldingValueK > 任意 per-edge
+    /// strategic value（防符号反转）。默认 20_000_000 与旧 K 同值。</summary>
     public int TickHoldingValueK { get; set; } = 20_000_000;
 }
