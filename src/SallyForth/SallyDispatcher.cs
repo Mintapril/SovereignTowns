@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
-using SovereignTowns.Capital;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
@@ -32,14 +31,10 @@ public sealed class SallyDispatcher
     // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 SallySeedGold 配置项。
     private const float DetectionRadiusDefault = 50f;
     private const float SallyCooldownHoursDefault = 24f;
-    private const int MinSustainedTicksDefault = 3;
-
     private static float DetectionRadius
         => ConfigurationManager.Current?.Thresholds?.SallyDetectionRadius ?? DetectionRadiusDefault;
     private static float SallyCooldownHours
         => ConfigurationManager.Current?.Thresholds?.SallyCooldownHours ?? SallyCooldownHoursDefault;
-    private static int MinSustainedTicks
-        => ConfigurationManager.Current?.Thresholds?.SallyMinSustainedTicks ?? MinSustainedTicksDefault;
 
     private static float SallyExtractionRatio
         => ConfigurationManager.Current?.Thresholds?.SallyExtractionRatio ?? 0.60f;
@@ -51,94 +46,14 @@ public sealed class SallyDispatcher
     /// <summary>每城上次出击结束（合并/销毁）的时间戳；冷却用。</summary>
     private readonly Dictionary<Settlement, CampaignTime> _lastSallyEndedAt = new();
 
-    /// <summary>每城连续看到敌方威胁的 tick 计数；用于持续可见性判定。无敌人即清零。</summary>
+    /// <summary>每城连续看到敌方威胁的 tick 计数；NotifySallyEnded 清零，保留供未来复用。</summary>
     private readonly Dictionary<Settlement, int> _enemySustainedTicks = new();
 
     private readonly PartyLifecycleManager _lifecycle;
-    private readonly CapitalRegistry? _capitalRegistry;
 
-    public SallyDispatcher(PartyLifecycleManager lifecycle, CapitalRegistry? capitalRegistry = null)
+    public SallyDispatcher(PartyLifecycleManager lifecycle)
     {
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
-        _capitalRegistry = capitalRegistry;
-    }
-
-    // ────────── Settlement 小时 tick：评估并创建 ──────────
-
-    public void OnHourlyTickSettlement(Settlement settlement)
-    {
-        if (settlement == null) return;
-        if (!settlement.IsTown) return;
-
-        try
-        {
-            var owningMgr = _capitalRegistry?.GetForSettlement(settlement);
-            if (owningMgr is null) return;
-            var usableCapital = _capitalRegistry?.GetCapitalForClan(owningMgr.OwnerClan);
-            if (usableCapital == null) return;
-
-            if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) return;
-            if (usableCapital.Town == null) return;
-            if (settlement.IsUnderSiege) return;
-
-            // 上限：每城最多 1 支 sally
-            if (!_lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindSallyForth)) return;
-
-            var garrison = settlement.Town?.GarrisonParty;
-            var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
-
-            // doc §10.5：优先支援被劫掠的下辖村庄（doc:849 忽略持续可见性，但 doc:855 冷却仍生效；doc:859 不设搜索半径）
-            var raidTarget = FindRaiderTargetingBoundVillage(settlement);
-            if (raidTarget != null)
-            {
-                if (_lastSallyEndedAt.TryGetValue(settlement, out var raidLastEnd))
-                {
-                    var hoursSinceLast = (CampaignTime.Now - raidLastEnd).ToHours;
-                    if (hoursSinceLast < SallyCooldownHours)
-                    {
-                        Logger.Debug($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': raid 响应被冷却拦截 ({hoursSinceLast:F1}h < {SallyCooldownHours}h)");
-                        return;
-                    }
-                }
-                Logger.Info($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': prioritizing raid response, target='{PartyNameFormatter.SafeName(raidTarget)}'");
-                TryCreateSallyParty(settlement, garrison!, garrisonCount, raidTarget);
-                return;
-            }
-
-            var target = FindBestEnemyTarget(settlement);
-            if (target == null)
-            {
-                _enemySustainedTicks.Remove(settlement);
-                return;
-            }
-
-            // B7.22：出击冷却 — 上次出击结束后 24h 内不再出
-            if (_lastSallyEndedAt.TryGetValue(settlement, out var lastEnd))
-            {
-                var hoursSinceLast = (CampaignTime.Now - lastEnd).ToHours;
-                if (hoursSinceLast < SallyCooldownHours)
-                {
-                    Logger.Debug($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': 冷却中 ({hoursSinceLast:F1}h < {SallyCooldownHours}h)，跳过");
-                    return;
-                }
-            }
-
-            // B7.22：持续可见性 — 敌人需在视野内连续 N 个 hourly tick 才触发
-            int prevTicks = _enemySustainedTicks.TryGetValue(settlement, out var p) ? p : 0;
-            int newTicks = prevTicks + 1;
-            _enemySustainedTicks[settlement] = newTicks;
-            if (newTicks < MinSustainedTicks)
-            {
-                Logger.Debug($"SallyDispatcher '{PartyNameFormatter.SafeName(settlement)}': 敌方 '{PartyNameFormatter.SafeName(target)}' 已见 {newTicks}/{MinSustainedTicks} 小时");
-                return;
-            }
-
-            TryCreateSallyParty(settlement, garrison!, garrisonCount, target);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"SallyDispatcher.OnHourlyTickSettlement failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
-        }
     }
 
     // ────────── MCMF 批量消费接口 ──────────

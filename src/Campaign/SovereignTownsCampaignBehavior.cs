@@ -221,7 +221,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             _transferDispatcher = new TransferDispatcher(_lifecycle);
             // T2: BattleLootManager 已删除（doc §20 #2）；所有 ST 队伍走基类自资金路径（§14 队伍资金）
             // B7.27：sally 先构造（component 通过 SovereignTownsCampaignBehavior.SallyDispatcher 静态 accessor 拿到 dispatcher）
-            _sallyDispatcher = new SallyDispatcher(_lifecycle, _capitalRegistry);
+            _sallyDispatcher = new SallyDispatcher(_lifecycle);
             _staticSallyDispatcher = _sallyDispatcher;
             // B16.4: PatrolDispatcher 仅创建端；状态机 + 支援判定均在 StPatrolPartyComponent，所以不再注入 sally / battleLoot
             _patrolDispatcher = new PatrolDispatcher(_lifecycle, _capitalRegistry);
