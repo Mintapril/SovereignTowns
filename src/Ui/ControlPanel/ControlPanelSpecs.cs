@@ -14,25 +14,13 @@ public sealed class SpecEntry
     public double? Def;        // 出厂默认值（用于「恢复默认」）；null=无
     public bool Advanced;      // 开发者级旋钮，默认折叠
 
-    /// <summary>
-    /// 条件可见：非空时，此 spec 仅在 <c>GlobalConfig.FiscalAutonomy.AllowManualGarrisonTargets == true</c>
-    /// 才在控制面板 / WebUI 渲染（值 "AllowManualGarrisonTargets"）。auto 模式下驻军目标由调度器
-    /// (Pass A)决定，手动旋钮无意义 —— 隐藏避免误导。其他值保留供将来扩展。
-    ///
-    /// 注意：手动驻军目标共有两个被门控的旋钮，走两套机制 ——
-    /// (1) <c>GlobalDefaults.TargetTotalCount</c> 在 spec 列表内，由此字段门控（由
-    ///     <see cref="SettingsGroupVM"/> 与 WebUI settingsGroups getter 过滤）；
-    /// (2) <c>BranchDefaults.TargetPower</c> 是 <see cref="BranchesTabVM"/> 的硬编码行，
-    ///     由该 VM 的 <c>ManualMode</c> 标志 + prefab/WebUI 的 IsVisible/x-show 门控。
-    /// 新增第三个手动门控旋钮时，两处都要顾及。
-    /// </summary>
-    public string RequiresManualMode;
+    // 2026-05-24:RequiresManualMode 已删除。手动驻军目标整体下线,驻军目标完全由调度器决定。
 }
 
 public sealed class SpecGroup
 {
     public string Key, LabelZh, LabelEn, HintZh, HintEn;
-    public bool Advanced;      // 整组高级（如 mcmf）
+    public bool Advanced;      // 整组高级（当前 8 组均为 false；保留供将来整组开发者级分组使用）
     public List<SpecEntry> Specs = new List<SpecEntry>();
 }
 
@@ -58,8 +46,7 @@ public static class ControlPanelSpecs
                         LabelZh="目标驻军总数", LabelEn="Target garrison size",
                         HintZh="驻军应维持的兵员数。仅在「财政自治」分组开启「允许手动驻军目标」后生效；自动模式下驻军规模由调度器按防御价值与预算分配决定。",
                         HintEn="The number of troops a garrison should maintain. Effective only when \"Allow manual garrison targets\" is enabled in the Fiscal Autonomy group; in auto mode the garrison size is decided by the dispatcher from defensive value and budget.",
-                        Min=50, Max=500, Discrete=true, Step=1, Def=150,
-                        RequiresManualMode="AllowManualGarrisonTargets" },
+                        Min=50, Max=500, Discrete=true, Step=1, Def=150 },
 
                     new SpecEntry { Root="GlobalDefaults", Key="MinimumDefenderRatio",
                         LabelZh="最少防守比例", LabelEn="Minimum defender ratio",
@@ -258,31 +245,7 @@ public static class ControlPanelSpecs
                 },
             },
 
-            // ── 5. mcmf (Advanced=true) ───────────────────────────────────────────────
-            new SpecGroup
-            {
-                Key = "mcmf",
-                LabelZh = "MCMF 调度", LabelEn = "MCMF scheduling",
-                HintZh  = "供需图调度器的匹配罚分、未满足成本和派队固定成本 —— 开发者级旋钮，普通玩家无需调整。",
-                HintEn  = "Supply-demand graph solver matching penalties, unmet-demand cost and per-party overhead — developer-level knobs, ordinary players need not adjust.",
-                Advanced = true,
-                Specs = new List<SpecEntry>
-                {
-                    new SpecEntry { Root="Thresholds", Key="McmfRecruiterOverhead",
-                        LabelZh="MCMF：征兵队固定成本", LabelEn="MCMF: recruiter party overhead",
-                        HintZh="派出一支征兵队的固定成本",
-                        HintEn="Fixed cost of dispatching one recruiter party.",
-                        Min=0, Max=10000, Discrete=true, Step=1, Def=100, Advanced=true },
-
-                    new SpecEntry { Root="Thresholds", Key="McmfTransferOverhead",
-                        LabelZh="MCMF：调拨队固定成本", LabelEn="MCMF: transfer party overhead",
-                        HintZh="派出一支调拨队的固定成本",
-                        HintEn="Fixed cost of dispatching one transfer party.",
-                        Min=0, Max=10000, Discrete=true, Step=1, Def=50, Advanced=true },
-                },
-            },
-
-            // ── 6. lifecycle ──────────────────────────────────────────────────────────
+            // ── 5. lifecycle ──────────────────────────────────────────────────────────
             new SpecGroup
             {
                 Key = "lifecycle",
@@ -334,27 +297,12 @@ public static class ControlPanelSpecs
                         HintEn="A mod party idle for this long (in-game hours) is disbanded outright (must be >= the forced-return hours).",
                         Min=1, Max=720, Discrete=true, Step=1, Def=36 },
 
-                    new SpecEntry { Root="Thresholds", Key="AutoUpgradeMinTierRatio",
-                        LabelZh="升级：触发 Tier 比例", LabelEn="Upgrade: trigger low-tier ratio",
-                        HintZh="T1+T2 兵占总兵比例 ≥ 此值时尝试升级",
-                        HintEn="An upgrade is attempted when T1+T2 troops make up at least this fraction of the total.",
-                        Min=0, Max=1, Discrete=false, Step=0.05, Def=0.30 },
-
-                    new SpecEntry { Root="Thresholds", Key="AutoUpgradeMinBudget",
-                        LabelZh="升级：单次最低预算", LabelEn="Upgrade: minimum budget per call",
-                        HintZh="实际预算 = max(招募预算基准 / 4, 此值)",
-                        HintEn="Effective budget = max(recruitment budget baseline / 4, this value).",
-                        Min=0, Max=50000, Discrete=true, Step=1, Def=500 },
-
-                    new SpecEntry { Root="Thresholds", Key="AutoUpgradeMaxPerCall",
-                        LabelZh="升级：单次最大升级数", LabelEn="Upgrade: max upgrades per call",
-                        HintZh="单次升级最多升 N 个兵",
-                        HintEn="At most N troops are upgraded per call.",
-                        Min=1, Max=500, Discrete=true, Step=1, Def=20 },
+                    // 2026-05-24:AutoUpgradeMinTierRatio / AutoUpgradeMinBudget / AutoUpgradeMaxPerCall 已删除。
+                    // 升级触发权由 vanilla PartyUpgraderCampaignBehavior 接管(MCMF 控制流量,vanilla 执行)。
                 },
             },
 
-            // ── 7. building_bonus ─────────────────────────────────────────────────────
+            // ── 6. building_bonus ─────────────────────────────────────────────────────
             new SpecGroup
             {
                 Key = "building_bonus",
@@ -426,13 +374,13 @@ public static class ControlPanelSpecs
                 },
             },
 
-            // ── 8. fiscal_autonomy ────────────────────────────────────────────────────
+            // ── 7. fiscal_autonomy ────────────────────────────────────────────────────
             new SpecGroup
             {
                 Key = "fiscal_autonomy",
                 LabelZh = "财政自治", LabelEn = "Fiscal autonomy",
-                HintZh  = "受管氏族的金库、驻军工资预算、超额遣散和中央驻军调度器。预算 = 工资预算比例 × 受管领地税收；调度器按防御价值把预算分到各城/堡。开启「允许手动驻军目标」后回到玩家手设目标 + 评估。",
-                HintEn  = "A managed clan's treasury, garrison wage budget, excess disbanding and the central garrison dispatcher. Budget = wage-budget ratio × managed-holding tax income; the dispatcher allocates the budget across holdings by defensive value. Enabling \"Allow manual garrison targets\" returns to player-set targets plus an assessment.",
+                HintZh  = "受管氏族的驻军工资预算、超额遣散与手动 / 自动驻军目标开关。预算 = 工资预算比例 × 受管领地税收；调度器（见「调度器」分组）按防御价值把预算分到各城/堡。开启「允许手动驻军目标」后回到玩家手设目标 + 调度器评估。",
+                HintEn  = "A managed clan's garrison wage budget, excess disbanding and the manual / auto target switch. Budget = wage-budget ratio × managed-holding tax income; the dispatcher (see the \"Scheduler\" group) allocates the budget across holdings by defensive value. Enabling \"Allow manual garrison targets\" returns to player-set targets plus dispatcher assessment.",
                 Advanced = false,
                 Specs = new List<SpecEntry>
                 {
@@ -461,63 +409,21 @@ public static class ControlPanelSpecs
                         IsBool=true, Def=1.0, Advanced=false,
                         Min=0, Max=1, Step=1 },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="AllowManualGarrisonTargets",
-                        LabelZh="允许手动驻军目标", LabelEn="Allow manual garrison targets",
-                        HintZh="开启后，「目标预算」分组的「目标驻军总数」与「非首府驻军」的「目标兵力」重新生效作为路由目标；调度器只产出评估（推荐值 vs 你的设定、每日工资差额）。关闭则调度器全权决定驻军规模。",
-                        HintEn="When on, \"Target garrison size\" (Targets group) and \"Target strength\" (Branches tab) become effective routing targets again; the dispatcher only produces an assessment (recommended vs your setting, daily wage delta). When off, the dispatcher fully decides garrison size.",
-                        IsBool=true, Def=0.0, Advanced=false,
-                        Min=0, Max=1, Step=1 },
-
-                    // —— 价值函数 tunables（开发者级，Advanced=true）——
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateBase",
-                        LabelZh="价值函数：充足目标基数", LabelEn="Value function: adequate-target base",
-                        HintZh="充足驻军目标的基数：充足目标 = clamp(此基数 + 繁荣度/繁荣除数 + 威胁附加, 保底头数, 硬上限)。须落在 [保底头数, 硬上限] 内。",
-                        HintEn="Base of the adequate garrison target: adequate = clamp(this base + prosperity/divisor + threat add-on, floor, hard cap). Must fall within [floor, hard cap].",
-                        Min=0, Max=2000, Discrete=true, Step=1, Def=60, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateProsperityDivisor",
-                        LabelZh="价值函数：充足繁荣度除数", LabelEn="Value function: adequate prosperity divisor",
-                        HintZh="繁荣度对充足目标的贡献除数：繁荣度 ÷ 此值。值越大繁荣度影响越小。",
-                        HintEn="Divisor for prosperity's contribution to the adequate target: prosperity ÷ this value. Larger means prosperity matters less.",
-                        Min=1, Max=1000, Discrete=true, Step=1, Def=80, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateThreatWeight",
-                        LabelZh="价值函数：充足威胁权重", LabelEn="Value function: adequate threat weight",
-                        HintZh="周边威胁强度对充足目标的权重：威胁附加 = round(周边威胁强度 × 此权重)。",
-                        HintEn="Weight of nearby threat intensity on the adequate target: threat add-on = round(nearby threat intensity × this weight).",
-                        Min=0, Max=1000, Discrete=true, Step=1, Def=8, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="CoreTierCount",
-                        LabelZh="价值函数：核心段子层数", LabelEn="Value function: core sub-tier count",
-                        HintZh="核心段离散成多少个递减子层（K）。子层越多价值曲线越平滑，调度图越大。",
-                        HintEn="How many diminishing sub-tiers (K) the core tier is discretized into. More sub-tiers smooth the value curve and enlarge the dispatch graph.",
-                        Min=1, Max=20, Discrete=true, Step=1, Def=5, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="MaxGarrisonHardCap",
-                        LabelZh="价值函数：驻军硬上限兜底", LabelEn="Value function: garrison hard-cap fallback",
-                        HintZh="取不到 vanilla 驻军 PartySizeLimit 时使用的硬上限兜底。必须 ≥ 驻军保底头数。",
-                        HintEn="Hard-cap fallback used when the vanilla garrison PartySizeLimit cannot be read. Must be >= the minimum garrison floor.",
-                        Min=0, Max=2000, Discrete=true, Step=1, Def=400, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="TownAdequateVanillaAnchorRatio",
-                        LabelZh="价值函数：城镇充足目标 vanilla 锚定比例", LabelEn="Value function: town adequate vanilla anchor ratio",
-                        HintZh="城镇充足目标的下限锚定：充足目标不低于 vanilla 驻军容量（PartySizeLimit）× 此比例。公式基数对普通城镇偏低时由此兜底。0 = 关闭锚定。仅城镇生效，城堡不受影响。",
-                        HintEn="Lower-bound anchor for a town's adequate target: it will not drop below the vanilla garrison capacity (PartySizeLimit) × this ratio, backstopping the formula base for ordinary towns. 0 disables the anchor. Towns only — castles are unaffected.",
-                        Min=0.0, Max=1.0, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
+                    // 2026-05-24:AllowManualGarrisonTargets SpecEntry 已删除,手动模式整体下线。
                 },
             },
 
-            // ── 9. merged_solver（合并 MCMF + 时间展开 MPC 调度器，P3）──────────────────
+            // ── 8. scheduler（统一 MCMF 时间展开调度器：原 merged_solver + mcmf + fiscal 价值函数）──
             new SpecGroup
             {
-                Key = "merged_solver",
-                LabelZh = "合并调度 (P3)", LabelEn = "Unified solver (P3)",
-                HintZh  = "合并 MCMF + 时间展开 MPC 调度器。「后勤评估间隔」与「派发风险」即时影响游戏；价值标度 / 时域 / 预测 / 威胁曲线为开发者级旋钮。",
-                HintEn  = "The unified MCMF + time-expanded MPC dispatcher. The logistics interval and dispatch-risk knobs affect gameplay immediately; value scale, horizon, forecast and threat-curve are developer-level knobs.",
+                Key = "scheduler",
+                LabelZh = "调度器", LabelEn = "Scheduler",
+                HintZh  = "统一 MCMF 时间展开调度器。Live 旋钮即时改变招募 / 调拨 / 遣散行为；高级旋钮是求解图费用、威胁曲线、充足驻军公式与时域预测等开发者级参数。",
+                HintEn  = "Unified MCMF time-expanded dispatcher. Live knobs instantly change recruitment / transfer / disband behavior; advanced knobs are developer-level — graph costs, threat curves, adequate-garrison formula and horizon forecasting.",
                 Advanced = false,
                 Specs = new List<SpecEntry>
                 {
-                    // —— live 旋钮（即时改变游戏行为，Advanced=false）——
+                    // ════════ 段 1：Live —— 即时影响游戏行为（Advanced=false）════════
                     new SpecEntry { Root="FiscalAutonomy", Key="CapitalLogisticsTickHours",
                         LabelZh="后勤评估间隔（小时）", LabelEn="Logistics evaluation interval (hours)",
                         HintZh="首府后勤（招募 / 调拨 / 遣散）评估的间隔小时数，也是时间展开 solver 一个 tick 的时长。",
@@ -549,60 +455,42 @@ public static class ControlPanelSpecs
                         HintEn="How many SSP augmentations the solver runs before yielding a frame. Lower = less time per frame and smoother, but the whole solve spans more frames. Does not affect the solve result. Default 8.",
                         Min=1, Max=64, Discrete=true, Step=1, Def=8 },
 
-                    // —— 开发者级旋钮（Advanced=true，默认折叠）——
-                    new SpecEntry { Root="FiscalAutonomy", Key="ForecastMode",
-                        LabelZh="时域威胁预测模式", LabelEn="Horizon forecast mode",
-                        HintZh="0 = 平展（所有 tick 用当前威胁，不前瞻）；1 = 威胁投影（tick>0 按逼近敌军的 ETA 上调威胁）。",
-                        HintEn="0 = flat (every tick uses the current threat, no look-ahead); 1 = projected (tick>0 raises threat by approaching-enemy ETA).",
-                        Min=0, Max=1, Discrete=true, Step=1, Def=0, Advanced=true },
+                    // ════════ 段 2：求解图费用 / 派队成本（Advanced=true）════════
+                    new SpecEntry { Root="Thresholds", Key="McmfRecruiterOverhead",
+                        LabelZh="派队成本：征兵队固定开销", LabelEn="Party overhead: recruiter party fixed cost",
+                        HintZh="求解图里「派出一支征兵队」的固定成本。值越大越倾向于把村庄供给塞进现有征兵队，少派新队。",
+                        HintEn="Fixed cost of dispatching one recruiter party in the solve graph. Higher means the solver prefers cramming village supply into existing recruiter parties rather than spawning new ones.",
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=100, Advanced=true },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="HorizonTicks",
-                        LabelZh="时间展开时域 T（tick 数）", LabelEn="Time-expansion horizon T (ticks)",
-                        HintZh="时间展开 solver 一次求解覆盖的 tick 数。每 tick = 后勤评估间隔小时。须 ≥ 典型征兵队行程 tick 数，否则只能原地招募。",
-                        HintEn="Number of ticks one solve of the time-expanded solver covers. Each tick = the logistics evaluation interval. Must be >= a typical recruiter trip in ticks, otherwise only in-place recruitment is possible.",
-                        Min=1, Max=64, Discrete=true, Step=1, Def=16, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="ThreatForecastScanRadius",
-                        LabelZh="威胁预测：扫描半径", LabelEn="Threat forecast: scan radius",
-                        HintZh="威胁预测器探测正逼近敌军的地图半径，须远大于「派发风险扫描半径」。仅预测模式为「威胁投影」时生效。",
-                        HintEn="Map radius within which the threat forecaster detects approaching enemies; should be far larger than the dispatch-risk scan radius. Effective only in projected forecast mode.",
-                        Min=0, Max=500, Discrete=false, Step=10, Def=150, Advanced=true },
+                    new SpecEntry { Root="Thresholds", Key="McmfTransferOverhead",
+                        LabelZh="派队成本：调拨队固定开销", LabelEn="Party overhead: transfer party fixed cost",
+                        HintZh="求解图里「派出一支调拨队」的固定成本。值越大越倾向于一次性多拉兵、少派调拨队次数。",
+                        HintEn="Fixed cost of dispatching one transfer party in the solve graph. Higher means the solver prefers larger single transfers over more frequent transfer parties.",
+                        Min=0, Max=10000, Discrete=true, Step=1, Def=50, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="ValueFloorBase",
-                        LabelZh="调度器：保底段价值基数", LabelEn="Solver: floor-tier value base",
+                        LabelZh="价值基数：保底段", LabelEn="Value base: floor tier",
                         HintZh="保底段单兵价值基数。须与路由成本（数百~千）同量级。",
                         HintEn="Floor-tier per-troop value base. Must be on the same order as routing cost (hundreds to thousands).",
                         Min=0, Max=20000, Discrete=true, Step=100, Def=3000, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="ValueCoreBase",
-                        LabelZh="调度器：核心段价值基数", LabelEn="Solver: core-tier value base",
+                        LabelZh="价值基数：核心段", LabelEn="Value base: core tier",
                         HintZh="核心段单兵价值基数。核心段在城内逐子层递减。",
                         HintEn="Core-tier per-troop value base. The core tier diminishes across sub-tiers within a town.",
                         Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="SurplusEdgeCost",
-                        LabelZh="调度器：过剩段边费用", LabelEn="Solver: surplus-tier edge cost",
+                        LabelZh="过剩段边费用", LabelEn="Surplus-tier edge cost",
                         HintZh="过剩段单兵价值 = 此值的负数。严格为正，使「不养过剩兵」永远优于过度驻军。",
                         HintEn="Surplus-tier per-troop value = the negative of this. Strictly positive, so leaving surplus unfilled always beats over-garrisoning.",
                         Min=1, Max=1000, Discrete=true, Step=1, Def=1, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="PatrolValue",
-                        LabelZh="调度器：巡逻回报值", LabelEn="Solver: patrol reward value",
+                        LabelZh="巡逻回报值", LabelEn="Patrol reward value",
                         HintZh="盈余兵去巡逻 vs 直接遣散的强度。值越大越优先把首府盈余兵送去巡逻。",
                         HintEn="Strength of \"surplus troops patrol\" vs \"surplus troops disbanded\". Higher prefers sending capital surplus to patrol.",
                         Min=0, Max=5000, Discrete=true, Step=50, Def=200, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="DisbandPerDayCap",
-                        LabelZh="调度器：每日遣散上限", LabelEn="Solver: disband-per-day cap",
-                        HintZh="每城每天经正常段遣散的头数上限。0 = 只在驻军物理塞不下硬上限时才遣散。",
-                        HintEn="Per-town daily cap on troops disbanded through the normal channel. 0 = disband only when the garrison physically overflows the hard cap.",
-                        Min=0, Max=200, Discrete=true, Step=1, Def=20, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="BypassOverflowPenalty",
-                        LabelZh="调度器：溢出遣散罚分", LabelEn="Solver: overflow-disband penalty",
-                        HintZh="超过「每日遣散上限」后走溢出段的附加费用。须大于「过剩段边费用」，否则两段限速失效。",
-                        HintEn="Extra cost of the overflow channel used once the disband-per-day cap is exhausted. Must exceed the surplus-tier edge cost, or the two-stage rate limit fails.",
-                        Min=0, Max=10000, Discrete=true, Step=100, Def=1000, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="DispatchRiskCostScale",
                         LabelZh="派发风险：成本标度", LabelEn="Dispatch risk: cost scale",
@@ -610,7 +498,19 @@ public static class ControlPanelSpecs
                         HintEn="Multiplier mapping route risk to graph cost inside the solver.",
                         Min=0, Max=200, Discrete=true, Step=1, Def=10, Advanced=true },
 
-                    // —— 价值函数曲线 tunables（开发者级，Advanced=true）——
+                    new SpecEntry { Root="FiscalAutonomy", Key="DisbandPerDayCap",
+                        LabelZh="每日遣散上限", LabelEn="Disband-per-day cap",
+                        HintZh="每城每天经正常段遣散的头数上限。0 = 只在驻军物理塞不下硬上限时才遣散。",
+                        HintEn="Per-town daily cap on troops disbanded through the normal channel. 0 = disband only when the garrison physically overflows the hard cap.",
+                        Min=0, Max=200, Discrete=true, Step=1, Def=20, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="BypassOverflowPenalty",
+                        LabelZh="溢出遣散罚分", LabelEn="Overflow-disband penalty",
+                        HintZh="超过「每日遣散上限」后走溢出段的附加费用。须大于「过剩段边费用」，否则两段限速失效。",
+                        HintEn="Extra cost of the overflow channel used once the disband-per-day cap is exhausted. Must exceed the surplus-tier edge cost, or the two-stage rate limit fails.",
+                        Min=0, Max=10000, Discrete=true, Step=100, Def=1000, Advanced=true },
+
+                    // ════════ 段 3：威胁权重曲线（Advanced=true）════════
                     new SpecEntry { Root="FiscalAutonomy", Key="ThreatWeightSafe",
                         LabelZh="威胁权重：安全", LabelEn="Threat weight: Safe",
                         HintZh="风险等级「安全」时的价值乘子。",
@@ -641,14 +541,52 @@ public static class ControlPanelSpecs
                         HintEn="Value multiplier when the risk level is Critical.",
                         Min=0, Max=8, Discrete=false, Step=0.1, Def=3.0, Advanced=true },
 
+                    // ════════ 段 4：充足驻军目标公式（Advanced=true）════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateBase",
+                        LabelZh="充足目标：基数", LabelEn="Adequate target: base",
+                        HintZh="充足驻军目标的基数：充足目标 = clamp(此基数 + 繁荣度/繁荣除数 + 威胁附加, 保底头数, 硬上限)。须落在 [保底头数, 硬上限] 内。",
+                        HintEn="Base of the adequate garrison target: adequate = clamp(this base + prosperity/divisor + threat add-on, floor, hard cap). Must fall within [floor, hard cap].",
+                        Min=0, Max=2000, Discrete=true, Step=1, Def=60, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateProsperityDivisor",
+                        LabelZh="充足目标：繁荣度除数", LabelEn="Adequate target: prosperity divisor",
+                        HintZh="繁荣度对充足目标的贡献除数：繁荣度 ÷ 此值。值越大繁荣度影响越小。",
+                        HintEn="Divisor for prosperity's contribution to the adequate target: prosperity ÷ this value. Larger means prosperity matters less.",
+                        Min=1, Max=1000, Discrete=true, Step=1, Def=80, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateThreatWeight",
+                        LabelZh="充足目标：威胁权重", LabelEn="Adequate target: threat weight",
+                        HintZh="周边威胁强度对充足目标的权重：威胁附加 = round(周边威胁强度 × 此权重)。",
+                        HintEn="Weight of nearby threat intensity on the adequate target: threat add-on = round(nearby threat intensity × this weight).",
+                        Min=0, Max=1000, Discrete=true, Step=1, Def=8, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="MaxGarrisonHardCap",
+                        LabelZh="驻军硬上限兜底", LabelEn="Garrison hard-cap fallback",
+                        HintZh="取不到 vanilla 驻军 PartySizeLimit 时使用的硬上限兜底。必须 ≥ 驻军保底头数。",
+                        HintEn="Hard-cap fallback used when the vanilla garrison PartySizeLimit cannot be read. Must be >= the minimum garrison floor.",
+                        Min=0, Max=2000, Discrete=true, Step=1, Def=400, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="TownAdequateVanillaAnchorRatio",
+                        LabelZh="城镇充足目标 vanilla 锚定比例", LabelEn="Town adequate vanilla anchor ratio",
+                        HintZh="城镇充足目标的下限锚定：充足目标不低于 vanilla 驻军容量（PartySizeLimit）× 此比例。公式基数对普通城镇偏低时由此兜底。0 = 关闭锚定。仅城镇生效，城堡不受影响。",
+                        HintEn="Lower-bound anchor for a town's adequate target: it will not drop below the vanilla garrison capacity (PartySizeLimit) × this ratio, backstopping the formula base for ordinary towns. 0 disables the anchor. Towns only — castles are unaffected.",
+                        Min=0.0, Max=1.0, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
+
+                    // ════════ 段 5：核心段子层 + strategic 乘子（Advanced=true）════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="CoreTierCount",
+                        LabelZh="核心段：子层数 K", LabelEn="Core tier: sub-tier count K",
+                        HintZh="核心段离散成多少个递减子层（K）。子层越多价值曲线越平滑，调度图越大。",
+                        HintEn="How many diminishing sub-tiers (K) the core tier is discretized into. More sub-tiers smooth the value curve and enlarge the dispatch graph.",
+                        Min=1, Max=20, Discrete=true, Step=1, Def=5, Advanced=true },
+
                     new SpecEntry { Root="FiscalAutonomy", Key="CoreDimRange",
-                        LabelZh="核心段递减幅度", LabelEn="Core diminishing range",
+                        LabelZh="核心段：递减幅度", LabelEn="Core tier: diminishing range",
                         HintZh="核心段逐子层递减的总幅度：最低子层价值乘子 = 1 − 此值。",
                         HintEn="Total diminishing range of the core tier: the lowest sub-tier value multiplier = 1 − this value.",
                         Min=0, Max=1, Discrete=false, Step=0.05, Def=0.8, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="CoreDimMidpoint",
-                        LabelZh="核心段子层取样中点", LabelEn="Core sub-tier sampling midpoint",
+                        LabelZh="核心段：子层取样中点", LabelEn="Core tier: sub-tier sampling midpoint",
                         HintZh="核心段第 k 子层用 (k + 此值) / K 作为归一化取样位置。",
                         HintEn="The core tier's k-th sub-tier samples at (k + this value) / K as its normalized position.",
                         Min=0, Max=1, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
@@ -665,11 +603,49 @@ public static class ControlPanelSpecs
                         HintEn="Strategic-multiplier bonus coefficient for the capital (non-capital uses 1.0).",
                         Min=1, Max=3, Discrete=false, Step=0.05, Def=1.3, Advanced=true },
 
+                    // ════════ 段 6：时域展开 / 预测 / ETA（Advanced=true）════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="HorizonTicks",
+                        LabelZh="时间展开时域 T（tick 数）", LabelEn="Time-expansion horizon T (ticks)",
+                        HintZh="时间展开 solver 一次求解覆盖的 tick 数。每 tick = 后勤评估间隔小时。须 ≥ 典型征兵队行程 tick 数，否则只能原地招募。",
+                        HintEn="Number of ticks one solve of the time-expanded solver covers. Each tick = the logistics evaluation interval. Must be >= a typical recruiter trip in ticks, otherwise only in-place recruitment is possible.",
+                        Min=1, Max=64, Discrete=true, Step=1, Def=16, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="ThreatForecastScanRadius",
+                        LabelZh="威胁预测：扫描半径", LabelEn="Threat forecast: scan radius",
+                        HintZh="威胁预测器探测正逼近敌军的地图半径，须远大于「派发风险扫描半径」。MCMF 时间展开各 tick 的威胁等级按敌军 ETA 上调。",
+                        HintEn="Map radius within which the threat forecaster detects approaching enemies; should be far larger than the dispatch-risk scan radius. MCMF tunes per-tick threat by approaching-enemy ETA.",
+                        Min=0, Max=500, Discrete=false, Step=10, Def=150, Advanced=true },
+
                     new SpecEntry { Root="FiscalAutonomy", Key="ReferenceSpeedPerDay",
                         LabelZh="参考队伍速度（地图单位/天）", LabelEn="Reference party speed (map units/day)",
                         HintZh="ETA 估算用的参考队伍速度。近似值，与 vanilla 单队速度无关。",
                         HintEn="Reference party speed used for ETA estimation. An approximation, unrelated to any vanilla party's actual speed.",
                         Min=1, Max=20, Discrete=false, Step=0.5, Def=5.0, Advanced=true },
+
+                    // ════════ 段 7：PR-1 EdgeCost 4 通道权重（Advanced=true）════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="TickHoldingValueK",
+                        LabelZh="时间机会成本基线 K", LabelEn="Tick holding value K (time opportunity cost)",
+                        HintZh="每 tick 占用一个驻军 slot 的「时间机会成本」基线。MCMF 用此值统一时间维度量纲。上限 33M（防溢出，K × HorizonTicks 须 ≤ int.MaxValue）。默认 20M = 旧硬编码 K。",
+                        HintEn="Baseline \"time opportunity cost\" of occupying one garrison slot per tick. MCMF uses this to unify the time dimension across edge costs. Upper bound 33M (overflow guard: K × HorizonTicks ≤ int.MaxValue). Default 20M matches the legacy hardcoded constant.",
+                        Min=1000000, Max=33000000, Discrete=true, Step=1000000, Def=20000000, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="CostWeightGold",
+                        LabelZh="金币通道权重 α", LabelEn="Gold channel weight α",
+                        HintZh="合成 cost 中金币通道（wage / 招募 / 升级 / 路途 fuel / starvation 等价金币）的倍数。0 = 完全忽略金币（不推荐），1 = PR-1 默认（旧行为），>1 = 守财奴，<1 = 不在乎花钱。",
+                        HintEn="Multiplier of the gold channel (wage / recruit / upgrade / routing fuel / starvation equiv.) in cost composition. 0 = ignore gold (not recommended), 1 = PR-1 default (legacy behavior), >1 = miser, <1 = spendthrift.",
+                        Min=0, Max=10, Discrete=true, Step=1, Def=1, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="CostWeightRisk",
+                        LabelZh="路径风险通道权重 γ", LabelEn="Path-risk channel weight γ",
+                        HintZh="合成 cost 中路径风险通道（HostilePartyScanner 扫描敌军强度）的倍数。0 = 不顾路途风险（鲁莽派遣），1 = PR-1 默认，>1 = 谨慎绕路，<1 = 不在乎路上遇敌。",
+                        HintEn="Multiplier of the path-risk channel (HostilePartyScanner enemy strength along route) in cost composition. 0 = ignore route risk (reckless dispatch), 1 = PR-1 default, >1 = cautious detours, <1 = unconcerned about route ambush.",
+                        Min=0, Max=10, Discrete=true, Step=1, Def=1, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="CostWeightStrategic",
+                        LabelZh="战略价值通道权重 δ", LabelEn="Strategic value channel weight δ",
+                        HintZh="合成 cost 中战略价值通道（驻防 + 巡逻收益）的倍数。在 cost 中取负 → 值越大越鼓励多守军 / 多巡逻。0 = 不要任何战略收益（极端 minimal），1 = PR-1 默认。",
+                        HintEn="Multiplier of the strategic value channel (defense + patrol payoff) in cost composition. Enters cost as negative → higher values encourage more garrison + patrol. 0 = ignore strategic payoff (extreme minimal), 1 = PR-1 default.",
+                        Min=0, Max=10, Discrete=true, Step=1, Def=1, Advanced=true },
                 },
             },
         };
