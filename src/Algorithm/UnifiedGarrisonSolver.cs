@@ -259,7 +259,7 @@ public static class UnifiedGarrisonSolver
                 foreach (var kv in bucketHeads)
                 {
                     if (kv.Value <= 0) continue;
-                    AddE(superSource, G(s, kv.Key.Role, 0, kv.Key.Tier), kv.Value, 0, EdgeCat.Internal);
+                    AddEcost(superSource, G(s, kv.Key.Role, 0, kv.Key.Tier), kv.Value, EdgeCost.Zero, EdgeCat.Internal);
                     originSupply += kv.Value;
                 }
             }
@@ -270,7 +270,7 @@ public static class UnifiedGarrisonSolver
             foreach (var (dest, role, tier, heads, arrivalTau) in CollectInFlightArrivals(clan, tickHours, T))
             {
                 if (dest == null || !townSet.Contains(dest)) continue;
-                AddE(superSource, G(dest, role, arrivalTau, tier), heads, arrivalTau * K, EdgeCat.Internal);
+                AddEcost(superSource, G(dest, role, arrivalTau, tier), heads, new EdgeCost(timeUnits: arrivalTau), EdgeCat.Internal);
                 originSupply += heads;
             }
 
@@ -307,9 +307,13 @@ public static class UnifiedGarrisonSolver
                                 if (subCap <= 0) continue;
                                 // Phase 3(2026-05-24):wage 按 vanilla tier 表,value 乘 power(tier) 让高 tier 兵 cost 更负。
                                 // Phase 6:战时缓冲耗尽时加 starvationPenalty,主动减兵。
-                                int holdCost = K + WageOf(tier) - ClampValue(value * PowerOf(tier), K) + starvationPenalty;
+                                // PR-1 (2026-05-24): wage + starvation 进 gold 通道；K 进 time 通道；value 进 strategic 通道。
+                                // ClampValue(value × power, K) 保留原语义（防 strategic 溢出 ±K 区间触发符号反转）。
+                                int holdGold = WageOf(tier) + starvationPenalty;
+                                int holdStrategic = ClampValue(value * PowerOf(tier), K);
+                                var holdEc = new EdgeCost(gold: holdGold, timeUnits: 1, strategic: holdStrategic);
                                 int from = G(s, role, tau, tier), to = G(s, role, tau + 1, tier);
-                                AddE(from, to, subCap, holdCost, EdgeCat.Stay);
+                                AddEcost(from, to, subCap, holdEc, EdgeCat.Stay);
                                 if (tau == 0)
                                 {
                                     decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, role);
@@ -324,8 +328,8 @@ public static class UnifiedGarrisonSolver
                     {
                         gate = next++;
                         disbandGate[(s, tau)] = gate;
-                        AddE(gate, superSink, protectedCity ? 0 : disbandPerTickCap, 0, EdgeCat.Bypass);
-                        AddE(gate, superSink, BigCap, overflowPenalty, EdgeCat.Bypass);
+                        AddEcost(gate, superSink, protectedCity ? 0 : disbandPerTickCap, EdgeCost.Zero, EdgeCat.Bypass);
+                        AddEcost(gate, superSink, BigCap, new EdgeCost(gold: overflowPenalty), EdgeCat.Bypass);
                     }
                     foreach (var role in MatchPolicy.Roles)
                     {
@@ -335,7 +339,7 @@ public static class UnifiedGarrisonSolver
                             // G→gate 标 Internal(非 Bypass):遣散是 G→gate→superSink 两跳,
                             // 若两段都记 Bypass,BypassFlow 会把同一批遣散兵计两次。只让
                             // gate→superSink 段计入 Bypass 统计,每个遣散兵恰好计一次。
-                            AddE(from, gate, BigCap, (T - tau) * K, EdgeCat.Internal);
+                            AddEcost(from, gate, BigCap, new EdgeCost(timeUnits: T - tau), EdgeCat.Internal);
                             if (tau == 0) decodeInfo[(from, gate)] = (DecodeKind.Disband, s, null!, role);
                         }
                     }
@@ -344,7 +348,7 @@ public static class UnifiedGarrisonSolver
                 // 时域出口:G[S,role,tier,T]→superSink(每 (role × tier) 各一条)。
                 foreach (var role in MatchPolicy.Roles)
                     for (int tier = 1; tier <= 6; tier++)
-                        AddE(G(s, role, T, tier), superSink, BigCap, 0, EdgeCat.Internal);
+                        AddEcost(G(s, role, T, tier), superSink, BigCap, EdgeCost.Zero, EdgeCat.Internal);
             }
 
             // ── 调拨边:现有驻军跨城 G[S,R,τ]→G[S',R',τ+d] ──
