@@ -481,7 +481,11 @@ public static class UnifiedGarrisonSolver
             //   - xpCost(t→t+1) = vanilla 阶梯 {100,300,550,900,1300,1700}
             //   - xpTicks = ceil(xpCost / xpPerTick),xpPerTick 按建筑等级估算
             // 真实升级由 vanilla PartyUpgraderCampaignBehavior 接管(MapEventEnded/DailyTick auto-upgrade),
-            // MCMF 这里只为 SSP 提供"低 tier 兵可升 → 高 tier holding cap"的拓扑路径,让流量穿过。
+            // MCMF 这里负责把升级显式计价 —— PR-2 T5 起 edge 同时携带 gold 与 timeUnits=xpTicks,
+            // 让升级与"招高 tier / 留同 tier 等 xpTicks tick"在同尺度上比较。
+            // 注：默认 cfg (T=16, upgradeXpPerTick=12) 下 xpTicks ≥ T 的 tier 跳跃不会被 loop 守卫
+            // (`tau + xpTicks < T`) 放进图 —— 当前仅 T1→T2 (xpTicks=9) 真正建边;T≥2 升级要靠
+            // 调大 HorizonTicks 或 upgradeXpPerTick 才能进图,与 PR-2 cost 改动无关。
             int upgradeXpPerTick = Math.Max(1, 50 * tickHours / 24);  // 估算:basic injection + barracks + daily bonus
             foreach (var tUpg in towns)
             {
