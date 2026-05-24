@@ -690,6 +690,13 @@ public static class ControlPanelSpecs
                         HintZh="持有边单兵价值基常数。PR-5' 单段公式：value = 此值 × 威胁乘子 × 战略乘子 × power(tier)。替代旧 ValueFloorBase + ValueCoreBase 多段。默认 800。",
                         HintEn="Holding-edge per-troop value base constant. PR-5' single-segment formula: value = this × threat × strategic × power(tier). Replaces legacy ValueFloorBase + ValueCoreBase multi-tier. Default 800.",
                         Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
+
+                    // ════════ 段 10：PR-6 (2026-05-24) B 池容量上限 ════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="ReservePoolCap",
+                        LabelZh="B 池容量上限", LabelEn="Reserve pool cap",
+                        HintZh="B 池（首府储备兵力 party）可持有的最大驻军头数。0 = 关闭 B 池（不创建 party）；> 0 = MCMF 调度器注入兵员时的硬上限。功能由 PR-7 实现；PR-6 阶段默认 0（关闭）。",
+                        HintEn="Maximum garrison headcount the reserve-pool party (B-pool) may hold. 0 = disable B-pool (no party created); > 0 = hard cap when MCMF scheduler fills it. Feature is implemented in PR-7; default 0 (disabled) for PR-6.",
+                        Min=0, Max=1000, Discrete=true, Step=10, Def=0, Advanced=true },
                 },
             },
         };

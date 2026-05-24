@@ -27,6 +27,7 @@ public sealed class ControlPanelVM : ViewModel
     private TemplatesTabVM _templatesTab;
     private BranchesTabVM _branchesTab;
     private ActivityTabVM _activityTab;
+    private ReservePoolTabVM _reservePoolTab;
 
     [DataSourceProperty]
     public FeaturesTabVM FeaturesTab
@@ -68,6 +69,13 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _activityTab;
         private set { _activityTab = value; OnPropertyChanged(nameof(ActivityTab)); }
+    }
+
+    [DataSourceProperty]
+    public ReservePoolTabVM ReservePoolTab
+    {
+        get => _reservePoolTab;
+        private set { _reservePoolTab = value; OnPropertyChanged(nameof(ReservePoolTab)); }
     }
 
     // ── 表头状态 ──
@@ -184,6 +192,7 @@ public sealed class ControlPanelVM : ViewModel
                 OnPropertyChanged(nameof(ActiveTab));
                 RefreshTabVisibility();
                 if (value == 5) ActivityTab?.Refresh();
+                if (value == 6) ReservePoolTab?.Refresh();
             }
         }
     }
@@ -194,6 +203,7 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public bool IsTab3Active => _activeTab == 3;
     [DataSourceProperty] public bool IsTab4Active => _activeTab == 4;
     [DataSourceProperty] public bool IsTab5Active => _activeTab == 5;
+    [DataSourceProperty] public bool IsTab6Active => _activeTab == 6;
 
     [DataSourceProperty] public string Tab0Label => ControlPanelLoc.Tr("功能开关", "Features");
     [DataSourceProperty] public string Tab1Label => ControlPanelLoc.Tr("策略参数", "Strategy");
@@ -201,11 +211,12 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("兵员模板", "Templates");
     [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Branches");
     [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("状态一览", "Overview");
+    [DataSourceProperty] public string Tab6Label => ControlPanelLoc.Tr("B 池状态", "Reserve Pool");
     [DataSourceProperty] public string ActivityLogLabel => ControlPanelLoc.Tr("活动日志", "Activity log");
 
     private void RefreshTabVisibility()
     {
-        for (int i = 0; i < 6; i++) OnPropertyChanged($"IsTab{i}Active");
+        for (int i = 0; i < 7; i++) OnPropertyChanged($"IsTab{i}Active");
     }
 
     [DataSourceProperty]
@@ -263,7 +274,8 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
-        ActivityTab = new ActivityTabVM();
+        ActivityTab    = new ActivityTabVM();
+        ReservePoolTab = new ReservePoolTabVM();
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
@@ -287,6 +299,7 @@ public sealed class ControlPanelVM : ViewModel
     public void ExecuteSelectTab3() => ActiveTab = 3;
     public void ExecuteSelectTab4() => ActiveTab = 4;
     public void ExecuteSelectTab5() => ActiveTab = 5;
+    public void ExecuteSelectTab6() => ActiveTab = 6;
 
     /// <summary>关闭按钮 / ESC 调用。</summary>
     public void ExecuteClose()
@@ -369,7 +382,8 @@ public sealed class ControlPanelVM : ViewModel
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
-        ActivityTab = new ActivityTabVM();
+        ActivityTab    = new ActivityTabVM();
+        ReservePoolTab = new ReservePoolTabVM();
     }
 
     /// <summary>关闭警告横幅。</summary>
