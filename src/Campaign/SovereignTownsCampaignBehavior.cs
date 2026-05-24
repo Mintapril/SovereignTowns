@@ -41,6 +41,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private TransferDispatcher? _transferDispatcher;
     private PatrolDispatcher? _patrolDispatcher;
     private SallyDispatcher? _sallyDispatcher;
+    internal SovereignTowns.Capital.ReservePoolManager? _reservePoolManager;
+    private SovereignTowns.Capital.ReserveRecruiterDispatcher? _reserveRecruiterDispatcher;
 
     // B16.2: 静态 accessor — StSallyPartyComponent.NotifyDispatcherEnded 通过它通知 cooldown 重置。
     private static SallyDispatcher? _staticSallyDispatcher;
@@ -217,6 +219,14 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 _pendingCapitals = null;
             }
             _capitalRegistry.Initialize();
+
+            // PR-6：B 池管理器 — 在 CapitalRegistry 就绪后立即初始化，确保每座首府有 B 池。
+            _reservePoolManager = new SovereignTowns.Capital.ReservePoolManager(_capitalRegistry);
+            _reservePoolManager.Initialize();
+
+            // PR-7：B 池专用征兵队调度器。
+            _reserveRecruiterDispatcher = new SovereignTowns.Capital.ReserveRecruiterDispatcher(
+                _lifecycle, _capitalRegistry, _reservePoolManager);
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
             // T2: BattleLootManager 已删除（doc §20 #2）；所有 ST 队伍走基类自资金路径（§14 队伍资金）
@@ -463,6 +473,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             {
                 Upgrades.GarrisonXpInjector.GiveDailyXpToGarrison(settlement);
                 _prisonerRecruitmentManager?.OnDailyTickSettlement(settlement);
+                // PR-7：B 池征兵队调度（每首府每日一次，仅在 ReserveTemplate 非空且 ReservePoolCap > 0 时实际执行）。
+                try { _reserveRecruiterDispatcher?.OnDailyTick(settlement); }
+                catch (Exception ex) { Logger.Error("ReserveRecruiterDispatcher.OnDailyTick failed", ex); }
             }
 
             // P0-6 修复：刷新 SettlementsSnapshot,供 HTTP /api/settlements 端点读取(HTTP 线程
@@ -622,6 +635,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // B7.15 multi-clan：registry 内部转发到 oldOwner / newOwner clan 的 manager，
             // 并在 AI toggle 开启时给新获得城的 AI clan 自动 EnsureForClan。
             _capitalRegistry?.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);
+            // PR-6：首府易主后确保新首府有 B 池。
+            _reservePoolManager?.OnSettlementOwnerChanged();
         }
         catch (Exception ex)
         {
@@ -683,6 +698,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // ── 2) 链式反注册内部 manager（顺序：依赖端先 uninstall，registry 最后）
             try { _vanillaPatrolSuppressor?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaPatrolSuppressor failed", ex); }
             try { _vanillaSuppression?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaSuppressionManager failed", ex); }
+            try { _reservePoolManager?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall ReservePoolManager failed", ex); }
             try { _capitalRegistry?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall CapitalRegistry failed", ex); }
             try { _lifecycle?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall PartyLifecycleManager failed", ex); }
 
