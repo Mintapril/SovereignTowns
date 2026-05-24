@@ -1,13 +1,5 @@
 namespace SovereignTowns.Configuration;
 
-/// <summary>P3 时间展开 solver 各 tick 的威胁来源。详见 audits/2026-05-22-p3-lookahead-design.md §7。
-/// Newtonsoft 序列化为整数。</summary>
-public enum ForecastMode
-{
-    Flat,    // 所有 tick 用当前威胁,不前瞻
-    Threat,  // tick>0 用敌军 ETA 投影
-}
-
 /// <summary>财政自治 + 中央驻军调度器配置。详见两份设计文档。</summary>
 public sealed class FiscalAutonomyConfig
 {
@@ -27,8 +19,8 @@ public sealed class FiscalAutonomyConfig
     public float DisbandExcessThreshold  { get; set; } = 1.2f;
     public bool  DisbandUnaffordableExcess { get; set; } = true;
 
-    // ── 手动模式 ──
-    public bool  AllowManualGarrisonTargets { get; set; } = false;
+    // 2026-05-24:手动模式 AllowManualGarrisonTargets 已删除。驻军目标完全由调度器
+    // (AdequateFor 公式 + MCMF instruction)决定,不再保留用户手动入口。
 
     // ── 驻军 tier 口径 ──
     public int   AdequateBase            { get; set; } = 60;
@@ -84,9 +76,6 @@ public sealed class FiscalAutonomyConfig
     /// ~600 次增广、每次 ≈0.4ms,8/帧 ≈ 3ms/帧(远低于 64/帧的 ≈28ms)。仅影响分帧观感,不改求解结果。</summary>
     public int SspYieldEvery { get; set; } = 8;
 
-    /// <summary>P3 各 tick 威胁来源。默认 Flat(不前瞻)。</summary>
-    public ForecastMode ForecastMode { get; set; } = ForecastMode.Flat;
-
     // ── 时间展开调度器 value 函数曲线 ──
     /// <summary>威胁等级 → value 乘子。Safe/Low 锚定和平期,Med/High/Crit 决定战时涨兵幅度。</summary>
     public float ThreatWeightSafe     { get; set; } = 0.5f;
@@ -127,4 +116,22 @@ public sealed class FiscalAutonomyConfig
     /// <summary>D2 路线风险→成本 的标度乘子:成本加项 = 风险分 × 此值。
     /// 须与 routing(数百~千)可比。初值 10,须 in-game 调。</summary>
     public int DispatchRiskCostScale { get; set; } = 10;
+
+    // ── PR-1 (2026-05-24) EdgeCost 4 通道权重 ──
+    // 默认值保 PR-1 行为不变性（与旧硬编码 K = 20_000_000、单一 int cost 加成同效）。
+    // 后续 PR-3 暴露到 WebUI / Gauntlet 滑块；现在改任何字段均会改变求解行为。
+
+    /// <summary>EdgeCost 合成权重：gold 通道倍数。默认 1（行为不变）。</summary>
+    public int CostWeightGold { get; set; } = 1;
+
+    /// <summary>EdgeCost 合成权重：path-risk 通道倍数。默认 1（行为不变）。</summary>
+    public int CostWeightRisk { get; set; } = 1;
+
+    /// <summary>EdgeCost 合成权重：strategic 通道倍数。默认 1（行为不变）。</summary>
+    public int CostWeightStrategic { get; set; } = 1;
+
+    /// <summary>每 tick 占用一个 driver slot 的"时间机会成本"。替代旧硬编码 K。
+    /// 必须满足 TickHoldingValueK × HorizonTicks ≤ int.MaxValue（≈ 134M for HorizonTicks=16）
+    /// 且 TickHoldingValueK > 任意 per-edge strategic value（防符号反转）。默认 20_000_000 与旧 K 同值。</summary>
+    public int TickHoldingValueK { get; set; } = 20_000_000;
 }
