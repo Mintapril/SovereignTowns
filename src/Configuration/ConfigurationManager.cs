@@ -44,7 +44,7 @@ public static class ConfigurationManager
     private static string Tr(string zh, string en) => SovereignTowns.Common.LanguageProbe.Tr(zh, en);
 
     /// <summary>
-    /// B17.4 B1 / Issue #1：GlobalDefaults 或 BranchDefaults 变更后触发。
+    /// B17.4 B1 / Issue #1：GlobalDefaults 变更后触发。
     /// 参数：被改的 settlement.StringId，或 null 表示全局/未知（订阅者需对所有 in-flight 队伍重规划）。
     /// 永远从主线程触发 —— Web 路径走 <see cref="WebConfigGameThreadSync.RequestConfigChanged"/>
     /// 入队，下一次 Drain 在 campaign tick 主线程上调用 <see cref="RaiseConfigChanged"/>。
@@ -196,42 +196,6 @@ public static class ConfigurationManager
         {
             Logger.Error("GetRuleFor failed; returning a fresh default rule", ex);
             return TownGarrisonRule.CreateDefault();
-        }
-    }
-
-    /// <summary>
-    /// 为某 Town 取非首府规则（BranchRule）。
-    /// 玩家氏族：直接返回 <see cref="GlobalConfig.BranchDefaults"/> 的 clone。
-    /// AI 氏族（启用 ApplyToAiSettlementsToo 时）：在 BranchDefaults clone 之上，
-    /// 用 <see cref="SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower"/>
-    /// 动态算 TargetPower；LowTierMinFraction 沿用全局 BranchDefaults。
-    /// </summary>
-    public static BranchRule GetBranchRuleFor(Town town)
-    {
-        try
-        {
-            BranchRule rule;
-            bool needsAiTarget;
-            lock (_gate)
-            {
-                rule = (_current.BranchDefaults ?? BranchRule.CreateDefault()).Clone();
-                needsAiTarget = town?.OwnerClan != null
-                    && town.OwnerClan != Clan.PlayerClan
-                    && _current.EnabledFeatures?.ApplyToAiSettlementsToo == true;
-            }
-
-            if (needsAiTarget)
-            {
-                int aiTarget = SovereignTowns.Evaluators.GarrisonPowerEvaluator.ComputeAiVanillaTargetPower(town);
-                if (aiTarget > 0) rule.TargetPower = aiTarget;
-            }
-
-            return rule;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("GetBranchRuleFor failed; returning a fresh default branch rule", ex);
-            return BranchRule.CreateDefault();
         }
     }
 
@@ -545,7 +509,6 @@ public static class ConfigurationManager
             // Newtonsoft 不会自动调用 POCO 的字段默认初始化器去填 null 嵌套对象，
             // 这里兜底确保后续校验/调用不会 NRE。
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
-            parsed.BranchDefaults ??= BranchRule.CreateDefault();
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.Thresholds ??= new PartyThresholds();
@@ -683,15 +646,6 @@ public static class ConfigurationManager
             return false;
         }
         if (!ValidateRule(config.GlobalDefaults, "GlobalDefaults", out reason))
-        {
-            return false;
-        }
-        if (config.BranchDefaults is null)
-        {
-            reason = Tr("BranchDefaults 为 null", "BranchDefaults is null");
-            return false;
-        }
-        if (!ValidateBranchRule(config.BranchDefaults, "BranchDefaults", out reason))
         {
             return false;
         }
@@ -849,6 +803,13 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.SallyTeamSize 非法 ({f.SallyTeamSize})；范围 [5, 200]", $"FiscalAutonomy.SallyTeamSize invalid ({f.SallyTeamSize}); [5, 200]"); return false; }
         if (f.MaxSallyPartiesPerCity < 0 || f.MaxSallyPartiesPerCity > 5)
         { reason = Tr($"FiscalAutonomy.MaxSallyPartiesPerCity 非法 ({f.MaxSallyPartiesPerCity})；范围 [0, 5]", $"FiscalAutonomy.MaxSallyPartiesPerCity invalid ({f.MaxSallyPartiesPerCity}); [0, 5]"); return false; }
+        // ── PR-5' (2026-05-24) 新字段校验 ──
+        if (!IsFiniteFloat(f.TargetFraction) || f.TargetFraction < 0.1f || f.TargetFraction > 1.0f)
+        { reason = Tr($"FiscalAutonomy.TargetFraction 非法 ({f.TargetFraction})；范围 [0.1, 1.0]", $"FiscalAutonomy.TargetFraction invalid ({f.TargetFraction}); [0.1, 1.0]"); return false; }
+        if (!IsFiniteFloat(f.TownStrategicBonus) || f.TownStrategicBonus < 1f || f.TownStrategicBonus > 3f)
+        { reason = Tr($"FiscalAutonomy.TownStrategicBonus 非法 ({f.TownStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.TownStrategicBonus invalid ({f.TownStrategicBonus}); [1, 3]"); return false; }
+        if (f.BaseValuePerTier < 0 || f.BaseValuePerTier > 10000)
+        { reason = Tr($"FiscalAutonomy.BaseValuePerTier 非法 ({f.BaseValuePerTier})；范围 [0, 10000]", $"FiscalAutonomy.BaseValuePerTier invalid ({f.BaseValuePerTier}); [0, 10000]"); return false; }
         reason = "";
         return true;
     }
@@ -958,54 +919,8 @@ public static class ConfigurationManager
             reason = Tr($"{ctx}.TargetTotalCount {rule.TargetTotalCount} 超过上限 100000", $"{ctx}.TargetTotalCount {rule.TargetTotalCount} exceeds upper bound 100000");
             return false;
         }
-        if (rule.ExactTroopTemplate is null)
-        {
-            reason = Tr($"{ctx}.ExactTroopTemplate 为 null", $"{ctx}.ExactTroopTemplate is null");
-            return false;
-        }
-        foreach (var kv in rule.ExactTroopTemplate)
-        {
-            if (string.IsNullOrWhiteSpace(kv.Key))
-            {
-                reason = Tr($"{ctx}.ExactTroopTemplate 包含空的兵种 id", $"{ctx}.ExactTroopTemplate contains empty troop id");
-                return false;
-            }
-            if (float.IsNaN(kv.Value) || float.IsInfinity(kv.Value) || kv.Value < 0f || kv.Value > 1f)
-            {
-                reason = Tr($"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} 不在 [0,1] 占比范围", $"{ctx}.ExactTroopTemplate['{kv.Key}'] = {kv.Value} not in ratio range [0,1]");
-                return false;
-            }
-        }
-        if (!rule.UseGenericMatching && rule.ExactTroopTemplate.Count > 0)
-        {
-            float exactTemplateSum = 0f;
-            foreach (var ratio in rule.ExactTroopTemplate.Values)
-            {
-                exactTemplateSum += ratio;
-            }
-            if (exactTemplateSum < RatioSumMin || exactTemplateSum > RatioSumMax)
-            {
-                reason = Tr($"{ctx}.ExactTroopTemplate 占比合计={exactTemplateSum:F3} 超出 [{RatioSumMin},{RatioSumMax}] 区间", $"{ctx}.ExactTroopTemplate ratio sum={exactTemplateSum:F3} outside [{RatioSumMin},{RatioSumMax}]");
-                return false;
-            }
-        }
-        // Vanilla CharacterObject.Tier 实际范围 1..6（spnpccharacters.xml + native CharacterTiers），
-        // 上限设 6 防止玩家手填 7 后通用匹配始终查不到兵种、模式静默失效。
-        if (rule.MinTier < 1 || rule.MinTier > 6)
-        {
-            reason = Tr($"{ctx}.MinTier {rule.MinTier} 必须在 [1,6]", $"{ctx}.MinTier {rule.MinTier} must be in [1,6]");
-            return false;
-        }
-        if (rule.MaxTier > 6)
-        {
-            reason = Tr($"{ctx}.MaxTier {rule.MaxTier} 超过 vanilla 上限 6", $"{ctx}.MaxTier {rule.MaxTier} exceeds vanilla upper bound 6");
-            return false;
-        }
-        if (rule.MaxTier < rule.MinTier)
-        {
-            reason = Tr($"{ctx}.MaxTier {rule.MaxTier} 小于 MinTier {rule.MinTier}", $"{ctx}.MaxTier {rule.MaxTier} < MinTier {rule.MinTier}");
-            return false;
-        }
+        // PR-5'(2026-05-24)：ExactTroopTemplate / UseGenericMatching / MinTier / MaxTier 已删除。
+        // 所有 settlement 使用通用匹配，tier 由 MCMF solver 自由选择。
         if (!IsRatio(rule.MinimumDefenderRatio))
         {
             reason = Tr($"{ctx}.MinimumDefenderRatio 非法 ({rule.MinimumDefenderRatio})；必须在 [0,1] 区间", $"{ctx}.MinimumDefenderRatio invalid ({rule.MinimumDefenderRatio}); must be in [0,1]");
@@ -1065,17 +980,7 @@ public static class ConfigurationManager
         return true;
     }
 
-    private static bool ValidateBranchRule(BranchRule rule, string ctx, out string reason)
-    {
-        if (rule.TargetPower < 0)
-        { reason = Tr($"{ctx}.TargetPower 小于 0", $"{ctx}.TargetPower < 0"); return false; }
-        if (rule.TargetPower > 100_000)
-        { reason = Tr($"{ctx}.TargetPower {rule.TargetPower} 超过上限 100000", $"{ctx}.TargetPower {rule.TargetPower} exceeds upper bound 100000"); return false; }
-        if (!IsRatio(rule.LowTierMinFraction))
-        { reason = Tr($"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} 必须在 [0,1]", $"{ctx}.LowTierMinFraction {rule.LowTierMinFraction} must be in [0,1]"); return false; }
-        reason = "";
-        return true;
-    }
+    // PR-5'(2026-05-24): ValidateBranchRule 已删除，BranchRule 整体移除。
 
     private static bool ValidateRatio(float value, string field, out string reason)
     {

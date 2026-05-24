@@ -11,19 +11,6 @@ public sealed class TownGarrisonRule
     /// <summary>目标驻军总人数（不含贵族军官/英雄）。B7.20：默认 150。</summary>
     public int TargetTotalCount { get; set; } = 150;
 
-    /// <summary>
-    /// true = 使用文化无关的兵种比例 + Tier 范围匹配；false = 使用按 stringId 精确指定的兵员模板（占比模式）。
-    /// </summary>
-    public bool UseGenericMatching { get; set; } = true;
-
-    /// <summary>
-    /// 精确兵员模板：CharacterObject.StringId -> 占比（0..1，约和为 1，自动归一化）。
-    /// 当 <see cref="UseGenericMatching"/> 为 false 时，招募和升级按 ratio × <see cref="TargetTotalCount"/>
-    /// 算每个 stringId 的目标人数；招募和升级会按升级树匹配这些目标兵种。
-    /// B7.20 起从绝对数量改为占比，避免与 TargetTotalCount 双重声明冲突。
-    /// </summary>
-    public Dictionary<string, float> ExactTroopTemplate { get; set; } = new();
-
     /// <summary>骑兵兵种占比。Cavalry + HorseArcher + Infantry + Ranged 期望约等于 1.0。</summary>
     public float CavalryRatio { get; set; } = 0.20f;
 
@@ -50,16 +37,12 @@ public sealed class TownGarrisonRule
     /// </summary>
     public string GenericCultureFilter { get; set; } = "PlayerCulture";
 
-    /// <summary>允许招募的最低 Tier（含）。通用匹配模式下作为硬边界，与 MaxTier 一起圈定可招募范围。</summary>
-    /// <remarks>B7.10: 之前还有 Tier1..6Ratio 用于按 tier 分桶；用户决策简化为只看 role 比例，
-    /// tier 维度仅保留 MinTier/MaxTier 硬边界。</remarks>
-    public int MinTier { get; set; } = 2;
-
-    /// <summary>允许招募的最高 Tier（含）。与 MinTier 配对使用。</summary>
-    public int MaxTier { get; set; } = 5;
-
     /// <summary>显式允许的文化 stringId 列表（空 = 全部允许）。</summary>
     public List<string> AllowedCultureIds { get; set; } = new();
+
+    // PR-5'(2026-05-24)：MinTier / MaxTier 已删除。solver TierDefs 单段 cap = PartySizeLimit × TargetFraction，
+    // tier 自由由 MCMF 选择（通用匹配 + 无硬 tier 约束）。
+    // 已有 JSON 残留字段被 Newtonsoft 忽略并在下次保存时 drop。
 
     /// <summary>优先招募的兵种 stringId 列表。注意：本字段允许玩家显式指定，但 mod 默认 **不预填任何兵种 id**（RBM 兼容硬规则）。</summary>
     public List<string> PriorityTroopIds { get; set; } = new();
@@ -108,15 +91,11 @@ public sealed class TownGarrisonRule
     public TownGarrisonRule Clone() => new TownGarrisonRule
     {
         TargetTotalCount = this.TargetTotalCount,
-        UseGenericMatching = this.UseGenericMatching,
-        ExactTroopTemplate = new Dictionary<string, float>(this.ExactTroopTemplate ?? new Dictionary<string, float>()),
         CavalryRatio = this.CavalryRatio,
         HorseArcherRatio = this.HorseArcherRatio,
         InfantryRatio = this.InfantryRatio,
         RangedRatio = this.RangedRatio,
         GenericCultureFilter = this.GenericCultureFilter,
-        MinTier = this.MinTier,
-        MaxTier = this.MaxTier,
         AllowedCultureIds = new List<string>(this.AllowedCultureIds ?? new List<string>()),
         PriorityTroopIds = new List<string>(this.PriorityTroopIds ?? new List<string>()),
         BannedTroopIds = new List<string>(this.BannedTroopIds ?? new List<string>()),

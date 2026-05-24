@@ -64,9 +64,7 @@ public static class AiCulturePresets
         if (!_ratios.TryGetValue(cultureStringId!, out var r)) return null;
 
         var rule = TownGarrisonRule.CreateDefault();
-        rule.UseGenericMatching = true;
-        rule.MinTier = 1;
-        rule.MaxTier = 6;
+        // PR-5'(2026-05-24): UseGenericMatching/MinTier/MaxTier removed from TownGarrisonRule; generic matching is always on.
         rule.AllowedCultureIds = new List<string> { cultureStringId! };
         rule.CavalryRatio = r.Cav;
         rule.HorseArcherRatio = r.HorseArcher;

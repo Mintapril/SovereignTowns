@@ -15,9 +15,8 @@ public sealed class GlobalConfig
     /// <summary>首府（capital town，由 CapitalRegistry 标记）的驻军规则。模板 / 比例 / Tier 等所有字段。</summary>
     public TownGarrisonRule GlobalDefaults { get; set; } = TownGarrisonRule.CreateDefault();
 
-    /// <summary>所有非首府（branch town / castle）共享的极简规则。
-    /// 玩家氏族用此字段的 TargetPower；AI 氏族走 GarrisonPowerEvaluator.ComputeAiVanillaTargetPower。</summary>
-    public BranchRule BranchDefaults { get; set; } = BranchRule.CreateDefault();
+    // PR-5'(2026-05-24)：BranchDefaults (BranchRule) 已删除。所有城镇/城堡使用统一调度路径，
+    // 只以 typeBonus 乘子区分 Castle/Town/Capital。BranchRule.cs 同步删除。
 
     /// <summary>逐特性开关。各 MVP 阶段渐进开启。</summary>
     public EnabledFeatures EnabledFeatures { get; set; } = new();
@@ -60,7 +59,6 @@ public sealed class GlobalConfig
         ConfigVersion = ConfigurationManager.CurrentConfigVersion,
         LastModified = "",
         GlobalDefaults = TownGarrisonRule.CreateDefault(),
-        BranchDefaults = BranchRule.CreateDefault(),
         EnabledFeatures = new EnabledFeatures(),
         ClanPatrol = new ClanPatrolConfig(),
         Thresholds = new PartyThresholds(),
@@ -260,14 +258,8 @@ public sealed class PartyThresholds
     /// <summary>R2：敌方需连续可见 N 个 hourly tick 才触发 Sally。原硬编码 3。范围 [1, 48]。</summary>
     public int SallyMinSustainedTicks { get; set; } = 3;
 
-    /// <summary>R4：自动升级触发：低 Tier (T1+T2) 占总兵比例 ≥ 此值时尝试升级。原硬编码 0.30。范围 [0, 1]。</summary>
-    public float AutoUpgradeMinTierRatio { get; set; } = 0.30f;
-
-    /// <summary>R4：自动升级预算最小值（实际 = max(BudgetLimit/4, 此值)）。原硬编码 500。范围 [0, 50000]。</summary>
-    public int AutoUpgradeMinBudget { get; set; } = 500;
-
-    /// <summary>R4：自动升级单次最大升级数。原 TryUpgradeGarrison(maxUpgradesPerCall:20) 硬编码。范围 [1, 500]。</summary>
-    public int AutoUpgradeMaxPerCall { get; set; } = 20;
+    // 2026-05-24:R4 AutoUpgrade* 三字段已删除。升级触发权移交 vanilla PartyUpgraderCampaignBehavior
+    // (MCMF 控制流量,vanilla 加权随机执行)。原 TroopUpgradeService 路径下线。
 
     // T1 重整 2026-05-18：4 类 ST 队伍 seed gold 统一到 StPartyComponent.DefaultSeedGold (2000)，
     // 不再可配置；删除 RecruiterSeedGold / SallySeedGold / TransferSeedGold 三字段（H7/H8 历史项）。

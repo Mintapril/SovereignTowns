@@ -152,4 +152,18 @@ public sealed class FiscalAutonomyConfig
 
     /// <summary>单 settlement 最多同时存在的 sally 队数（cap）。默认 1，避免 sally 风暴。</summary>
     public int MaxSallyPartiesPerCity { get; set; } = 1;
+
+    // ── PR-5' (2026-05-24) 大简化新字段 ──
+
+    /// <summary>每城驻军目标比例：targetHeads = vanilla PartySizeLimit × 此值。默认 0.7。
+    /// 替代旧 floor/adequate/hardCap 三段公式。</summary>
+    public float TargetFraction { get; set; } = 0.7f;
+
+    /// <summary>城镇 (Town, 非城堡) strategic 乘子额外加成。城堡 = 1.0。默认 1.3。
+    /// 与 CapitalStrategicBonus 叠乘（首府且为城镇时 = 1.3 × CapitalStrategicBonus）。</summary>
+    public float TownStrategicBonus { get; set; } = 1.3f;
+
+    /// <summary>holding edge value 基常数（PR-5' 替代旧 ValueCoreBase / ValueFloorBase 多段）。
+    /// 单段 value = 此值 × threat × strat × power(tier)。默认 800。</summary>
+    public int BaseValuePerTier { get; set; } = 800;
 }
