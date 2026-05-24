@@ -3,7 +3,6 @@ using TaleWorlds.CampaignSystem;
 using TaleWorlds.Library;
 using SovereignTowns.Audit;
 using SovereignTowns.Economy;
-using SovereignTowns.WebConfig;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Ui.ControlPanel;
@@ -13,10 +12,9 @@ namespace SovereignTowns.Ui.ControlPanel;
 /// 汇总中央调度器的关键决策：氏族金库 / 驻军工资预算概览、各城镇城堡的驻军（人数）
 /// 与收支、今日概况计数、近期动态流（招募 / 调运 / 巡逻 / 出击 / 预算调整 / 超额遣散）。
 /// 纯展示；ControlPanelVM 在 ActiveTab 切到 6 时调 Refresh()。
-/// 面板打开期间游戏已暂停 → 快照即当前态，无需轮询（WebUI 端才是真实时）。
+/// 面板打开期间游戏已暂停 → 快照即当前态，无需轮询。
 ///
-/// 数据源均为主线程产出的纯数值快照（FinancialSnapshot / DailyActivityCounters /
-/// ActivityFeed）—— 与 WebUI 的 /api/finance + /api/activity 同源。
+/// 数据源均为主线程产出的纯数值快照（FinancialSnapshot / DailyActivityCounters / ActivityFeed）。
 /// </summary>
 public sealed class ActivityTabVM : ViewModel
 {

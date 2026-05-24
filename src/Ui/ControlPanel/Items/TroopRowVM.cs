@@ -1,6 +1,5 @@
 using System;
 using TaleWorlds.Library;
-using SovereignTowns.WebConfig;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
@@ -43,7 +42,7 @@ public sealed class TroopRowVM : ViewModel
         ? ControlPanelLoc.Tr("✓ 已加", "✓ Added")
         : ControlPanelLoc.Tr("＋ 加入", "+ Add");
 
-    public TroopRowVM(TroopDumper.TroopEntry entry, bool isAdded, Action<string> onToggle)
+    public TroopRowVM(TroopCatalog.TroopEntry entry, bool isAdded, Action<string> onToggle)
     {
         _onToggle = onToggle;
         Id = entry.id;

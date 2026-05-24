@@ -309,6 +309,7 @@ public sealed class CapitalLogisticsManager
         {
             var inPlaceInstructions = new List<InPlaceRecruitInstruction>();
             var recruiterInstructions = new List<RecruiterPartyInstruction>();
+            var honorGuardInstructions = new List<HonorGuardRecruiterInstruction>();
 
             foreach (var instruction in instructions)
             {
@@ -326,6 +327,11 @@ public sealed class CapitalLogisticsManager
                 if (instruction is RecruiterPartyInstruction recruiter)
                 {
                     recruiterInstructions.Add(recruiter);
+                    continue;
+                }
+                if (instruction is HonorGuardRecruiterInstruction hg)
+                {
+                    honorGuardInstructions.Add(hg);
                     continue;
                 }
 
@@ -358,6 +364,25 @@ public sealed class CapitalLogisticsManager
                     manager, first.Town, first.ReturnSettlement, first.Role, itinerary, count);
                 if (ok) accepted++;
                 else skipped++;
+            }
+
+            // 卫队征兵队：lifecycle cap=1 per home，MCMF 可能出多条；只接 Count 最大的那条（首发即满）。
+            // 其余跳过 → 下个 logistics tick 重 solve、按更新后的 deficit 重新决策。
+            if (honorGuardInstructions.Count > 0)
+            {
+                HonorGuardRecruiterInstruction? best = null;
+                foreach (var hg in honorGuardInstructions)
+                {
+                    if (best == null || hg.Count > best.Count) best = hg;
+                }
+                int restSkip = honorGuardInstructions.Count - 1;
+                if (best != null)
+                {
+                    bool ok = ExecuteHonorGuardDispatch(manager, best);
+                    if (ok) accepted++;
+                    else skipped++;
+                }
+                if (restSkip > 0) skipped += restSkip;
             }
         }
         catch (Exception ex)
@@ -475,6 +500,151 @@ public sealed class CapitalLogisticsManager
             Logger.Error($"CapitalLogisticsManager.RouteRiskScore failed (home='{home?.StringId}')", ex);
             return 0f;
         }
+    }
+
+    /// <summary>
+    /// 派一支卫队招募队（HonorGuardRecruiterPartyComponent）。从 instruction.CandidateTroopIds 与
+    /// instruction.TargetVillage 的 notable.VolunteerTypes 交集中挑 deficit 最大的 troopId。
+    /// lifecycle cap=1 per home 已由 PartyLifecycleManager 守护：派之前再次确认。
+    /// 与 RecruiterDispatch 同走 D1 路径风险否决。
+    /// </summary>
+    private bool ExecuteHonorGuardDispatch(CapitalManager manager, HonorGuardRecruiterInstruction instruction)
+    {
+        try
+        {
+            var capital = manager.GetCapital();
+            var capitalSettlement = capital?.Settlement;
+            if (capital == null || capitalSettlement == null || instruction.Capital != capitalSettlement)
+            {
+                Logger.Warn($"HonorGuard dispatch: capital mismatch (instruction.Capital={instruction.Capital?.StringId})");
+                return false;
+            }
+
+            var village = instruction.TargetVillage;
+            if (village == null || !village.IsVillage)
+            {
+                Logger.Warn($"HonorGuard dispatch: invalid target village '{village?.StringId}'");
+                return false;
+            }
+
+            // lifecycle cap=1 守护
+            var lifecycle = SovereignTowns.Campaign.SovereignTownsCampaignBehavior.Instance?.Lifecycle;
+            if (lifecycle == null)
+            {
+                Logger.Warn("HonorGuard dispatch: lifecycle not available");
+                return false;
+            }
+            if (!lifecycle.CanCreateAnotherParty(capitalSettlement,
+                    SovereignTowns.Lifecycle.PartyLifecycleManager.KindHonorGuardRecruiter))
+            {
+                Logger.Debug($"HonorGuard dispatch skipped: '{capitalSettlement.StringId}' already has an in-flight honor-guard recruiter");
+                return false;
+            }
+
+            // D1 风险否决
+            var riskCfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+            if (riskCfg.DispatchRiskEnabled)
+            {
+                float risk = RouteRiskScore(capitalSettlement, new[] { village });
+                if (risk >= riskCfg.DispatchRiskVetoThreshold)
+                {
+                    Logger.Info(
+                        $"DISPATCH-RISK HonorGuard skipped: route risk {risk:F0} ≥ threshold " +
+                        $"{riskCfg.DispatchRiskVetoThreshold:F0} home='{capitalSettlement.StringId}' village='{village.StringId}'");
+                    return false;
+                }
+            }
+
+            // 从 candidateTroopIds ∩ village.VolunteerTypes 中挑 deficit 最大的 troopId。
+            var template = ConfigurationManager.Current?.FiscalAutonomy?.HonorGuardTemplate;
+            var pool = SovereignTowns.Capital.HonorGuardManager.GetPoolStatic(capitalSettlement);
+            string? bestTroopId = null;
+            int bestDeficit = 0;
+            foreach (var id in instruction.CandidateTroopIds)
+            {
+                if (!VillageOffersTroop(village, id)) continue;
+                int target = (template != null && template.TryGetValue(id, out var t)) ? t : 0;
+                int inPool = CountTroopInPoolRoster(pool, id);
+                int deficit = target - inPool;
+                if (deficit > bestDeficit) { bestDeficit = deficit; bestTroopId = id; }
+            }
+            if (bestTroopId == null)
+            {
+                Logger.Debug($"HonorGuard dispatch: village '{village.StringId}' offers none of the template's candidate troops; skipping");
+                return false;
+            }
+
+            int sendCount = Math.Max(1, Math.Min(instruction.Count, bestDeficit));
+
+            var party = SovereignTowns.Parties.HonorGuardRecruiterPartyComponent.Create(
+                capitalSettlement, village, bestTroopId, sendCount);
+            if (party == null) return false;
+
+            if (party.PartyComponent is SovereignTowns.Parties.HonorGuardRecruiterPartyComponent hgrc)
+            {
+                if (!SovereignTowns.Parties.StPartyComponent.TrySeedAndBuyInitialFood(
+                        hgrc, party, capitalSettlement,
+                        SovereignTowns.Economy.ExpenseCategory.RecruiterSeed,
+                        capitalSettlement.OwnerClan,
+                        $"honor_guard_recruiter home={capitalSettlement.StringId} troop={bestTroopId}"))
+                {
+                    SovereignTowns.Lifecycle.PartyMergeService.Instance?.DestroyAndUntrack(
+                        party, "HonorGuard seed failed", deferIfInMapEvent: false);
+                    return false;
+                }
+            }
+
+            lifecycle.RegisterTrackedParty(
+                party, capitalSettlement,
+                SovereignTowns.Lifecycle.PartyLifecycleManager.KindHonorGuardRecruiter);
+
+            try { party.SetMoveGoToSettlement(village, TaleWorlds.CampaignSystem.Party.MobileParty.NavigationType.Default, false); }
+            catch (Exception ex) { Logger.Error($"HonorGuard dispatch: SetMoveGoToSettlement failed for '{party.StringId}'", ex); }
+
+            Logger.Info($"HonorGuard dispatched '{party.StringId}' to '{village.Name}' troop='{bestTroopId}' count={sendCount}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("ExecuteHonorGuardDispatch failed", ex);
+            return false;
+        }
+    }
+
+    private static bool VillageOffersTroop(Settlement village, string troopId)
+    {
+        if (village?.Notables == null || string.IsNullOrEmpty(troopId)) return false;
+        try
+        {
+            foreach (var notable in village.Notables)
+            {
+                if (notable?.CanHaveRecruits != true) continue;
+                var vt = notable.VolunteerTypes;
+                if (vt == null) continue;
+                foreach (var co in vt)
+                {
+                    if (co?.StringId == troopId) return true;
+                }
+            }
+            return false;
+        }
+        catch { return false; }
+    }
+
+    private static int CountTroopInPoolRoster(TaleWorlds.CampaignSystem.Party.MobileParty? pool, string troopId)
+    {
+        if (pool?.MemberRoster == null || string.IsNullOrEmpty(troopId)) return 0;
+        try
+        {
+            int n = 0;
+            for (int i = 0; i < pool.MemberRoster.Count; i++)
+            {
+                var e = pool.MemberRoster.GetElementCopyAtIndex(i);
+                if (e.Character?.StringId == troopId) n += e.Number;
+            }
+            return n;
+        }
+        catch { return 0; }
     }
 
     private bool ExecuteRecruiterDispatch(
@@ -661,15 +831,13 @@ public sealed class CapitalLogisticsManager
 
     /// <summary>
     /// 手动驻军目标模式下,Pass A 的推荐值与玩家手动目标的对比评估。按 clan StringId 分组。
-    /// 镜像 <see cref="WebConfig.SettlementsSnapshot"/> 的静态线程安全模式 —— HTTP / 控制面板
-    /// handler 跑在 ThreadPool 线程,而写入发生在 Campaign 主线程(daily evaluate)。
-    /// 引用赋值在 CLR 上原子;<see cref="Volatile"/> 套一层 release-acquire 语义,无需锁。
-    /// DTO 只持 string / 数值,绝不持 Settlement / Clan vanilla 引用。
+    /// 控制面板 handler 在主线程读取;写入也在主线程(daily evaluate)。引用赋值在 CLR 上原子;
+    /// <see cref="Volatile"/> 套一层 release-acquire 语义,无需锁。DTO 只持 string / 数值。
     /// </summary>
     private static IReadOnlyDictionary<string, IReadOnlyList<GarrisonAssessment>> _latestAssessments
         = new Dictionary<string, IReadOnlyList<GarrisonAssessment>>();
 
-    /// <summary>控制面板 / WebUI handler 调用:读最近一份评估快照(引用赋值原子,零拷贝)。</summary>
+    /// <summary>控制面板调用:读最近一份评估快照(引用赋值原子,零拷贝)。</summary>
     public static IReadOnlyDictionary<string, IReadOnlyList<GarrisonAssessment>> LatestAssessments
         => Volatile.Read(ref _latestAssessments)
            ?? new Dictionary<string, IReadOnlyList<GarrisonAssessment>>();
@@ -680,7 +848,7 @@ public sealed class CapitalLogisticsManager
     // ── 财政自治财务视图快照 ──────────────────────────────────────────────────
 
     /// <summary>
-    /// 在 Campaign 主线程调用:对该受管氏族产出一份 <see cref="WebConfig.FinancialSnapshot.ClanFinance"/>
+    /// 在 Campaign 主线程调用:对该受管氏族产出一份 FinancialSnapshot.ClanFinance
     /// (金库余额/缓冲上限/日均开销 + 各受管领地单城 P&amp;L),整体替换该 clan 在快照中的条目。
     /// 收入用 <see cref="Models.STClanFinanceModel.SafeTownIncome"/> 重算;推荐头数取调度器最近一次
     /// 求解的目标缓存。任何失败保留旧快照不变(本方法整体 try/catch)。
@@ -696,6 +864,12 @@ public sealed class CapitalLogisticsManager
             if (clan == null) return;
             string clanId = clan.StringId ?? "";
             if (string.IsNullOrEmpty(clanId)) return;
+
+            // 发布 player clan id 给 FinancialSnapshot 消费者（ActivityTabVM 用此筛选玩家氏族条目）。
+            if (clan == TaleWorlds.CampaignSystem.Clan.PlayerClan)
+            {
+                Economy.FinancialSnapshot.SetPlayerClanId(clanId);
+            }
 
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
 
@@ -723,7 +897,7 @@ public sealed class CapitalLogisticsManager
             // 构造廉价、无状态，直接 new 一份用于 SafeTownIncome 调用。
             var financeModel = new Models.STClanFinanceModel();
 
-            var cf = new WebConfig.FinancialSnapshot.ClanFinance
+            var cf = new Economy.FinancialSnapshot.ClanFinance
             {
                 ClanId = clanId,
                 ClanName = clan.Name?.ToString() ?? clanId,
@@ -741,13 +915,13 @@ public sealed class CapitalLogisticsManager
                     long wage = 0;
                     var gp = town.GarrisonParty;
                     if (gp != null && gp.IsActive) wage = Math.Max(0, gp.TotalWage);
-                    // 防御性上界 10000，与 SettlementsSnapshot.Refresh 的驻军头数钳制口径一致。
+                    // 防御性上界 10000，应付存档里偶发异常 roster。
                     int current = Math.Min(gp?.MemberRoster?.TotalManCount ?? 0, 10000);
                     // 推荐驻军取调度器 solver 最近一次完成的目标(玩家 value* 调参在此体现);
                     // 缓存未就绪(首个求解未完成)→ 返回 0。
                     int recommended = ResolveRecommendedGarrison(clan, s);
 
-                    cf.Settlements.Add(new WebConfig.FinancialSnapshot.SettlementPnl
+                    cf.Settlements.Add(new Economy.FinancialSnapshot.SettlementPnl
                     {
                         SettlementId = s.StringId ?? "",
                         Name = s.Name?.ToString() ?? s.StringId ?? "",
@@ -767,7 +941,7 @@ public sealed class CapitalLogisticsManager
                 }
             }
 
-            WebConfig.FinancialSnapshot.ReplaceClan(clanId, cf);
+            Economy.FinancialSnapshot.ReplaceClan(clanId, cf);
         }
         catch (Exception ex)
         {

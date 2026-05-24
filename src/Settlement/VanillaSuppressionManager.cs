@@ -49,7 +49,7 @@ public sealed class VanillaSuppressionManager
     private bool _initialized;
 
     /// <summary>
-    /// 全局单例引用，让 WebConfigEndpoints 在 PUT /api/config / POST /api/reload 后能调到
+    /// 全局单例引用，让 ConfigurationManager.OnConfigChanged 订阅方在配置 reload 后能调到
     /// <see cref="ApplyToAllSettlements"/>，避免 toggle 后需要重启游戏。
     /// CampaignBehavior 析构后置 null。
     /// </summary>

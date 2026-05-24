@@ -141,6 +141,17 @@
                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
                           </Children>
                         </ButtonWidget>
+                        <ButtonWidget DoNotPassEventsToChildren="true"
+                                      Command.Click="ExecuteSelectTab6" IsSelected="@IsTab6Active"
+                                      UpdateChildrenStates="true"
+                                      WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
+                                      SuggestedHeight="52" MarginBottom="7" Brush="Header.Tab.Center">
+                          <Children>
+                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                        Brush="Clan.TabControl.Text" Text="@Tab6Label"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Children>
+                        </ButtonWidget>
 
                         <!-- 活动日志 -->
                         <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginTop="6">
@@ -1013,6 +1024,70 @@
                                         </ScrollbarWidget>
                                       </Children>
                                     </Widget>
+                                  </Children>
+                                </Widget>
+
+                                <!-- ════ Tab 6：卫队 ════ -->
+                                <Widget IsVisible="@IsTab6Active"
+                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
+                                  <Children>
+                                    <ListPanel DataSource="{HonorGuardTab}"
+                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                               StackLayout.LayoutMethod="VerticalBottomToTop">
+                                      <Children>
+                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    Brush="Clan.TabControl.Text" Text="@Title" HorizontalAlignment="Center" />
+                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    Brush="SPOptions.Slider.Value.Text" Text="@Intro"
+                                                    MarginTop="6" MarginBottom="14" />
+
+                                        <!-- 三个指标格：状态 / 当前头数 / 容量上限 -->
+                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="80"
+                                                   StackLayout.LayoutMethod="HorizontalLeftToRight">
+                                          <Children>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="3" MarginRight="3">
+                                              <Children>
+                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                        Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
+                                                  <Children>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="Clan.NameTitle.Text" Text="@PoolStatus" HorizontalAlignment="Center" />
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="3" MarginRight="3">
+                                              <Children>
+                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                        Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
+                                                  <Children>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="Clan.NameTitle.Text" Text="@PoolHeadcount" HorizontalAlignment="Center" />
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                            <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" MarginLeft="3" MarginRight="3">
+                                              <Children>
+                                                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                                                        Sprite="BlankWhiteSquare_9" Color="#000000FF" AlphaFactor="0.4" />
+                                                <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                           StackLayout.LayoutMethod="VerticalBottomToTop" VerticalAlignment="Center">
+                                                  <Children>
+                                                    <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                                Brush="Clan.NameTitle.Text" Text="@PoolCap" HorizontalAlignment="Center" />
+                                                  </Children>
+                                                </ListPanel>
+                                              </Children>
+                                            </Widget>
+                                          </Children>
+                                        </ListPanel>
+                                      </Children>
+                                    </ListPanel>
                                   </Children>
                                 </Widget>
 

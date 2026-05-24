@@ -175,7 +175,7 @@ public static class DecisionAuditLogger
                     break;
             }
 
-            // B17.5：翻译为玩家可读动态 → 全局 ActivityFeed(游戏内控制面板 + WebUI 共用)。
+            // B17.5：翻译为玩家可读动态 → 全局 ActivityFeed（游戏内控制面板展示）。
             var narrated = ActivityNarrator.Narrate(decisionType, decisionJson);
             if (narrated != null)
                 ActivityFeed.Add(narrated.Value.tone, narrated.Value.text, DateTime.Now.ToString("HH:mm:ss"));

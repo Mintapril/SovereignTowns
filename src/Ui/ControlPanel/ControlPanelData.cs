@@ -2,14 +2,13 @@ using System;
 using Newtonsoft.Json;
 using SovereignTowns.Configuration;
 using SovereignTowns.Economy;
-using SovereignTowns.WebConfig;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
 /// 游戏内控制面板的数据适配层。与配置系统同进程，直接调 ConfigurationManager /
-/// TroopDumper / ModExpenseLedger，不经 WebConfig 的 HTTP+JSON。
+/// TroopCatalog / ModExpenseLedger。
 /// </summary>
 internal static class ControlPanelData
 {
@@ -54,13 +53,13 @@ internal static class ControlPanelData
     }
 
     /// <summary>取可招募兵种列表（进程内枚举，含 RBM 等 mod 兵种）。</summary>
-    public static System.Collections.Generic.List<TroopDumper.TroopEntry> CollectTroops()
+    public static System.Collections.Generic.List<TroopCatalog.TroopEntry> CollectTroops()
     {
-        try { return TroopDumper.Collect(); }
+        try { return TroopCatalog.Collect(); }
         catch (Exception ex)
         {
             Logger.Error("ControlPanelData.CollectTroops failed", ex);
-            return new System.Collections.Generic.List<TroopDumper.TroopEntry>();
+            return new System.Collections.Generic.List<TroopCatalog.TroopEntry>();
         }
     }
 

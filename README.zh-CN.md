@@ -31,12 +31,15 @@ vanilla 没有独立的"氏族金库"概念 —— `Clan.Gold` 是计算属性 `
 - 作坊 / 商队仍按 vanilla 走 `Hero.Gold` —— 与上面是同一个账户，没有独立账本。
 - 每次买食物在左下角推一条日志：`[Sovereign Towns] {队伍} bought {N} {物品} at {地点} (-{N}d)`（仅玩家氏族部队）。
 
+### 卫队（首府常驻精锐）
+
+首府可维持一支 **卫队（Honor Guard）**—— 永驻首府的私属 party，按 per-troop 模板招募，围城时被 vanilla `Town.GetDefenderParties` 自动纳入守城兵力。MCMF 调度器在常规驻军达到充足目标之后才把村庄供给灌入卫队（cost 平衡使其严格次于常规驻军，不会抽空线列兵）。模板在游戏内「卫队编制」标签页编辑，容量上限走 `HonorGuardCap`。
+
 ### 旋钮与可观测性
 
 - **节奏可调** —— 后勤 tick 在 1 小时到 24 小时之间任意调（默认 6 小时）。
-- **游戏内控制面板** —— 大地图左侧贴边的常驻竖向按钮，加每个所属城镇/城堡菜单上的入口。
-- **网页控制面板** —— 在 `http://127.0.0.1:41763/`（端口冲突自动递增）单独提供，编辑能力更强。
-- **活动流** —— 每次派出 / 招募 / 调拨 / 出击都有记录，两端面板都可查。
+- **游戏内控制面板** —— 大地图左侧贴边的常驻竖向按钮，加每个所属城镇/城堡菜单上的入口。所有配置都在这里（功能开关 / 策略参数 / 兵种编制 / 卫队编制 / 非首府驻军 / 状态一览 / 卫队）。
+- **活动流** —— 每次派出 / 招募 / 调拨 / 出击都有记录，「状态一览」标签页可查。
 - **本地化** —— 英文与简体中文。
 
 ---
@@ -76,7 +79,7 @@ dotnet build src\SovereignTowns.csproj -c Debug
 2. **`Directory.Build.props.user`** —— gitignored，一行 XML 搞定
 3. **环境变量** —— `$env:BannerlordPath = "..."`
 
-`DeployToGame` MSBuild target 在 `AfterTargets="Build"` 时把 DLL、GUI prefab、WebUI 资源、语言 XML 自动拷贝到 `$(BannerlordPath)\Modules\SovereignTowns`。
+`DeployToGame` MSBuild target 在 `AfterTargets="Build"` 时把 DLL、GUI prefab、语言 XML 自动拷贝到 `$(BannerlordPath)\Modules\SovereignTowns`。
 
 **没有单元测试** —— 验证 = 启动游戏看日志。
 
@@ -87,7 +90,7 @@ dotnet build src\SovereignTowns.csproj -c Debug
 ```
 .
 ├── src/                     # C# 源码 + csproj
-├── Module/                  # SubModule.xml + Gauntlet prefab + ModuleData + WebUI
+├── Module/                  # SubModule.xml + Gauntlet prefab + ModuleData
 ├── Directory.Build.props
 ├── README.md  README.zh-CN.md  LICENSE
 ```
@@ -105,7 +108,7 @@ dotnet build src\SovereignTowns.csproj -c Debug
 
 ```
 Layer 4   UI                 DiagnosticGameMenu、STPartyDialogRegistration、
-                             ControlPanel（Gauntlet）、WebConfig（HTTP）
+                             ControlPanel（Gauntlet）—— 唯一 UI 真相源
 Layer 3   Dispatchers        CapitalManager ★、CapitalLogisticsManager、
                              RecruitmentDispatcher、PrisonerRecruitmentManager、
                              PatrolDispatcher、TransferDispatcher、SallyDispatcher、

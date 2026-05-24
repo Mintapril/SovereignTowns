@@ -5,8 +5,7 @@ using SovereignTowns.Configuration;
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
-/// Tab 2「策略参数」VM。镜像 WebUI index.html 的策略参数页：
-/// 分组过滤芯片 + 高级参数开关 + 当前分组的滑条 / 开关行 + 「本组恢复默认」。
+/// Tab 2「策略参数」VM：分组过滤芯片 + 高级参数开关 + 当前分组的滑条 / 开关行 + 「本组恢复默认」。
 ///
 /// 绑定策略：避免 <c>@StrategyTab.ActiveGroup.Sliders</c> 这类深路径绑定 —— 改在本 VM
 /// 暴露扁平的 <see cref="ActiveSliders"/> / <see cref="ActiveToggles"/> /
@@ -101,7 +100,7 @@ public sealed class StrategyTabVM : ViewModel
 
     /// <summary>
     /// 从 <see cref="ControlPanelSpecs.AllGroups"/> 重建可见分组列表。
-    /// 镜像 WebUI 的 visibleSettingsGroups：showAdvanced=false 时丢掉 Advanced spec、
+    /// visibleSettingsGroups：showAdvanced=false 时丢掉 Advanced spec、
     /// 丢掉过滤后为空的分组，并丢掉整组 Advanced 的分组（当前 8 组里无此情况；
     /// 字段保留以支持将来加入整组开发者级分组）。
     /// </summary>

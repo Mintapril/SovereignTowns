@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem.Settlements;
 
@@ -79,6 +80,33 @@ public sealed class PatrolInstruction : DispatchInstruction
     }
 
     public Settlement Capital { get; }
+}
+
+/// <summary>
+/// 卫队（Honor Guard）招募指令。MCMF decode 给出 (village, capital, role, tier, count, candidateTroopIds)：
+/// 执行层从 candidateTroopIds 与 village.notable.VolunteerTypes 的交集中挑实际兵种 id 派
+/// <see cref="SovereignTowns.Parties.HonorGuardRecruiterPartyComponent"/> 队。
+/// candidateTroopIds 来自 HonorGuardTemplate 中 (role,tier) 与本指令匹配的 troopId 集合。
+/// 每 MCMF 求解的 decode 至多生成多条；执行层按 lifecycle cap=1 守护，只接第一条 deficit 最大的。
+/// </summary>
+public sealed class HonorGuardRecruiterInstruction : DispatchInstruction
+{
+    public HonorGuardRecruiterInstruction(
+        Settlement capital, Settlement targetVillage,
+        GenericTroopRole role, int tier, int count,
+        IReadOnlyList<string> candidateTroopIds)
+        : base(role, count)
+    {
+        Capital = capital;
+        TargetVillage = targetVillage;
+        Tier = tier;
+        CandidateTroopIds = candidateTroopIds;
+    }
+
+    public Settlement Capital { get; }
+    public Settlement TargetVillage { get; }
+    public int Tier { get; }
+    public IReadOnlyList<string> CandidateTroopIds { get; }
 }
 
 public sealed class SallyInstruction : DispatchInstruction

@@ -27,7 +27,7 @@ public sealed class ControlPanelVM : ViewModel
     private TemplatesTabVM _templatesTab;
     private BranchesTabVM _branchesTab;
     private ActivityTabVM _activityTab;
-    private ReservePoolTabVM _reservePoolTab;
+    private HonorGuardTabVM _honorGuardTab;
 
     [DataSourceProperty]
     public FeaturesTabVM FeaturesTab
@@ -72,10 +72,10 @@ public sealed class ControlPanelVM : ViewModel
     }
 
     [DataSourceProperty]
-    public ReservePoolTabVM ReservePoolTab
+    public HonorGuardTabVM HonorGuardTab
     {
-        get => _reservePoolTab;
-        private set { _reservePoolTab = value; OnPropertyChanged(nameof(ReservePoolTab)); }
+        get => _honorGuardTab;
+        private set { _honorGuardTab = value; OnPropertyChanged(nameof(HonorGuardTab)); }
     }
 
     // ── 表头状态 ──
@@ -192,7 +192,7 @@ public sealed class ControlPanelVM : ViewModel
                 OnPropertyChanged(nameof(ActiveTab));
                 RefreshTabVisibility();
                 if (value == 5) ActivityTab?.Refresh();
-                if (value == 6) ReservePoolTab?.Refresh();
+                if (value == 6) HonorGuardTab?.Refresh();
             }
         }
     }
@@ -208,10 +208,10 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public string Tab0Label => ControlPanelLoc.Tr("功能开关", "Features");
     [DataSourceProperty] public string Tab1Label => ControlPanelLoc.Tr("策略参数", "Strategy");
     [DataSourceProperty] public string Tab2Label => ControlPanelLoc.Tr("兵种编制", "Composition");
-    [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("B 池模板", "Reserve pool template");
-    [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Branches");
+    [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("卫队编制", "Honor guard composition");
+    [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Other holdings");
     [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("状态一览", "Overview");
-    [DataSourceProperty] public string Tab6Label => ControlPanelLoc.Tr("B 池状态", "Reserve Pool");
+    [DataSourceProperty] public string Tab6Label => ControlPanelLoc.Tr("卫队", "Honor Guard");
     [DataSourceProperty] public string ActivityLogLabel => ControlPanelLoc.Tr("活动日志", "Activity log");
 
     private void RefreshTabVisibility()
@@ -275,7 +275,7 @@ public sealed class ControlPanelVM : ViewModel
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
         ActivityTab    = new ActivityTabVM();
-        ReservePoolTab = new ReservePoolTabVM();
+        HonorGuardTab = new HonorGuardTabVM();
 
         AddLog(ControlPanelLoc.Tr("配置已读取", "Configuration loaded"), LogKind.Ok);
     }
@@ -383,7 +383,7 @@ public sealed class ControlPanelVM : ViewModel
             BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
         ActivityTab    = new ActivityTabVM();
-        ReservePoolTab = new ReservePoolTabVM();
+        HonorGuardTab = new HonorGuardTabVM();
     }
 
     /// <summary>关闭警告横幅。</summary>

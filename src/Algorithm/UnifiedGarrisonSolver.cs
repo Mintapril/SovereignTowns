@@ -90,7 +90,7 @@ public static class UnifiedGarrisonSolver
     private enum EdgeCat { Internal, Stay, Transfer, Recruit, Bypass, Patrol, Sally }
 
     /// <summary>decode 用:layer-0 出发 / 指令相关边的登记。</summary>
-    private enum DecodeKind { Recruiter = 1, InPlace, Transfer, Disband, HoldingL0, Patrol, Sally }
+    private enum DecodeKind { Recruiter = 1, InPlace, Transfer, Disband, HoldingL0, Patrol, Sally, HonorGuardRecruiter }
 
     /// <summary>
     /// 同步求解封装 —— 一次排干 <see cref="SolveCoroutine"/>。同步驱动下 SSP 的 yield 退化为空
@@ -181,8 +181,9 @@ public static class UnifiedGarrisonSolver
 
             var graph = new MinCostFlow();
             var edgeCat = new Dictionary<(int, int), EdgeCat>();
+            // Tier 字段仅 HonorGuardRecruiter decode 用（per-bucket 兵种 tier）；其他 kind 一律 0。
             var decodeInfo = new Dictionary<(int, int),
-                (DecodeKind Kind, Settlement A, Settlement B, GenericTroopRole Role)>();
+                (DecodeKind Kind, Settlement A, Settlement B, GenericTroopRole Role, int Tier)>();
             int edgeCount = 0;
             void AddE(int from, int to, int cap, EdgeCost ec, EdgeCat cat)
             {
@@ -300,7 +301,7 @@ public static class UnifiedGarrisonSolver
                                 AddE(from, to, subCap, holdEc, EdgeCat.Stay);
                                 if (tau == 0)
                                 {
-                                    decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, role);
+                                    decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, role, 0);
                                     demandTierCapL0 += subCap;
                                 }
                             }
@@ -324,7 +325,7 @@ public static class UnifiedGarrisonSolver
                             // 若两段都记 Bypass,BypassFlow 会把同一批遣散兵计两次。只让
                             // gate→superSink 段计入 Bypass 统计,每个遣散兵恰好计一次。
                             AddE(from, gate, BigCap, new EdgeCost(timeUnits: T - tau), EdgeCat.Internal);
-                            if (tau == 0) decodeInfo[(from, gate)] = (DecodeKind.Disband, s, null!, role);
+                            if (tau == 0) decodeInfo[(from, gate)] = (DecodeKind.Disband, s, null!, role, 0);
                         }
                     }
                 }
@@ -361,9 +362,79 @@ public static class UnifiedGarrisonSolver
                                 {
                                     int from = G(s, role, tau, tier), to = G(s2, role, tau + d, tier);
                                     AddE(from, to, BigCap, txEc, EdgeCat.Transfer);
-                                    if (tau == 0) decodeInfo[(from, to)] = (DecodeKind.Transfer, s, s2, role);
+                                    if (tau == 0) decodeInfo[(from, to)] = (DecodeKind.Transfer, s, s2, role, 0);
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // ── 卫队（Honor Guard）需求预处理 ──
+            // 模板按 troopId 聚合到 (role, tier) 桶。bucketDemand 减去已在卫队池中 / 在飞征兵队的同 troopId 数。
+            // 总额受 HonorGuardCap 约束（hgCapitalSink → superSink 容量）。
+            // 注意：HG demand 只在 allowRecruitment 路径下被消费（只有 village recruit 边能流到 HG sink）；
+            //       不抑制 garrison 招募 —— bucket.Count 是上限，HG 与 garrison 竞争同一供给。
+            int hgCapitalSink = -1;
+            var hgBucketSink = new Dictionary<(GenericTroopRole Role, int Tier), int>();
+            var hgAllowedTroopIds = new Dictionary<(GenericTroopRole Role, int Tier), HashSet<string>>();
+            int hgValueBase = Math.Max(0, cfg.HonorGuardValueBase);
+            int hgGlobalRoom = 0;
+
+            if (cfg.HonorGuardCap > 0 && cfg.HonorGuardTemplate != null && cfg.HonorGuardTemplate.Count > 0
+                && allowRecruitment && !capitalSettlement.IsUnderSiege)
+            {
+                var hgPool = SovereignTowns.Capital.HonorGuardManager.GetPoolStatic(capitalSettlement);
+
+                int hgInPoolTotal  = hgPool?.MemberRoster?.TotalManCount ?? 0;
+                int hgInFlightTotal = CountHonorGuardInFlight(capitalSettlement, troopIdFilter: null);
+                hgGlobalRoom = Math.Max(0, cfg.HonorGuardCap - hgInPoolTotal - hgInFlightTotal);
+
+                if (hgGlobalRoom > 0)
+                {
+                    // 把模板按 (role, tier) 聚合：bucketTarget = Σ template[troopId].count；
+                    // bucketDeficit = max(0, bucketTarget − inPool − inFlight)（per-troopId 减再求和）。
+                    var bucketTarget  = new Dictionary<(GenericTroopRole, int), int>();
+                    var bucketDeficit = new Dictionary<(GenericTroopRole, int), int>();
+                    foreach (var kv in cfg.HonorGuardTemplate)
+                    {
+                        if (string.IsNullOrEmpty(kv.Key) || kv.Value <= 0) continue;
+                        var co = TaleWorlds.ObjectSystem.MBObjectManager.Instance?.GetObject<CharacterObject>(kv.Key);
+                        if (co == null || co.IsHero) continue;
+                        var role = GenericTroopMatcher.GetRole(co);
+                        if (role == GenericTroopRole.Unknown) continue;
+                        int tier = Math.Max(1, Math.Min(6, GenericTroopMatcher.GetTierBucket(co)));
+                        var bk = (role, tier);
+
+                        bucketTarget[bk] = (bucketTarget.TryGetValue(bk, out var bt) ? bt : 0) + kv.Value;
+
+                        int inPoolThisTroop    = CountTroopInRoster(hgPool?.MemberRoster, kv.Key);
+                        int inFlightThisTroop  = CountHonorGuardInFlight(capitalSettlement, troopIdFilter: kv.Key);
+                        int thisDeficit        = Math.Max(0, kv.Value - inPoolThisTroop - inFlightThisTroop);
+                        bucketDeficit[bk] = (bucketDeficit.TryGetValue(bk, out var bd) ? bd : 0) + thisDeficit;
+
+                        if (!hgAllowedTroopIds.TryGetValue(bk, out var idSet))
+                        {
+                            idSet = new HashSet<string>();
+                            hgAllowedTroopIds[bk] = idSet;
+                        }
+                        idSet.Add(kv.Key);
+                    }
+
+                    if (bucketDeficit.Values.Sum() > 0)
+                    {
+                        // 建首府 HG sink：限总额 = hgGlobalRoom。
+                        hgCapitalSink = next++;
+                        AddE(hgCapitalSink, superSink, hgGlobalRoom, EdgeCost.Zero, EdgeCat.Internal);
+
+                        // 每 bucket 一个 sink：限 bucket 总额 = bucketDeficit。
+                        foreach (var kv in bucketDeficit)
+                        {
+                            int cap = kv.Value;
+                            if (cap <= 0) continue;
+                            int bucketSink = next++;
+                            AddE(bucketSink, hgCapitalSink, cap, EdgeCost.Zero, EdgeCat.Internal);
+                            hgBucketSink[kv.Key] = bucketSink;
                         }
                     }
                 }
@@ -394,7 +465,7 @@ public static class UnifiedGarrisonSolver
                     {
                         int to = Transit(bucket.Role, recTier, tau);
                         AddE(origin, to, bucket.Count, new EdgeCost(gold: inPlaceRecruitCost, timeUnits: tau), EdgeCat.Recruit);
-                        if (tau == 0) decodeInfo[(origin, to)] = (DecodeKind.InPlace, capitalSettlement, null!, bucket.Role);
+                        if (tau == 0) decodeInfo[(origin, to)] = (DecodeKind.InPlace, capitalSettlement, null!, bucket.Role, 0);
                     }
                     AddE(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
                 }
@@ -429,8 +500,35 @@ public static class UnifiedGarrisonSolver
                             var recEc = new EdgeCost(gold: recGold, timeUnits: arrival, pathRisk: recRisk);
                             AddE(origin, to, bucket.Count, recEc, EdgeCat.Recruit);
                             if (arrival == etaV)  // dispatch tick = arrival − etaV == 0
-                                decodeInfo[(origin, to)] = (DecodeKind.Recruiter, village, null!, bucket.Role);
+                                decodeInfo[(origin, to)] = (DecodeKind.Recruiter, village, null!, bucket.Role, 0);
                         }
+
+                        // 卫队 edge：仅当此 bucket 在卫队 demand 中、且该村供给含模板许可的 troopId。
+                        // 容量 = 该村该 bucket 中匹配模板 troopId 的志愿兵数（≤ bucket.Count）。
+                        // 与 garrison 招募同源（origin 总流出 ≤ bucket.Count），MCMF 自然不会双计。
+                        //
+                        // cost 平衡（与 patrol/sally edge 同口径）：
+                        //   timeUnits=T → K 项 = T·K，与 garrison 全程累计同；MCMF 比较时落到 strategic 差异
+                        //   strategic = hgValue × power(tier)，与 garrison 累计 holdStrategic·(T−etaV) 比较
+                        //   默认配置 (HonorGuardValueBase=2500) 比 garrison 累计 strat (~3k/tick · 12 tick = 34k) 小
+                        //   → MCMF 优先填 garrison，仅在 garrison cap 耗尽 / surplus 时才走 HG。
+                        //   提高 HonorGuardValueBase 即可让 HG 优先（in-game 调）。
+                        var hgKey = (bucket.Role, recTier);
+                        if (hgBucketSink.TryGetValue(hgKey, out int hgSinkNode)
+                            && hgAllowedTroopIds.TryGetValue(hgKey, out var allowedIds))
+                        {
+                            int hgVillageSupply = CountVillageVolunteersInTemplate(village, allowedIds);
+                            int hgEdgeCap = Math.Min(bucket.Count, hgVillageSupply);
+                            if (hgEdgeCap > 0)
+                            {
+                                int hgStrategic = ClampValue(hgValueBase * PowerOf(recTier), K);
+                                var hgEc = new EdgeCost(gold: recGold, timeUnits: T, pathRisk: recRisk, strategic: hgStrategic);
+                                AddE(origin, hgSinkNode, hgEdgeCap, hgEc, EdgeCat.Recruit);
+                                decodeInfo[(origin, hgSinkNode)] =
+                                    (DecodeKind.HonorGuardRecruiter, village, capitalSettlement, bucket.Role, recTier);
+                            }
+                        }
+
                         AddE(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
                     }
                 }
@@ -457,7 +555,7 @@ public static class UnifiedGarrisonSolver
                     int fwdRisk = RouteRiskSurcharge(capitalSettlement, s, cfg);
                     int to = G(s, role, tau + d, tier);
                     AddE(tn, to, BigCap, new EdgeCost(gold: fwdOverhead, timeUnits: d, pathRisk: fwdRisk), EdgeCat.Transfer);
-                    if (tau == 0) decodeInfo[(tn, to)] = (DecodeKind.Transfer, capitalSettlement, s, role);
+                    if (tau == 0) decodeInfo[(tn, to)] = (DecodeKind.Transfer, capitalSettlement, s, role, 0);
                 }
             }
 
@@ -525,7 +623,7 @@ public static class UnifiedGarrisonSolver
                             var patrolEc = new EdgeCost(timeUnits: T - tau, strategic: tierPatrolValue);
                             AddE(from, patrolSink, BigCap, patrolEc, EdgeCat.Patrol);
                             if (tau == 0)
-                                decodeInfo[(from, patrolSink)] = (DecodeKind.Patrol, capitalSettlement, null!, role);
+                                decodeInfo[(from, patrolSink)] = (DecodeKind.Patrol, capitalSettlement, null!, role, 0);
                         }
                     }
                 }
@@ -561,7 +659,7 @@ public static class UnifiedGarrisonSolver
                                 var sallyEc = new EdgeCost(timeUnits: T - tau, strategic: tierSallyValue);
                                 AddE(from, sallySink, BigCap, sallyEc, EdgeCat.Sally);
                                 if (tau == 0)
-                                    decodeInfo[(from, sallySink)] = (DecodeKind.Sally, s, null!, role);
+                                    decodeInfo[(from, sallySink)] = (DecodeKind.Sally, s, null!, role, 0);
                             }
                         }
                     }
@@ -648,6 +746,17 @@ public static class UnifiedGarrisonSolver
                     case DecodeKind.Recruiter:
                         result.Instructions.Add(new RecruiterPartyInstruction(
                             capitalTown, capitalSettlement, di.A, di.Role, f));
+                        break;
+                    case DecodeKind.HonorGuardRecruiter:
+                        // 仅在 cap=1 守护下接第一条（执行层逻辑），但 decode 阶段全部产出。
+                        // candidateTroopIds 取自该 bucket 的模板允许集，执行层据此挑实际 troopId。
+                        if (hgAllowedTroopIds.TryGetValue((di.Role, di.Tier), out var hgIds))
+                        {
+                            result.Instructions.Add(new HonorGuardRecruiterInstruction(
+                                capital: di.B, targetVillage: di.A,
+                                role: di.Role, tier: di.Tier, count: f,
+                                candidateTroopIds: new List<string>(hgIds)));
+                        }
                         break;
                     case DecodeKind.InPlace:
                         result.Instructions.Add(new InPlaceRecruitInstruction(capitalSettlement, di.Role, f));
@@ -995,5 +1104,78 @@ public static class UnifiedGarrisonSolver
             Logger.Error("UnifiedGarrisonSolver.CollectInFlightArrivals failed", ex);
         }
         return list;
+    }
+
+    // ── 卫队（HonorGuard）helpers ──
+
+    /// <summary>统计 <paramref name="capital"/> 的卫队池 / 在飞卫队征兵队中匹配 <paramref name="troopIdFilter"/> 的兵数。
+    /// troopIdFilter=null → 全部 troopId 汇总（用于 hgGlobalRoom 计算）。
+    /// CollectInFlightArrivals 的 switch 不命中 HonorGuardRecruiterPartyComponent，故那里不重复计数。</summary>
+    private static int CountHonorGuardInFlight(Settlement capital, string? troopIdFilter)
+    {
+        if (capital == null) return 0;
+        try
+        {
+            int total = 0;
+            foreach (var p in MobileParty.All)
+            {
+                if (p?.PartyComponent is not SovereignTowns.Parties.HonorGuardRecruiterPartyComponent hgr) continue;
+                if (hgr.HomeSettlementOrNull != capital) continue;
+                if (troopIdFilter == null)
+                {
+                    total += hgr.TargetCount;
+                }
+                else if (string.Equals(hgr.TroopId, troopIdFilter, StringComparison.Ordinal))
+                {
+                    total += hgr.TargetCount;
+                }
+            }
+            return total;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"UnifiedGarrisonSolver.CountHonorGuardInFlight failed: {ex.Message}");
+            return 0;
+        }
+    }
+
+    /// <summary>统计 roster 中指定 troopId 的健康+受伤总头数（与 HonorGuard 池容量上限同口径）。</summary>
+    private static int CountTroopInRoster(TaleWorlds.CampaignSystem.Roster.TroopRoster? roster, string troopId)
+    {
+        if (roster == null || string.IsNullOrEmpty(troopId)) return 0;
+        try
+        {
+            int n = 0;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var e = roster.GetElementCopyAtIndex(i);
+                if (e.Character?.StringId == troopId) n += e.Number;
+            }
+            return n;
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>统计 village 中各 notable 的 VolunteerTypes 与 <paramref name="allowedTroopIds"/> 的交集大小，
+    /// 作为该村对此卫队 bucket 的供给容量。allowedTroopIds 已按 (role,tier) 约束过。</summary>
+    private static int CountVillageVolunteersInTemplate(Settlement village, HashSet<string> allowedTroopIds)
+    {
+        if (village?.Notables == null || allowedTroopIds.Count == 0) return 0;
+        try
+        {
+            int count = 0;
+            foreach (var notable in village.Notables)
+            {
+                if (notable?.CanHaveRecruits != true) continue;
+                var vt = notable.VolunteerTypes;
+                if (vt == null) continue;
+                foreach (var co in vt)
+                {
+                    if (co?.StringId != null && allowedTroopIds.Contains(co.StringId)) count++;
+                }
+            }
+            return count;
+        }
+        catch { return 0; }
     }
 }

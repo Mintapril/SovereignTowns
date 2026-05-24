@@ -8,24 +8,18 @@ using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
-/// Tab 6「B 池状态」VM（PR-6 / PR-7 / PR-9）。
-/// 展示当前受管首府的 B 池（Capital Reserve Pool）party 状态及招募模板编辑入口。
-///
-/// PR-9 (2026-05-24): troop list view moved to vanilla PartyScreen via town menu.
-/// Mod tab now only edits the recruitment template.
-/// VanillaGarrisonCount / CombinedCount removed — PartyScreen provides the live troop view.
+/// Tab 6「卫队」VM。展示当前受管首府的卫队（Honor Guard）party 状态。
+/// 招募模板编辑在「卫队编制」标签页（TemplatesTabVM）。
+/// 兵员清单走 vanilla PartyScreen（town menu「主权城镇：管理卫队」入口）。
 /// </summary>
-public sealed class ReservePoolTabVM : ViewModel
+public sealed class HonorGuardTabVM : ViewModel
 {
-    // ── 静态文案 ──
     [DataSourceProperty] public string Title { get; }
     [DataSourceProperty] public string Intro { get; }
 
-    // ── 状态属性 ──
     private string _poolStatus = "";
     private string _poolHeadcount = "";
     private string _poolCap = "";
-
 
     [DataSourceProperty]
     public string PoolStatus
@@ -48,17 +42,16 @@ public sealed class ReservePoolTabVM : ViewModel
         private set { if (_poolCap != value) { _poolCap = value; OnPropertyChanged(nameof(PoolCap)); } }
     }
 
-
-    public ReservePoolTabVM()
+    public HonorGuardTabVM()
     {
-        Title  = ControlPanelLoc.Tr("B 池状态", "Reserve Pool");
+        Title  = ControlPanelLoc.Tr("卫队", "Honor Guard");
         Intro  = ControlPanelLoc.Tr(
-            "首府储备兵力池（B 池）— 永驻首府内、仅在围城时参与防御的储备队伍。招募模板在「B 池模板」标签页编辑。",
-            "The capital reserve pool (B-pool) — a party permanently stationed inside the capital that joins siege defence. Edit the recruitment template in the \"Reserve pool template\" tab.");
+            "首府卫队 — 永驻首府内、仅在围城时参与防御的私属精锐。招募模板在「卫队编制」标签页编辑。",
+            "The capital honor guard — a private elite party permanently stationed inside the capital that joins siege defence. Edit the recruitment template in the \"Honor guard composition\" tab.");
         Refresh();
     }
 
-    /// <summary>刷新 B 池状态（由 ControlPanelVM 在 tab 切换时调用）。</summary>
+    /// <summary>刷新卫队状态（由 ControlPanelVM 在 tab 切换时调用）。</summary>
     public void Refresh()
     {
         try
@@ -72,18 +65,17 @@ public sealed class ReservePoolTabVM : ViewModel
                 return;
             }
 
-            // 从 settlement.Parties 找 B 池 party（ReservePoolManager 未暴露公开 accessor，直接扫）。
             TaleWorlds.CampaignSystem.Party.MobileParty? pool = null;
             foreach (var party in capital.Parties)
             {
-                if (party?.PartyComponent is StGarrisonReservePartyComponent)
+                if (party?.PartyComponent is HonorGuardPartyComponent)
                 {
                     pool = party;
                     break;
                 }
             }
 
-            int cap = ConfigurationManager.Current?.FiscalAutonomy?.ReservePoolCap ?? 0;
+            int cap = ConfigurationManager.Current?.FiscalAutonomy?.HonorGuardCap ?? 0;
 
             if (pool == null)
             {
@@ -105,7 +97,7 @@ public sealed class ReservePoolTabVM : ViewModel
         }
         catch (Exception ex)
         {
-            SovereignTowns.Logging.Logger.Error("ReservePoolTabVM.Refresh failed", ex);
+            SovereignTowns.Logging.Logger.Error("HonorGuardTabVM.Refresh failed", ex);
             PoolStatus    = ControlPanelLoc.Tr("刷新失败", "Refresh error");
             PoolHeadcount = "-";
             PoolCap       = "-";

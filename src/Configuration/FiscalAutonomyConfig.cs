@@ -15,34 +15,13 @@ public sealed class FiscalAutonomyConfig
     public int CapitalLogisticsTickHours { get; set; } = 6;
 
     // ── 遣散超额 ──
-    public int   MinGarrisonFloor        { get; set; } = 40;
     public float DisbandExcessThreshold  { get; set; } = 1.2f;
-    public bool  DisbandUnaffordableExcess { get; set; } = true;
 
-    // 2026-05-24:手动模式 AllowManualGarrisonTargets 已删除。驻军目标完全由调度器
-    // (AdequateFor 公式 + MCMF instruction)决定,不再保留用户手动入口。
-
-    // ── 驻军 tier 口径 ──
-    public int   AdequateBase            { get; set; } = 60;
-    public int   AdequateProsperityDivisor { get; set; } = 80;
-    public int   AdequateThreatWeight    { get; set; } = 8;
-    public int   CoreTierCount           { get; set; } = 5;
-    public int   MaxGarrisonHardCap      { get; set; } = 400;
-
-    /// <summary>城镇 adequate 下限锚定:adequate 不低于 vanilla 驻军容量(PartySizeLimit)的此倍数。
-    /// 公式基线对普通城镇偏低,用 vanilla 自身的容量评估兜底。城堡不参与锚定。</summary>
-    public float TownAdequateVanillaAnchorRatio { get; set; } = 0.5f;
-
-    // ── 时间展开调度器 value 函数 ──
-    /// <summary>
-    /// 调度器 value 基常数。合并图费用 = `K + routing − value`,value 必须与
-    /// routing(村→首府距离 + overhead,约数百~千)同量级,否则 core/surplus 招募恒亏本
-    /// → solver 欠驻军。tuning 项。
-    /// 首轮试值:floor value ≈ 数千、core ≈ 数百~低千、surplus ≈ 0。
-    /// </summary>
-    public int ValueFloorBase  { get; set; } = 3000;
-    public int ValueCoreBase   { get; set; } = 800;
-    public int SurplusEdgeCost { get; set; } = 1;
+    // PR-5'(2026-05-24): 以下字段已被 TargetFraction + BaseValuePerTier 单段公式取代，全部删除：
+    //   MinGarrisonFloor / AdequateBase / AdequateProsperityDivisor / AdequateThreatWeight
+    //   / CoreTierCount / MaxGarrisonHardCap / ValueFloorBase / ValueCoreBase / SurplusEdgeCost
+    //   / CoreDimRange / CoreDimMidpoint / TownAdequateVanillaAnchorRatio / DisbandUnaffordableExcess
+    // AllowManualGarrisonTargets 也一并删除（驻军目标完全由调度器决定）。
 
     /// <summary>
     /// 巡逻并入调度器:patrol sink 边的回报值 —— patrol 边真实费用 = −此值。
@@ -60,10 +39,9 @@ public sealed class FiscalAutonomyConfig
     /// 设 0 = 关闭正常遣散段,只保留溢出段(仅遣散物理塞不下 hardCap 的兵)。</summary>
     public int DisbandPerDayCap { get; set; } = 20;
 
-    /// <summary>调度器两段 bypass:溢出段附加费用。须 > |surplus tier value|
-    /// (= <see cref="SurplusEdgeCost"/>)以保证正常段耗尽后 solver 优先"surplus 留驻"
-    /// 而非"溢出遣散" —— 从而把超额遣散限制在每 tick <see cref="DisbandPerDayCap"/>
-    /// 折算出的上限。</summary>
+    /// <summary>调度器两段 bypass:溢出段附加费用。须远大于单段 holding edge value
+    /// 以保证正常段耗尽后 solver 优先"留驻盈余"而非"溢出遣散" —— 从而把超额遣散
+    /// 限制在每 tick <see cref="DisbandPerDayCap"/> 折算出的上限。</summary>
     public int BypassOverflowPenalty { get; set; } = 1000;
 
     // ── P3 时间展开 solver ──
@@ -83,11 +61,6 @@ public sealed class FiscalAutonomyConfig
     public float ThreatWeightMedium   { get; set; } = 1.5f;
     public float ThreatWeightHigh     { get; set; } = 2.0f;
     public float ThreatWeightCritical { get; set; } = 3.0f;
-
-    /// <summary>core 段 diminishing 斜降的总幅度:最低子层 value 乘子 = 1 − 此值。</summary>
-    public float CoreDimRange { get; set; } = 0.8f;
-    /// <summary>core 子层取样的中点偏移:第 k 子层用 (k + 此值) / K 作归一化位置。</summary>
-    public float CoreDimMidpoint { get; set; } = 0.5f;
 
     /// <summary>strategic 乘子的繁荣度归一化除数:Prosperity / 此值 再 clamp 到 [0.5, 1.5]。</summary>
     public float ProsperityNormalizer { get; set; } = 4000f;
@@ -119,7 +92,7 @@ public sealed class FiscalAutonomyConfig
 
     // ── PR-1 (2026-05-24) EdgeCost 4 通道权重 ──
     // 默认值保 PR-1 行为不变性（与旧硬编码 K = 20_000_000、单一 int cost 加成同效）。
-    // 后续 PR-3 暴露到 WebUI / Gauntlet 滑块；现在改任何字段均会改变求解行为。
+    // 暴露到控制面板 Gauntlet 滑块；改任何字段均会改变求解行为。
 
     /// <summary>EdgeCost 合成权重：gold 通道倍数。默认 1（行为不变）。</summary>
     public int CostWeightGold { get; set; } = 1;
@@ -167,20 +140,25 @@ public sealed class FiscalAutonomyConfig
     /// 单段 value = 此值 × threat × strat × power(tier)。默认 800。</summary>
     public int BaseValuePerTier { get; set; } = 800;
 
-    // ── PR-6 (2026-05-24) B 池容量上限 ──
-    /// <summary>B 池（Capital Reserve Pool）驻军容量上限（头数）。
-    /// 0 = 关闭 B 池功能（不创建 party）；&gt; 0 = B 池最多可持有此数量驻军。
-    /// MCMF 调度器（PR-7）在向 B 池注入兵员时受此上限约束。默认 0（功能关闭，PR-7 实现后再启用）。</summary>
-    public int ReservePoolCap { get; set; } = 0;
+    // ── 卫队（Honor Guard）容量上限 ──
+    /// <summary>卫队驻军容量上限（头数）。
+    /// 0 = 关闭卫队功能（不创建 party）；&gt; 0 = 卫队最多可持有此数量驻军。
+    /// MCMF 调度器在向卫队注入兵员时受此上限约束。默认 0（功能关闭）。</summary>
+    public int HonorGuardCap { get; set; } = 0;
 
-    // ── PR-7 (2026-05-24) B 池招募模板 ──
+    /// <summary>卫队招募 edge 的战略价值基常数。与 PatrolValue（200）/ SallyValueBase（5000）同量级。
+    /// MCMF 在 origin → hg_bucket_sink 边上记入 strategic 通道 = 此值 × power(tier)；越大越愿意优先填卫队。
+    /// 默认 2500 — 偏强意愿但仍弱于 holding edge 的累积 value，避免抽空首府常规驻军。</summary>
+    public int HonorGuardValueBase { get; set; } = 2_500;
+
+    // ── 卫队招募模板 ──
     /// <summary>
-    /// B 池招募兵种模板：troopId → desiredCount（每个兵种在 B 池中希望维持的头数）。
-    /// null 或空 dict = 不派 B 池征兵队。
+    /// 卫队招募兵种模板：troopId → desiredCount（每个兵种在卫队中希望维持的头数）。
+    /// null 或空 dict = MCMF 不派卫队征兵队。
     /// 校验：≤ 50 条目，每条 ≤ 100，count ≥ 0，key 非空。
-    /// troopId 有效性在 Dispatcher 层懒校验（MBObjectManager 在 OnSessionLaunched 后才可用）。
+    /// troopId 有效性在派发层懒校验（MBObjectManager 在 OnSessionLaunched 后才可用）。
     ///
     /// 示例：{"imperial_veteran_infantry": 30, "imperial_palatine_guard": 20}
     /// </summary>
-    public System.Collections.Generic.Dictionary<string, int>? ReserveTemplate { get; set; }
+    public System.Collections.Generic.Dictionary<string, int>? HonorGuardTemplate { get; set; }
 }

@@ -31,12 +31,15 @@ Vanilla has no separate "clan treasury" — `Clan.Gold` is a computed property `
 - Workshops and caravans keep flowing to your `Hero.Gold` per vanilla — same account, no separate ledger.
 - Each food purchase posts a bottom-left log: `[Sovereign Towns] {Party} bought {N} {item} at {Where} (-{N}d)` (player-clan parties only).
 
+### Honor Guard (capital-resident elite)
+
+The capital can keep an **Honor Guard** — a private party permanently stationed inside it, recruited from a per-troop template and automatically engaged by the vanilla siege-defender enumeration when the city is besieged. The MCMF dispatcher fills the guard from village recruits as a strictly secondary priority, only after the regular garrison's adequate target is met (so it never drains line troops). Edit the template in the in-game **Honor guard composition** tab; capacity is set via `HonorGuardCap`.
+
 ### Knobs and observability
 
 - **Configurable cadence** — logistics tick anywhere from 1 hour to 24 hours (default 6h).
-- **In-game Control Panel** — persistent button on the left edge of the campaign map plus an entry on every owned town/castle menu.
-- **Web Control Panel** — separately served at `http://127.0.0.1:41763/` (auto-increments on port conflict) for richer editing.
-- **Activity feed** — every dispatch, recruit, transfer and sally logged, queryable from either panel.
+- **In-game Control Panel** — persistent button on the left edge of the campaign map plus an entry on every owned town/castle menu. All configuration lives here (Features / Strategy / Composition / Honor guard composition / Other holdings / Overview / Honor Guard).
+- **Activity feed** — every dispatch, recruit, transfer and sally logged, browsable from the Overview tab.
 - **Localisation** — English and Simplified Chinese.
 
 ---
@@ -76,7 +79,7 @@ dotnet build src\SovereignTowns.csproj -c Debug
 2. **`Directory.Build.props.user`** — gitignored, one line of XML
 3. **Env var** — `$env:BannerlordPath = "..."`
 
-The `DeployToGame` MSBuild target runs `AfterTargets="Build"` and copies the DLL, GUI prefabs, WebUI bundle and language XMLs into `$(BannerlordPath)\Modules\SovereignTowns`.
+The `DeployToGame` MSBuild target runs `AfterTargets="Build"` and copies the DLL, GUI prefabs and language XMLs into `$(BannerlordPath)\Modules\SovereignTowns`.
 
 There are **no unit tests** — verification is "launch the game, watch the logs."
 
@@ -87,7 +90,7 @@ There are **no unit tests** — verification is "launch the game, watch the logs
 ```
 .
 ├── src/                     # C# source + csproj
-├── Module/                  # SubModule.xml + Gauntlet prefabs + ModuleData + WebUI
+├── Module/                  # SubModule.xml + Gauntlet prefabs + ModuleData
 ├── Directory.Build.props
 ├── README.md  README.zh-CN.md  LICENSE
 ```
@@ -105,7 +108,7 @@ Four-layer dependency stack, top-down, no upward references; same-layer wiring r
 
 ```
 Layer 4   UI                 DiagnosticGameMenu, STPartyDialogRegistration,
-                             ControlPanel (Gauntlet), WebConfig (HTTP)
+                             ControlPanel (Gauntlet) — single source of UI truth
 Layer 3   Dispatchers        CapitalManager ★, CapitalLogisticsManager,
                              RecruitmentDispatcher, PrisonerRecruitmentManager,
                              PatrolDispatcher, TransferDispatcher, SallyDispatcher,

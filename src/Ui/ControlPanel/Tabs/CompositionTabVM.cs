@@ -248,7 +248,7 @@ public sealed class CompositionTabVM : ViewModel
     }
 
     // ══════════════════════════════════════════════
-    //  AdjustRatio — ports adjustRatio from WebUI
+    //  AdjustRatio
     // ══════════════════════════════════════════════
 
     public void AdjustRatio(string key, double raw)

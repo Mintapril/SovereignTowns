@@ -205,19 +205,6 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
                 TrySafeDebugPrint($"{Tag} AddBehavior threw: {ex.Message}");
             }
 
-            // B7.1: dump troops.json for the web frontend's ExactTroop picker.
-            // NOTE: actual dump call moved to SovereignTownsCampaignBehavior.OnSessionLaunched —
-            // at OnGameStart the CharacterObject pool (spnpccharacters.xml etc.) is not yet
-            // registered with MBObjectManager, so dumping here yields count=0. See troops.json
-            // empty-payload bug 2026-05-14.
-
-            // B7.3: start local HTTP server so the player can edit config in a browser.
-            // Idempotent — already-running call is a no-op.
-            try { SovereignTowns.WebConfig.WebConfigServer.Start(); }
-            catch (System.Exception ex)
-            {
-                if (_loggerInitialized) Logger.Error("WebConfigServer.Start failed (swallowed)", ex);
-            }
         }
         catch (System.Exception ex)
         {
@@ -282,9 +269,6 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
             if (_loggerInitialized) Logger.Error("Harmony.UnpatchAll threw", ex);
             TrySafeDebugPrint($"{Tag} Harmony.UnpatchAll threw: {ex.Message}");
         }
-
-        try { SovereignTowns.WebConfig.WebConfigServer.Stop(); }
-        catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} WebConfigServer.Stop threw: {ex.Message}"); }
 
         try { SovereignTowns.Audit.DecisionAuditLogger.Shutdown(); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} AuditLogger.Shutdown threw: {ex.Message}"); }

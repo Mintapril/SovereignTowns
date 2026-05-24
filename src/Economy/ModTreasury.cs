@@ -146,7 +146,7 @@ public static class ModTreasury
     }
 
     /// <summary><c>clan.Gold</c> 变动后即时刷新 FinancialSnapshot 该 clan 的 TreasuryBalance，
-    /// 让 WebUI / 控制面板的下一次读取拿到新值（不必等下一次 daily 全量重算）。
+    /// 让控制面板的下一次读取拿到新值（不必等下一次 daily 全量重算）。
     /// 仅在该 clan 已在 snapshot 中时生效；失败/无 snapshot → 静默 no-op。</summary>
     private static void TryPatchSnapshotBalance(Clan clan)
     {
@@ -154,7 +154,7 @@ public static class ModTreasury
         {
             var id = clan?.StringId;
             if (!string.IsNullOrEmpty(id))
-                WebConfig.FinancialSnapshot.PatchTreasuryBalance(id!, clan!.Gold);
+                FinancialSnapshot.PatchTreasuryBalance(id!, clan!.Gold);
         }
         catch { /* swallow — snapshot 刷新失败不影响扣款本身 */ }
     }

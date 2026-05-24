@@ -3,15 +3,15 @@ using System.Collections.Generic;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using SovereignTowns.Configuration;
-using SovereignTowns.WebConfig;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
-/// Tab 3「B 池模板 / Reserve pool template」VM（PR-10, 2026-05-24）。
+/// Tab 3「卫队编制」VM。
 /// 左侧：可搜索 / 过滤的兵种名录；右侧：已选名单 + 计划招募数量（整数，[0,100]）。
-/// 编辑 _config.FiscalAutonomy.ReserveTemplate（int counts，独立，不归一化）。
+/// 编辑 _config.FiscalAutonomy.HonorGuardTemplate（troopId → count，独立，不归一化）。
 /// _config 是 ControlPanelVM 持有的克隆副本，通过顶栏 Save 按钮才真正写盘。
+/// MCMF 主求解链路按模板每 (Role,Tier) 聚合需求并 decode 出 HonorGuardRecruiter 指令。
 /// </summary>
 public sealed class TemplatesTabVM : ViewModel
 {
@@ -22,8 +22,8 @@ public sealed class TemplatesTabVM : ViewModel
     private readonly Action _gotoCompositionTab;
 
     // ── 兵种全集 ──
-    private readonly List<TroopDumper.TroopEntry> _allTroops;
-    private readonly Dictionary<string, TroopDumper.TroopEntry> _troopById = new Dictionary<string, TroopDumper.TroopEntry>();
+    private readonly List<TroopCatalog.TroopEntry> _allTroops;
+    private readonly Dictionary<string, TroopCatalog.TroopEntry> _troopById = new Dictionary<string, TroopCatalog.TroopEntry>();
 
     // 文化 chip 全集（含「全部」）—— 用于激活态刷新；展示时均分到 CultureChipsRow1/2。
     private readonly List<ChipVM> _cultureChips = new List<ChipVM>();
@@ -201,16 +201,16 @@ public sealed class TemplatesTabVM : ViewModel
         _markDirty = markDirty;
         _gotoCompositionTab = gotoCompositionTab;
 
-        _allTroops = ControlPanelData.CollectTroops() ?? new List<TroopDumper.TroopEntry>();
+        _allTroops = ControlPanelData.CollectTroops() ?? new List<TroopCatalog.TroopEntry>();
         foreach (var t in _allTroops)
             if (t != null && !string.IsNullOrEmpty(t.id) && !_troopById.ContainsKey(t.id))
                 _troopById[t.id] = t;
 
         // ── 静态文案 ──
-        Title = ControlPanelLoc.Tr("B 池模板", "Reserve pool template");
+        Title = ControlPanelLoc.Tr("卫队编制", "Honor guard composition");
         Intro = ControlPanelLoc.Tr(
-            "指定 B 池每个兵种的计划招募数量（整数，0-100，最多 50 种）。PR-7 调度器每日按模板补充 B 池。",
-            "Set the target headcount for each troop type in the B-pool (integer, 0-100, up to 50 types). The PR-7 scheduler fills the pool daily according to this template.");
+            "指定卫队每个兵种的计划数量（整数，0-100，最多 50 种）。MCMF 调度器按模板补充卫队。",
+            "Set the target headcount for each troop type in the honor guard (integer, 0-100, up to 50 types). The MCMF scheduler fills the guard according to this template.");
         CatalogSectionLabel = ControlPanelLoc.Tr("兵种名录", "Troop catalog");
         CatalogHint = ControlPanelLoc.Tr("点 ＋ 加入名单", "Click + to add to the list");
         SearchPlaceholder = ControlPanelLoc.Tr(
@@ -228,14 +228,14 @@ public sealed class TemplatesTabVM : ViewModel
         CapHintText = ControlPanelLoc.Tr(
             "· 仅显示前 200 条，继续输入收缩", "· showing first 200 only, keep typing to narrow");
 
-        // Mode banner: kept for XML binding compat; B-pool template has no generic/exact distinction.
+        // Mode banner: kept for XML binding compat; 卫队 template has no generic/exact distinction.
         ModeBannerText = ControlPanelLoc.Tr(
-            "B 池模板模式：设置每种兵员的计划招募数量，调度器每日按此补充 B 池。",
-            "B-pool template mode: set the target count for each troop type; the scheduler fills the pool daily.");
+            "卫队编制模式：设置每种兵员的计划数量，调度器按此补充卫队。",
+            "Honor-guard composition mode: set the target count for each troop type; the scheduler fills the guard according to it.");
         SwitchToExactLabel = ControlPanelLoc.Tr("改用精确模板模式", "Switch to exact template mode");
         ExactModeOkText = ControlPanelLoc.Tr(
-            "✓ B 池模板已设置。",
-            "✓ B-pool template is configured.");
+            "✓ 卫队模板已设置。",
+            "✓ Honor-guard template is configured.");
 
         // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
         _isGenericMode = true;
@@ -250,7 +250,7 @@ public sealed class TemplatesTabVM : ViewModel
         RefreshHeaderCounts();
     }
 
-    // PR-10 (2026-05-24): Template now reads/writes _config.FiscalAutonomy.ReserveTemplate.
+    // PR-10 (2026-05-24): Template now reads/writes _config.FiscalAutonomy.HonorGuardTemplate.
     // _config is the clone held by ControlPanelVM; mutations are persisted via the top-bar Save button.
     // Validator limits: ≤50 entries, count ∈ [0,100], no empty keys.
     private const int TemplateCap = 50;
@@ -262,9 +262,9 @@ public sealed class TemplatesTabVM : ViewModel
         get
         {
             if (_config.FiscalAutonomy == null) _config.FiscalAutonomy = new FiscalAutonomyConfig();
-            if (_config.FiscalAutonomy.ReserveTemplate == null)
-                _config.FiscalAutonomy.ReserveTemplate = new Dictionary<string, int>();
-            return _config.FiscalAutonomy.ReserveTemplate;
+            if (_config.FiscalAutonomy.HonorGuardTemplate == null)
+                _config.FiscalAutonomy.HonorGuardTemplate = new Dictionary<string, int>();
+            return _config.FiscalAutonomy.HonorGuardTemplate;
         }
     }
 

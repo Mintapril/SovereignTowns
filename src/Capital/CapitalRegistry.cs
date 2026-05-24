@@ -29,7 +29,7 @@ namespace SovereignTowns.Capital;
 public sealed class CapitalRegistry
 {
     /// <summary>
-    /// 全局单例引用，让 WebConfigEndpoints 在 PUT /api/config / POST /api/reload 后能调到
+    /// 全局单例引用。让 ConfigurationManager.OnConfigChanged 订阅方在配置 reload 后能调到
     /// <see cref="SyncFromConfig"/>，避免 toggle ApplyToAiSettlementsToo 后需要重启游戏。
     /// CampaignBehavior 析构后置 null。
     /// </summary>
@@ -215,9 +215,8 @@ public sealed class CapitalRegistry
 
     /// <summary>
     /// 玩家 + 所有 AI managed clan 的快照枚举。
-    /// 返回快照（ToList）而非 live view 作为防御性写法 —
-    /// 当前 SyncFromConfig 已通过 WebConfigGameThreadSync.Drain 切到主线程，无活跃竞争；
-    /// 快照仍保留以防未来引入新的调用方导致 InvalidOperationException。
+    /// 返回快照（ToList）而非 live view 作为防御性写法 —— 防止未来引入跨线程调用方时
+    /// 出现 InvalidOperationException。
     /// </summary>
     public IReadOnlyList<CapitalManager> AllManagers
     {

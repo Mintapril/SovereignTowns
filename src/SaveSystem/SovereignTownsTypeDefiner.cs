@@ -37,8 +37,10 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         AddClassDefinition(typeof(Parties.StRecruiterPartyComponent), 6);
         AddClassDefinition(typeof(Parties.StTransferPartyComponent), 7);
         AddClassDefinition(typeof(Parties.StSallyPartyComponent), 8);
-        AddClassDefinition(typeof(Parties.StGarrisonReservePartyComponent), 9);
-        AddClassDefinition(typeof(Parties.ReserveRecruiterPartyComponent), 10);
+        // 卫队 party 与卫队征兵队（rename 自旧 StGarrisonReservePartyComponent / ReserveRecruiterPartyComponent）。
+        // local id 9 / 10 不变 → 老存档反序列化命中同一注册槽位。
+        AddClassDefinition(typeof(Parties.HonorGuardPartyComponent), 9);
+        AddClassDefinition(typeof(Parties.HonorGuardRecruiterPartyComponent), 10);
     }
 
     protected override void DefineEnumTypes()
@@ -49,7 +51,7 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         AddEnumDefinition(typeof(Parties.StSallyPartyComponent.SallyPhase), 100);
         AddEnumDefinition(typeof(Parties.StRecruiterPartyComponent.RecruiterPhase), 101);
         AddEnumDefinition(typeof(Evaluators.GenericTroopRole), 102);
-        AddEnumDefinition(typeof(Parties.ReserveRecruiterPartyComponent.RecruiterPhase), 103);
+        AddEnumDefinition(typeof(Parties.HonorGuardRecruiterPartyComponent.RecruiterPhase), 103);
     }
 
     protected override void DefineContainerDefinitions()

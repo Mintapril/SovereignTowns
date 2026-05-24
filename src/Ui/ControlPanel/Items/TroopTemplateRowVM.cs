@@ -1,6 +1,5 @@
 using System;
 using TaleWorlds.Library;
-using SovereignTowns.WebConfig;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
@@ -45,7 +44,7 @@ public sealed class TroopTemplateRowVM : ViewModel
 
     public TroopTemplateRowVM(
         string id,
-        TroopDumper.TroopEntry entry,
+        TroopCatalog.TroopEntry entry,
         Func<string, int> getCount,
         Action<string, int> setCount,
         Action<string> onRemove)

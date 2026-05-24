@@ -26,8 +26,7 @@
     <string id="ST_Menu_CapitalStatus_Active" text="主权城镇：当前首府 ★ ({CAPITAL})" />
     <string id="ST_Menu_CapitalStatus_Other" text="主权城镇：当前首府 = {CAPITAL}" />
     <string id="ST_Menu_SetCapital" text="主权城镇：设为首府" />
-    <string id="ST_Menu_OpenWebConfig" text="主权城镇：打开网页控制面板" />
-    <string id="ST_Menu_ManageReservePool" text="主权城镇：管理 B 池" />
+    <string id="ST_Menu_ManageHonorGuard" text="主权城镇：管理卫队" />
 
     <!-- 通用占位词（实体名缺失时回填）。 -->
     <string id="ST_Common_Unset" text="&lt;未设&gt;" />
@@ -35,20 +34,15 @@
     <string id="ST_Common_UnknownEntity" text="&lt;未知&gt;" />
     <string id="ST_Common_CapitalOwner" text="首府所有者" />
 
-    <!-- 诊断菜单 / 网页面板相关玩家可见消息。 -->
-    <string id="ST_Msg_WebConfig_NotRunning" text="[主权城镇] 网页服务未启动；查看日志了解原因。" />
-    <string id="ST_Msg_WebConfig_BrowserOpened" text="[主权城镇] 已尝试启动浏览器打开网页控制面板。" />
-    <string id="ST_Msg_WebConfig_BrowserFailed" text="[主权城镇] 浏览器启动失败。请手动访问 http://127.0.0.1:{PORT}/ ，并从 Documents\Mount and Blade II Bannerlord\Configs\SovereignTowns\auth.txt 读取 token。" />
+    <!-- 诊断菜单玩家可见消息。 -->
     <string id="ST_Msg_Capital_Changed" text="[主权城镇] 首府已切换至 '{SETTLEMENT}'。" />
     <string id="ST_Msg_Capital_ChangeFailed" text="[主权城镇] 首府切换失败 ('{SETTLEMENT}' 已是首府或不合法)。" />
 
     <!-- Campaign 会话 / 每日消息。 -->
-    <string id="ST_Msg_WebConfig_Started" text="[主权城镇] 网页控制面板已启动。请进入任意城镇或城堡菜单点「打开网页控制面板」。" />
-    <string id="ST_Msg_WebConfig_StartFailed" text="[主权城镇] 网页控制面板未启动（端口冲突 / 沙盒拒绝），详见日志。" />
     <string id="ST_Msg_DailySummary" text="[主权城镇] 今日 招{RECRUITED} 调{TRANSFERRED} 巡逻{PATROLS} 出击{SALLIES} 俘虏招募{PRISONERS}。" />
 
     <!-- 配置 / 模块管理消息。 -->
-    <string id="ST_Msg_Config_VersionMismatch" text="[主权城镇] global.json 版本不匹配 (文件 v{FILE_VERSION}，期望 v{EXPECTED_VERSION}) — 已重置为默认，请重新在网页面板配置。" />
+    <string id="ST_Msg_Config_VersionMismatch" text="[主权城镇] global.json 版本不匹配 (文件 v{FILE_VERSION}，期望 v{EXPECTED_VERSION}) — 已重置为默认，请在游戏内控制面板重新配置。" />
     <string id="ST_Msg_AiOptIn" text="[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻范围。其领主已不能通过 vanilla 从村庄 / 城镇名士招兵；唯有 ST mod 渠道（首府就地招募 / 征兵队 / 俘虏转化）作为兵源。招募兵种限同文化。" />
     <string id="ST_Msg_IncompatibleMods" text="主权城镇：检测到互斥模块（{MODS}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。" />
 

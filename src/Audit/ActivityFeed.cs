@@ -6,12 +6,12 @@ namespace SovereignTowns.Audit;
 /// <summary>
 /// 全局"运行动态"环形缓冲 — 玩家可读的 mod 行为流水。
 /// 与 PerSettlementActivityRing(按城分桶、技术格式)不同:这里是单一全局序列,
-/// 存的是 ActivityNarrator 已翻译成人话的成品文本,游戏内控制面板与 WebUI 直接展示。
+/// 存的是 ActivityNarrator 已翻译成人话的成品文本,游戏内控制面板直接展示。
 /// 纯 in-memory,不持久化 — 重载存档后清空、随 mod 行为重新累积。
 /// </summary>
 public static class ActivityFeed
 {
-    /// <summary>保留最近 N 条。控制面板/WebUI 一屏展示约 30~40 条,80 足够回看。</summary>
+    /// <summary>保留最近 N 条。控制面板一屏展示约 30~40 条,80 足够回看。</summary>
     public const int Capacity = 80;
 
     public sealed class Entry

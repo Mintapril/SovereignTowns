@@ -5,7 +5,7 @@ namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
 /// 一行数值参数：滑条 + 数值文本 + 「↺ 恢复默认」链接。
-/// 通过 Func/Action 委托读写控制面板的工作配置副本。镜像 WebUI 的 type!=='bool' 行。
+/// 通过 Func/Action 委托读写控制面板的工作配置副本。
 /// </summary>
 public sealed class SliderRowVM : ViewModel
 {

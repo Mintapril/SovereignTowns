@@ -38,8 +38,8 @@ public sealed class PartyLifecycleManager
     public const string KindTransfer     = "transfer";
     public const string KindPatrol       = "patrol";
     public const string KindSallyForth   = "sallyforth";
-    /// <summary>PR-7: B 池专用征兵队种类。上限 = 1（每首府同时至多 1 支在途）。</summary>
-    public const string KindBPoolRecruiter = "bpoolrecruiter";
+    /// <summary>卫队专用征兵队种类。上限 = 1（每首府同时至多 1 支在途）。</summary>
+    public const string KindHonorGuardRecruiter = "honorguardrecruiter";
 
     private readonly Dictionary<MobileParty, TrackedPartyMeta> _tracked = new Dictionary<MobileParty, TrackedPartyMeta>();
 
@@ -237,7 +237,7 @@ public sealed class PartyLifecycleManager
                                     SovereignTowns.Parties.StTransferPartyComponent         => KindTransfer,
                                     SovereignTowns.Parties.StSallyPartyComponent            => KindSallyForth,
                                     SovereignTowns.Parties.StPatrolPartyComponent           => KindPatrol,
-                                    SovereignTowns.Parties.ReserveRecruiterPartyComponent   => KindBPoolRecruiter,
+                                    SovereignTowns.Parties.HonorGuardRecruiterPartyComponent => KindHonorGuardRecruiter,
                                     _ => null!,
                                 };
                                 if (kind == null!) continue;
@@ -250,7 +250,7 @@ public sealed class PartyLifecycleManager
                                     case KindTransfer:      transfers++;  break;
                                     case KindSallyForth:    sallyforths++; break;
                                     case KindPatrol:        patrols++;    break;
-                                    case KindBPoolRecruiter: /* counted in GetCapFor by kind */ break;
+                                    case KindHonorGuardRecruiter: /* counted in GetCapFor by kind */ break;
                                 }
                             }
                             // 其他 CustomPartyComponent（vanilla quest 等）忽略

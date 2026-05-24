@@ -14,7 +14,6 @@ using SovereignTowns.Recruitment;
 using SovereignTowns.SallyForth;
 using SovereignTowns.Transfer;
 using SovereignTowns.Ui;
-using SovereignTowns.WebConfig;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -34,6 +33,8 @@ namespace SovereignTowns.Campaign;
 public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
 {
     private PartyLifecycleManager? _lifecycle;
+    /// <summary>供 CapitalLogisticsManager.ExecuteHonorGuardDispatch 走 lifecycle cap=1 守护。</summary>
+    internal PartyLifecycleManager? Lifecycle => _lifecycle;
     private CapitalRegistry? _capitalRegistry;
     private RecruitmentDispatcher? _recruitmentDispatcher;
     private PrisonerRecruitmentManager? _prisonerRecruitmentManager;
@@ -41,8 +42,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     private TransferDispatcher? _transferDispatcher;
     private PatrolDispatcher? _patrolDispatcher;
     private SallyDispatcher? _sallyDispatcher;
-    internal SovereignTowns.Capital.ReservePoolManager? _reservePoolManager;
-    private SovereignTowns.Capital.ReserveRecruiterDispatcher? _reserveRecruiterDispatcher;
+    internal SovereignTowns.Capital.HonorGuardManager? _honorGuardManager;
 
     // B16.2: 静态 accessor — StSallyPartyComponent.NotifyDispatcherEnded 通过它通知 cooldown 重置。
     private static SallyDispatcher? _staticSallyDispatcher;
@@ -88,7 +88,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             CampaignEvents.DailyTickEvent.AddNonSerializedListener(this, OnDailyTick);
             // 首府后勤评估迁到 HourlyTickEvent + 无状态间隔门控(CapitalLogisticsTickHours,默认 6h)。
             CampaignEvents.HourlyTickEvent.AddNonSerializedListener(this, OnHourlyTick);
-            CampaignEvents.HourlyTickPartyEvent.AddNonSerializedListener(this, OnHourlyTickParty);
+            // OnHourlyTickParty 订阅已删除：所有 ST 子类 hourly 逻辑由 PartyLifecycleManager.OnHourlyTickParty 路由。
             // PR-4 (2026-05-24): HourlyTickSettlementEvent + DailyTickSettlement sally 调用已迁入 MCMF。
             // SallyDispatcher 不再订阅 per-settlement 小时 tick，由 CapitalLogisticsManager 经
             // SolveCoroutine → ExecuteAll 批量驱动（每 CapitalLogisticsTickHours 触发）。
@@ -189,14 +189,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             ConfigurationManager.Initialize();
             DecisionAuditLogger.Initialize();
 
-            // B7.1 (fix 2026-05-14): dump troops.json HERE, not in OnGameStart — by the time
-            // OnSessionLaunched fires the full CharacterObject pool from spnpccharacters.xml
-            // (and every other mod's troop xml) is registered with MBObjectManager. Earlier
-            // attempts at OnGameStart produced count=0 because that hook runs before campaign
-            // object xml ingestion.
-            try { SovereignTowns.WebConfig.TroopDumper.Dump(); }
-            catch (Exception ex) { Logger.Error("TroopDumper.Dump failed (swallowed)", ex); }
-
             _lifecycle = new PartyLifecycleManager();
             _lifecycle.Initialize();
 
@@ -220,13 +212,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             }
             _capitalRegistry.Initialize();
 
-            // PR-6：B 池管理器 — 在 CapitalRegistry 就绪后立即初始化，确保每座首府有 B 池。
-            _reservePoolManager = new SovereignTowns.Capital.ReservePoolManager(_capitalRegistry);
-            _reservePoolManager.Initialize();
-
-            // PR-7：B 池专用征兵队调度器。
-            _reserveRecruiterDispatcher = new SovereignTowns.Capital.ReserveRecruiterDispatcher(
-                _lifecycle, _capitalRegistry, _reservePoolManager);
+            // 卫队管理器 — 在 CapitalRegistry 就绪后立即初始化，确保每座首府有卫队 party。
+            // 卫队招募队伍由 MCMF 主求解链路 decode + 派发（见 UnifiedGarrisonSolver / CapitalLogisticsManager）。
+            _honorGuardManager = new SovereignTowns.Capital.HonorGuardManager(_capitalRegistry);
+            _honorGuardManager.Initialize();
 
             _transferDispatcher = new TransferDispatcher(_lifecycle);
             // T2: BattleLootManager 已删除（doc §20 #2）；所有 ST 队伍走基类自资金路径（§14 队伍资金）
@@ -262,9 +251,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // B7.22：自家 party encounter 拦截 — 玩家碰到征兵队 / 调拨队等会进入对话而非战斗界面
             STPartyDialogRegistration.Register(campaignGameStarter);
 
-            // B7: ribbon retired. Player config is now web-only via DiagnosticGameMenu's
-            // "打开网页控制面板" town menu option + WebConfigServer.
-
             _recruitmentDispatcher = new RecruitmentDispatcher(_lifecycle, _capitalRegistry);
             _prisonerRecruitmentManager = new PrisonerRecruitmentManager(_capitalRegistry);
             _capitalLogisticsManager = new CapitalLogisticsManager(
@@ -295,30 +281,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             if (!ConfigurationManager.Current.EnabledFeatures.AutoPatrol)
                 Logger.Info("  HINT: AutoPatrol 已禁用。global.json 改为 true 启用");
 
-            // P0-6：在玩家首次能打开网页面板之前先 seed 一次 settlements snapshot,避免
-            // daily tick 来之前 UI 调 /api/settlements 拿到空 list。Refresh 自带 try/catch。
-            SovereignTowns.WebConfig.SettlementsSnapshot.Refresh();
-
-            // B7.5: 提示玩家打开网页面板 — 但 URL 含 session token，不能写日志 / 聊天面板（玩家分享
-            // ModLogs 截图就会泄漏，攻击者可在 session 期间写任意配置）。改为只提示从城镇菜单进入。
-            try
-            {
-                if (SovereignTowns.WebConfig.WebConfigServer.IsRunning)
-                {
-                    int port = SovereignTowns.WebConfig.WebConfigServer.Port;
-                    InformationManager.DisplayMessage(new InformationMessage(
-                        new TextObject("{=ST_Msg_WebConfig_Started}[Sovereign Towns] Web control panel started. Open any town/castle menu and choose 'Open web control panel'.").ToString(),
-                        Colors.Green));
-                    Logger.Info($"WebConfigServer listening on 127.0.0.1:{port} (token withheld from logs/UI)");
-                }
-                else
-                {
-                    InformationManager.DisplayMessage(new InformationMessage(
-                        new TextObject("{=ST_Msg_WebConfig_StartFailed}[Sovereign Towns] Web control panel did not start (port conflict or sandbox refusal). See the logs.").ToString(),
-                        Colors.Yellow));
-                }
-            }
-            catch (Exception ex) { Logger.Error("WebConfig URL announce failed (swallowed)", ex); }
         }
         catch (Exception ex)
         {
@@ -368,8 +330,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
-            DrainWebConfigSync();
-
             // B17.4 A2：每日活动汇总(IG GarrisonDailyBehavior.cs:50-66 借鉴)
             // 顺序固定:read snapshot → display → reset(IG 5 年沉淀,顺序错就重复弹窗 / 漏弹)
             if (ConfigurationManager.Current?.EnabledFeatures?.ShowDailySummary == true)
@@ -422,7 +382,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             if (interval < 1) interval = 1;
             if (interval > 24) interval = 24;
             if ((long)CampaignTime.Now.ToHours % interval != 0) return;
-            DrainWebConfigSync();
             _capitalLogisticsManager?.EvaluateAll();
         }
         catch (Exception ex)
@@ -431,20 +390,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         }
     }
 
-    private void OnHourlyTickParty(MobileParty party)
-    {
-        try
-        {
-            DrainWebConfigSync();
-            // B16.4: 所有 4 种 StPartyComponent 子类（patrol / transfer / sally / recruiter）
-            // 由 PartyLifecycleManager.OnHourlyTickParty 单点路由到 StPartyComponent.OnHourlyTick。
-            // 本方法体保留 DrainWebConfigSync — 网页配置编辑需要 game thread 同步。
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("OnHourlyTickParty failed", ex);
-        }
-    }
 
     // OnHourlyTickSettlement removed in PR-4 (2026-05-24): HourlyTickSettlementEvent subscription
     // deleted; sally dispatch now driven by CapitalLogisticsManager.ExecuteAll via MCMF.
@@ -457,7 +402,6 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
-            DrainWebConfigSync();
             // PR-4 (2026-05-24): sally dispatch moved to CapitalLogisticsManager.ExecuteAll — removed here.
             // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨/巡逻由 CapitalLogisticsManager 在 DailyTick 统一调度。
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
@@ -473,15 +417,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             {
                 Upgrades.GarrisonXpInjector.GiveDailyXpToGarrison(settlement);
                 _prisonerRecruitmentManager?.OnDailyTickSettlement(settlement);
-                // PR-7：B 池征兵队调度（每首府每日一次，仅在 ReserveTemplate 非空且 ReservePoolCap > 0 时实际执行）。
-                try { _reserveRecruiterDispatcher?.OnDailyTick(settlement); }
-                catch (Exception ex) { Logger.Error("ReserveRecruiterDispatcher.OnDailyTick failed", ex); }
+                // 卫队招募在 PR-* 后已迁入 MCMF 主求解链；此处不再单独驱动。
             }
-
-            // P0-6 修复：刷新 SettlementsSnapshot,供 HTTP /api/settlements 端点读取(HTTP 线程
-            // 不能直接 touch vanilla 对象)。在 settlement-tick 末尾刷新,频率 ~ 1× 每城每日,
-            // 对一个玩家氏族 < 20 城来说总开销可忽略;UI 5 秒轮询不要求实时,daily 粒度足够。
-            SettlementsSnapshot.Refresh();
         }
         catch (Exception ex)
         {
@@ -609,26 +546,19 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         }
     }
 
-    private static void DrainWebConfigSync()
-    {
-        try { WebConfigGameThreadSync.Drain(); }
-        catch (Exception ex) { Logger.Error("WebConfigGameThreadSync.Drain failed", ex); }
-    }
-
-    // ── B 池接入 vanilla siege（PR-8, 2026-05-24）──
+    // ── 卫队接入 vanilla siege（PR-8, 2026-05-24）──
     // 反编译核实 (audits a8e6cdb2f6349ed6f): vanilla Town.GetDefenderParties 已经
     // 枚举 Settlement.Parties 中所有满足条件 (!IsVillager && !IsCaravan && !IsMilitia &&
-    // MapFaction == friend) 的 party。B 池满足全部条件（IsGarrison=false 不被 filter，
+    // MapFaction == friend) 的 party。卫队满足全部条件（IsGarrison=false 不被 filter，
     // MapFaction 来自 HomeSettlement.OwnerClan.MapFaction）→ 围城防御 vanilla 自动包含。
     //
-    // 因此 PR-8 不需要 GetDefenderParties 的 Harmony patch。
+    // 因此不需要 GetDefenderParties 的 Harmony patch。
     //
-    // 首府失守时：MapFaction 随新 OwnerClan 翻转 → B 池若不销毁会自动效忠攻击方。
-    // ReservePoolManager.OnSettlementOwnerChanged() 在步骤 1 检测孤立 B 池并销毁。
+    // 首府失守时：MapFaction 随新 OwnerClan 翻转 → 卫队若不销毁会自动效忠攻击方。
+    // HonorGuardManager.OnSettlementOwnerChanged() 在步骤 1 检测孤立卫队并销毁。
     //
     // 已知 UI 限制：encyclopedia 等 vanilla UI 显示 garrison 只读 Town.GarrisonParty,
-    // 不计入 B 池。PR-8 通过 mod 自己的 DiagnosticGameMenu + ReservePoolTabVM 显示真实
-    // "vanilla + B 池" combined count，玩家通过 mod UI 看到正确数字。
+    // 不计入卫队。HonorGuardTabVM 显示真实 combined count，玩家通过 mod UI 看到正确数字。
 
     /// <summary>
     /// settlement 易主回调（vanilla
@@ -646,12 +576,11 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
     {
         try
         {
-            DrainWebConfigSync();
             // B7.15 multi-clan：registry 内部转发到 oldOwner / newOwner clan 的 manager，
             // 并在 AI toggle 开启时给新获得城的 AI clan 自动 EnsureForClan。
             _capitalRegistry?.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);
-            // PR-6：首府易主后确保新首府有 B 池。
-            _reservePoolManager?.OnSettlementOwnerChanged();
+            // 首府易主后确保新首府有卫队、旧失守首府的卫队被销毁。
+            _honorGuardManager?.OnSettlementOwnerChanged();
         }
         catch (Exception ex)
         {
@@ -687,7 +616,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             try { CampaignEvents.OnGameLoadedEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnGameLoadedEvent.ClearListeners failed", ex); }
             try { CampaignEvents.DailyTickEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall DailyTickEvent.ClearListeners failed", ex); }
             try { CampaignEvents.HourlyTickEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickEvent.ClearListeners failed", ex); }
-            try { CampaignEvents.HourlyTickPartyEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickPartyEvent.ClearListeners failed", ex); }
+            // HourlyTickPartyEvent: 本 behavior 不再订阅（路由统一在 PartyLifecycleManager）。
             try { CampaignEvents.HourlyTickSettlementEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall HourlyTickSettlementEvent.ClearListeners failed", ex); }
             try { CampaignEvents.DailyTickSettlementEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall DailyTickSettlementEvent.ClearListeners failed", ex); }
             try { CampaignEvents.OnSettlementOwnerChangedEvent.ClearListeners(this); } catch (Exception ex) { Logger.Warn("Uninstall OnSettlementOwnerChangedEvent.ClearListeners failed", ex); }
@@ -713,7 +642,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // ── 2) 链式反注册内部 manager（顺序：依赖端先 uninstall，registry 最后）
             try { _vanillaPatrolSuppressor?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaPatrolSuppressor failed", ex); }
             try { _vanillaSuppression?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall VanillaSuppressionManager failed", ex); }
-            try { _reservePoolManager?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall ReservePoolManager failed", ex); }
+            try { _honorGuardManager?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall HonorGuardManager failed", ex); }
             try { _capitalRegistry?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall CapitalRegistry failed", ex); }
             try { _lifecycle?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall PartyLifecycleManager failed", ex); }
 

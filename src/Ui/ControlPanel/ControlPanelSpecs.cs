@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
-/// <summary>一条数值 / bool 参数的元数据。对应 WebUI 的 *Specs 条目。</summary>
+/// <summary>一条数值 / bool 参数的元数据，控制面板 Strategy Tab 据此渲染滑块/开关行。</summary>
 public sealed class SpecEntry
 {
     public string Root;        // "GlobalDefaults" / "Thresholds" / "ClanPatrol" / "" (=GlobalConfig 根)
@@ -43,10 +43,10 @@ public static class ControlPanelSpecs
                 Specs = new List<SpecEntry>
                 {
                     new SpecEntry { Root="GlobalDefaults", Key="TargetTotalCount",
-                        LabelZh="目标驻军总数", LabelEn="Target garrison size",
-                        HintZh="驻军应维持的兵员数。仅在「财政自治」分组开启「允许手动驻军目标」后生效；自动模式下驻军规模由调度器按防御价值与预算分配决定。",
-                        HintEn="The number of troops a garrison should maintain. Effective only when \"Allow manual garrison targets\" is enabled in the Fiscal Autonomy group; in auto mode the garrison size is decided by the dispatcher from defensive value and budget.",
-                        Min=50, Max=500, Discrete=true, Step=1, Def=150 },
+                        LabelZh="目标驻军总数（仅历史字段）", LabelEn="Target garrison size (legacy field)",
+                        HintZh="历史字段。当前驻军规模完全由调度器按防御价值与预算分配决定，此值仅作存档兼容保留，不再被任何代码消费。",
+                        HintEn="Legacy field. Garrison size is now decided entirely by the dispatcher from defensive value and budget; this knob is retained only for save-file compatibility and is no longer consumed.",
+                        Min=50, Max=500, Discrete=true, Step=1, Def=150, Advanced=true },
 
                     new SpecEntry { Root="GlobalDefaults", Key="MinimumDefenderRatio",
                         LabelZh="最少防守比例", LabelEn="Minimum defender ratio",
@@ -390,26 +390,11 @@ public static class ControlPanelSpecs
                         HintEn="Peacetime garrison wage budget = this fraction × managed-holding sustainable income (tax + tariffs); higher sustains more troops. Note: this knob does NOT apply in war — while at war with a non-empty treasury the budget auto-jumps to the full adequate-garrison wage, always funding every town's adequate garrison.",
                         Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.55 },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="MinGarrisonFloor",
-                        LabelZh="驻军保底头数", LabelEn="Minimum garrison floor",
-                        HintZh="每座城/堡无论预算多紧都至少分配的兵员数。调度器优先填满此保底再分配其余预算。",
-                        HintEn="The headcount each town/castle is allocated regardless of how tight the budget is. The dispatcher fills this floor first, then allocates the rest of the budget.",
-                        Min=0, Max=500, Discrete=true, Step=1, Def=40 },
-
                     new SpecEntry { Root="FiscalAutonomy", Key="DisbandExcessThreshold",
                         LabelZh="超额遣散阈值", LabelEn="Disband-excess threshold",
                         HintZh="和平期当某城实际驻军 > 可承担目标 × 此倍数时，从低 Tier 起遣散超额兵员。1.2 = 超出 20% 才遣散。",
                         HintEn="In peacetime, when a town's actual garrison exceeds the affordable target × this multiplier, excess troops are disbanded low-tier-first. 1.2 = disband only once 20% over.",
                         Min=1.0, Max=3.0, Discrete=false, Step=0.1, Def=1.2 },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="DisbandUnaffordableExcess",
-                        LabelZh="启用超额遣散", LabelEn="Disband unaffordable excess",
-                        HintZh="开启后，和平期超出可承担目标的驻军会被自动遣散以止血。手动驻军目标模式下此项对该领地始终不生效。",
-                        HintEn="When on, garrisons exceeding the affordable target are disbanded in peacetime to stop the bleed. Always disabled per-holding while manual garrison targets are active.",
-                        IsBool=true, Def=1.0, Advanced=false,
-                        Min=0, Max=1, Step=1 },
-
-                    // 2026-05-24:AllowManualGarrisonTargets SpecEntry 已删除,手动模式整体下线。
                 },
             },
 
@@ -468,24 +453,6 @@ public static class ControlPanelSpecs
                         HintEn="Fixed cost of dispatching one transfer party in the solve graph. Higher means the solver prefers larger single transfers over more frequent transfer parties.",
                         Min=0, Max=10000, Discrete=true, Step=1, Def=50, Advanced=true },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="ValueFloorBase",
-                        LabelZh="价值基数：保底段", LabelEn="Value base: floor tier",
-                        HintZh="保底段单兵价值基数。须与路由成本（数百~千）同量级。",
-                        HintEn="Floor-tier per-troop value base. Must be on the same order as routing cost (hundreds to thousands).",
-                        Min=0, Max=20000, Discrete=true, Step=100, Def=3000, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="ValueCoreBase",
-                        LabelZh="价值基数：核心段", LabelEn="Value base: core tier",
-                        HintZh="核心段单兵价值基数。核心段在城内逐子层递减。",
-                        HintEn="Core-tier per-troop value base. The core tier diminishes across sub-tiers within a town.",
-                        Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="SurplusEdgeCost",
-                        LabelZh="过剩段边费用", LabelEn="Surplus-tier edge cost",
-                        HintZh="过剩段单兵价值 = 此值的负数。严格为正，使「不养过剩兵」永远优于过度驻军。",
-                        HintEn="Surplus-tier per-troop value = the negative of this. Strictly positive, so leaving surplus unfilled always beats over-garrisoning.",
-                        Min=1, Max=1000, Discrete=true, Step=1, Def=1, Advanced=true },
-
                     new SpecEntry { Root="FiscalAutonomy", Key="PatrolValue",
                         LabelZh="巡逻回报值", LabelEn="Patrol reward value",
                         HintZh="盈余兵去巡逻 vs 直接遣散的强度。值越大越优先把首府盈余兵送去巡逻。",
@@ -541,56 +508,7 @@ public static class ControlPanelSpecs
                         HintEn="Value multiplier when the risk level is Critical.",
                         Min=0, Max=8, Discrete=false, Step=0.1, Def=3.0, Advanced=true },
 
-                    // ════════ 段 4：充足驻军目标公式（Advanced=true）════════
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateBase",
-                        LabelZh="充足目标：基数", LabelEn="Adequate target: base",
-                        HintZh="充足驻军目标的基数：充足目标 = clamp(此基数 + 繁荣度/繁荣除数 + 威胁附加, 保底头数, 硬上限)。须落在 [保底头数, 硬上限] 内。",
-                        HintEn="Base of the adequate garrison target: adequate = clamp(this base + prosperity/divisor + threat add-on, floor, hard cap). Must fall within [floor, hard cap].",
-                        Min=0, Max=2000, Discrete=true, Step=1, Def=60, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateProsperityDivisor",
-                        LabelZh="充足目标：繁荣度除数", LabelEn="Adequate target: prosperity divisor",
-                        HintZh="繁荣度对充足目标的贡献除数：繁荣度 ÷ 此值。值越大繁荣度影响越小。",
-                        HintEn="Divisor for prosperity's contribution to the adequate target: prosperity ÷ this value. Larger means prosperity matters less.",
-                        Min=1, Max=1000, Discrete=true, Step=1, Def=80, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="AdequateThreatWeight",
-                        LabelZh="充足目标：威胁权重", LabelEn="Adequate target: threat weight",
-                        HintZh="周边威胁强度对充足目标的权重：威胁附加 = round(周边威胁强度 × 此权重)。",
-                        HintEn="Weight of nearby threat intensity on the adequate target: threat add-on = round(nearby threat intensity × this weight).",
-                        Min=0, Max=1000, Discrete=true, Step=1, Def=8, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="MaxGarrisonHardCap",
-                        LabelZh="驻军硬上限兜底", LabelEn="Garrison hard-cap fallback",
-                        HintZh="取不到 vanilla 驻军 PartySizeLimit 时使用的硬上限兜底。必须 ≥ 驻军保底头数。",
-                        HintEn="Hard-cap fallback used when the vanilla garrison PartySizeLimit cannot be read. Must be >= the minimum garrison floor.",
-                        Min=0, Max=2000, Discrete=true, Step=1, Def=400, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="TownAdequateVanillaAnchorRatio",
-                        LabelZh="城镇充足目标 vanilla 锚定比例", LabelEn="Town adequate vanilla anchor ratio",
-                        HintZh="城镇充足目标的下限锚定：充足目标不低于 vanilla 驻军容量（PartySizeLimit）× 此比例。公式基数对普通城镇偏低时由此兜底。0 = 关闭锚定。仅城镇生效，城堡不受影响。",
-                        HintEn="Lower-bound anchor for a town's adequate target: it will not drop below the vanilla garrison capacity (PartySizeLimit) × this ratio, backstopping the formula base for ordinary towns. 0 disables the anchor. Towns only — castles are unaffected.",
-                        Min=0.0, Max=1.0, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
-
-                    // ════════ 段 5：核心段子层 + strategic 乘子（Advanced=true）════════
-                    new SpecEntry { Root="FiscalAutonomy", Key="CoreTierCount",
-                        LabelZh="核心段：子层数 K", LabelEn="Core tier: sub-tier count K",
-                        HintZh="核心段离散成多少个递减子层（K）。子层越多价值曲线越平滑，调度图越大。",
-                        HintEn="How many diminishing sub-tiers (K) the core tier is discretized into. More sub-tiers smooth the value curve and enlarge the dispatch graph.",
-                        Min=1, Max=20, Discrete=true, Step=1, Def=5, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="CoreDimRange",
-                        LabelZh="核心段：递减幅度", LabelEn="Core tier: diminishing range",
-                        HintZh="核心段逐子层递减的总幅度：最低子层价值乘子 = 1 − 此值。",
-                        HintEn="Total diminishing range of the core tier: the lowest sub-tier value multiplier = 1 − this value.",
-                        Min=0, Max=1, Discrete=false, Step=0.05, Def=0.8, Advanced=true },
-
-                    new SpecEntry { Root="FiscalAutonomy", Key="CoreDimMidpoint",
-                        LabelZh="核心段：子层取样中点", LabelEn="Core tier: sub-tier sampling midpoint",
-                        HintZh="核心段第 k 子层用 (k + 此值) / K 作为归一化取样位置。",
-                        HintEn="The core tier's k-th sub-tier samples at (k + this value) / K as its normalized position.",
-                        Min=0, Max=1, Discrete=false, Step=0.05, Def=0.5, Advanced=true },
-
+                    // ════════ 段 4：strategic 乘子（Advanced=true）════════
                     new SpecEntry { Root="FiscalAutonomy", Key="ProsperityNormalizer",
                         LabelZh="繁荣度归一化除数", LabelEn="Prosperity normalizer",
                         HintZh="strategic 乘子的繁荣度归一化除数：繁荣度 ÷ 此值 再 clamp 到 [0.5, 1.5]。",
@@ -686,16 +604,16 @@ public static class ControlPanelSpecs
                         Min=1.0, Max=3.0, Discrete=false, Step=0.05, Def=1.3, Advanced=true },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="BaseValuePerTier",
-                        LabelZh="单兵价值基常数（PR-5'）", LabelEn="Per-troop value base constant (PR-5')",
-                        HintZh="持有边单兵价值基常数。PR-5' 单段公式：value = 此值 × 威胁乘子 × 战略乘子 × power(tier)。替代旧 ValueFloorBase + ValueCoreBase 多段。默认 800。",
-                        HintEn="Holding-edge per-troop value base constant. PR-5' single-segment formula: value = this × threat × strategic × power(tier). Replaces legacy ValueFloorBase + ValueCoreBase multi-tier. Default 800.",
+                        LabelZh="单兵价值基常数", LabelEn="Per-troop value base constant",
+                        HintZh="持有边单兵价值基常数。单段公式：value = 此值 × 威胁乘子 × 战略乘子 × power(tier)。默认 800。",
+                        HintEn="Holding-edge per-troop value base constant. Single-segment formula: value = this × threat × strategic × power(tier). Default 800.",
                         Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
 
-                    // ════════ 段 10：PR-6 (2026-05-24) B 池容量上限 ════════
-                    new SpecEntry { Root="FiscalAutonomy", Key="ReservePoolCap",
-                        LabelZh="B 池容量上限", LabelEn="Reserve pool cap",
-                        HintZh="B 池（首府储备兵力 party）可持有的最大驻军头数。0 = 关闭 B 池（不创建 party）；> 0 = MCMF 调度器注入兵员时的硬上限。功能由 PR-7 实现；PR-6 阶段默认 0（关闭）。",
-                        HintEn="Maximum garrison headcount the reserve-pool party (B-pool) may hold. 0 = disable B-pool (no party created); > 0 = hard cap when MCMF scheduler fills it. Feature is implemented in PR-7; default 0 (disabled) for PR-6.",
+                    // ════════ 段 10：卫队容量上限 ════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="HonorGuardCap",
+                        LabelZh="卫队容量上限", LabelEn="Honor guard cap",
+                        HintZh="卫队（首府私属精锐 party）可持有的最大驻军头数。0 = 关闭卫队（不创建 party）；> 0 = MCMF 调度器注入兵员时的硬上限。",
+                        HintEn="Maximum garrison headcount the honor-guard party may hold. 0 = disable honor guard (no party created); > 0 = hard cap when the MCMF scheduler fills it.",
                         Min=0, Max=1000, Discrete=true, Step=10, Def=0, Advanced=true },
                 },
             },

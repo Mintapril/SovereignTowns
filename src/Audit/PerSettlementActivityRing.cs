@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace SovereignTowns.Audit;
 
 /// <summary>
-/// B17.4 A2：按 settlement.StringId 分桶,每桶最近 N 条结构化活动 → WebConfig 端点。
+/// B17.4 A2：按 settlement.StringId 分桶,每桶最近 N 条结构化活动 → 控制面板「近期动态」消费。
 /// IG ActivityLog.cs:46-58 的 FIFO 容量 100；这里默认 50（玩家关心的窗口短）。
 /// 内存常驻 ~20 town × 50 entry × ~300B ≈ 0.3MB,可忽略。纯 in-memory 不持久化。
 /// </summary>

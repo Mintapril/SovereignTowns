@@ -22,7 +22,7 @@ public sealed class VanillaPatrolSuppressor
 {
     private bool _initialized;
 
-    /// <summary>全局单例,供 WebConfig 热应用时调 <see cref="DissolveAllManagedVanillaPatrols"/>。</summary>
+    /// <summary>全局单例,供配置热应用调 <see cref="DissolveAllManagedVanillaPatrols"/>。</summary>
     public static VanillaPatrolSuppressor? Instance { get; private set; }
 
     /// <summary>OnSessionLaunched 时由 CampaignBehavior 调用。</summary>

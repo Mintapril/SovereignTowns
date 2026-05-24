@@ -100,7 +100,7 @@
     路径说明（2026-05-23 扁平化后）：
       - csproj 位于 $(MSBuildProjectDirectory) = <repo>/src
       - 工作目录根 = <repo>
-      - 游戏侧 module 源资源在 <repo>/Module/{SubModule.xml, GUI/Prefabs, ModuleData/Languages, WebUI}
+      - 游戏侧 module 源资源在 <repo>/Module/{SubModule.xml, GUI/Prefabs, ModuleData/Languages}
       - $(ModuleDeployPath) = $(BannerlordPath)\Modules\SovereignTowns (来自 Directory.Build.props)
       - prefab 部署目标 $(ModuleDeployPath)\GUI\Prefabs（ModuleDeployPath 已含 SovereignTowns 这一层）
   -->
@@ -110,20 +110,17 @@
       <_ModDll      Include="$(OutputPath)$(AssemblyName).dll" />
       <_ModPdb      Include="$(OutputPath)$(AssemblyName).pdb" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
       <_PrefabXmls  Include="$(MSBuildProjectDirectory)\..\Module\GUI\Prefabs\*.xml" />
-      <!-- B7.4: WebUI bundle (HTML / JS / CSS) served by WebConfigServer. Recursive glob keeps subdirs. -->
-      <_WebUIFiles  Include="$(MSBuildProjectDirectory)\..\Module\WebUI\**\*.*" />
       <!-- Localization: ModuleData/Languages/<lang>/{language_data.xml, std_sovereigntowns_strings.xml}.
            Bannerlord auto-discovers any <ModuleId>/ModuleData/Languages/**/language_data.xml at boot;
            no SubModule.xml <Xmls> entry needed. Recursive glob preserves the EN/ and CNs/ subdirs. -->
       <_LangFiles   Include="$(MSBuildProjectDirectory)\..\Module\ModuleData\Languages\**\*.xml" />
     </ItemGroup>
-    <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs;$(ModuleDeployPath)\WebUI;$(ModuleDeployPath)\ModuleData\Languages" />
+    <MakeDir Directories="$(ModuleDeployPath);$(ModuleDeployPath)\bin\Win64_Shipping_Client;$(ModuleDeployPath)\GUI\Prefabs;$(ModuleDeployPath)\ModuleData\Languages" />
     <Copy SourceFiles="@(_SubModuleXml)" DestinationFolder="$(ModuleDeployPath)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_ModDll);@(_ModPdb)" DestinationFolder="$(ModuleDeployPath)\bin\Win64_Shipping_Client" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(_PrefabXmls)" DestinationFolder="$(ModuleDeployPath)\GUI\Prefabs" SkipUnchangedFiles="true" Condition="'@(_PrefabXmls)' != ''" />
-    <Copy SourceFiles="@(_WebUIFiles)" DestinationFolder="$(ModuleDeployPath)\WebUI\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(_WebUIFiles)' != ''" />
     <Copy SourceFiles="@(_LangFiles)" DestinationFolder="$(ModuleDeployPath)\ModuleData\Languages\%(RecursiveDir)" SkipUnchangedFiles="true" Condition="'@(_LangFiles)' != ''" />
-    <Message Importance="high" Text="[SovereignTowns] Deployed to $(ModuleDeployPath) (prefab=@(_PrefabXmls->Count()), webui=@(_WebUIFiles->Count()), lang=@(_LangFiles->Count()))" />
+    <Message Importance="high" Text="[SovereignTowns] Deployed to $(ModuleDeployPath) (prefab=@(_PrefabXmls->Count()), lang=@(_LangFiles->Count()))" />
   </Target>
 
 </Project>

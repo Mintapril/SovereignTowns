@@ -39,26 +39,20 @@ public static class ConfigurationManager
     private static bool _initialized;
     private static string _lastValidationError = "";
 
-    // 中英双语 reason 助手 —— 玩家可见的校验失败原因在 WebUI 弹窗中原样显示。
+    // 中英双语 reason 助手 —— 玩家可见的校验失败原因在游戏内控制面板弹窗中原样显示。
     // 语言探测合并到 SovereignTowns.Common.LanguageProbe（commit 2026-05-23 审计去重）。
     private static string Tr(string zh, string en) => SovereignTowns.Common.LanguageProbe.Tr(zh, en);
 
     /// <summary>
-    /// B17.4 B1 / Issue #1：GlobalDefaults 变更后触发。
-    /// 参数：被改的 settlement.StringId，或 null 表示全局/未知（订阅者需对所有 in-flight 队伍重规划）。
-    /// 永远从主线程触发 —— Web 路径走 <see cref="WebConfigGameThreadSync.RequestConfigChanged"/>
-    /// 入队，下一次 Drain 在 campaign tick 主线程上调用 <see cref="RaiseConfigChanged"/>。
+    /// GlobalDefaults 变更后触发。参数：被改的 settlement.StringId，或 null 表示全局/未知
+    /// （订阅者需对所有 in-flight 队伍重规划）。永远从主线程触发 —— 由 ReplaceAndSave / TryReload 同步 invoke。
     /// </summary>
     public static event Action<string?>? OnConfigChanged;
 
-    /// <summary>
-    /// Issue #1：仅供 <see cref="SovereignTowns.WebConfig.WebConfigGameThreadSync.Drain"/> 在主线程
-    /// 调用。其他路径不应直接 invoke 事件（事件 access 受 C# 编译器限制本就只能在本类内）。
-    /// </summary>
+    /// <summary>主线程同步触发 OnConfigChanged。</summary>
     internal static void RaiseConfigChanged(string? settlementId)
     {
-        // 2026-05-18：配置变更后先同步 Logger 等级（玩家在 WebUI 切 VerboseLogging 立即生效），
-        // 再 fire 业务订阅。在主线程调用，Logger.SetMinLevel 是普通字段赋值，零阻塞。
+        // 配置变更后先同步 Logger 等级（控制面板切 VerboseLogging 立即生效），再 fire 业务订阅。
         try { ApplyVerboseLoggingFromConfig(); }
         catch (Exception ex) { Logger.Warn($"ApplyVerboseLoggingFromConfig failed: {ex.Message}"); }
 
@@ -68,7 +62,7 @@ public static class ConfigurationManager
 
     /// <summary>
     /// 把 GlobalConfig.EnabledFeatures.VerboseLogging 同步到 Logger.MinLevel。Initialize 末尾 + 每次
-    /// OnConfigChanged 都调一次，因此 WebUI 上点开/关 verbose 立即生效，无需重启游戏。
+    /// OnConfigChanged 都调一次，因此控制面板切 verbose 立即生效，无需重启游戏。
     /// </summary>
     private static void ApplyVerboseLoggingFromConfig()
     {
@@ -347,16 +341,19 @@ public static class ConfigurationManager
                 }
 
                 if (changed)
-                    Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}' (content changed → will broadcast OnConfigChanged)");
+                {
+                    Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}' (content changed → broadcasting OnConfigChanged)");
+                }
                 else
+                {
                     Logger.Info($"ReplaceAndSave: wrote new config to '{configPath}' (content identical → no broadcast)");
-
-                // Issue #1：OnConfigChanged 已迁移到 WebConfigGameThreadSync.Drain
-                // 在主线程触发；此处不再直接 invoke（HTTP 路径下我们在 ThreadPool 线程上）。
+                }
 
                 reason = "";
-                return true;
+                // 落到 lock 外触发：订阅者会扫 MobileParty.All 等重活，不应延长 _gate 持有时间。
             }
+            if (changed) RaiseConfigChanged(null);
+            return true;
         }
         catch (Exception ex)
         {
@@ -406,12 +403,17 @@ public static class ConfigurationManager
                 reason = "";
 
                 if (changed)
-                    Logger.Info($"Config reloaded: version={_current.ConfigVersion} (content changed → will broadcast OnConfigChanged)");
+                {
+                    Logger.Info($"Config reloaded: version={_current.ConfigVersion} (content changed → broadcasting OnConfigChanged)");
+                }
                 else
+                {
                     Logger.Info($"Config reloaded: version={_current.ConfigVersion} (content identical → no broadcast)");
-
-                return true;
+                }
+                // 落到 lock 外触发：见 ReplaceAndSave 同处注释。
             }
+            if (changed) RaiseConfigChanged(null);
+            return true;
         }
         catch (Exception ex)
         {
@@ -430,12 +432,12 @@ public static class ConfigurationManager
     // -------- path / IO helpers --------
 
     /// <summary>
-    /// B7.2: 主配置路径迁到玩家文档目录，避开 Steam C:\ 写盘 UAC 提示。
-    /// 与 TroopDumper.GetBaseDirectory() 保持同一根目录 SovereignTowns/。
+    /// B7.2: 主配置路径在玩家文档目录，避开 Steam C:\ 写盘 UAC 提示。
     /// </summary>
     private static string GetConfigFilePath()
     {
-        return Path.Combine(SovereignTowns.WebConfig.TroopDumper.GetBaseDirectory(), ConfigFileName);
+        string docs = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+        return Path.Combine(docs, "Mount and Blade II Bannerlord", "Configs", "SovereignTowns", ConfigFileName);
     }
 
     /// <summary>
@@ -723,28 +725,9 @@ public static class ConfigurationManager
     {
         if (f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
         { reason = Tr($"FiscalAutonomy.GarrisonWageBudgetRatio 非法 ({f.GarrisonWageBudgetRatio})；范围 [0.1, 1.0]", $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1, 1.0]"); return false; }
-        if (f.MinGarrisonFloor < 0 || f.MinGarrisonFloor > 500)
-        { reason = Tr($"FiscalAutonomy.MinGarrisonFloor 非法 ({f.MinGarrisonFloor})；范围 [0, 500]", $"FiscalAutonomy.MinGarrisonFloor invalid ({f.MinGarrisonFloor}); [0, 500]"); return false; }
         if (f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
         { reason = Tr($"FiscalAutonomy.DisbandExcessThreshold 非法 ({f.DisbandExcessThreshold})；范围 [1.0, 3.0]", $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0, 3.0]"); return false; }
-        if (f.CoreTierCount < 1 || f.CoreTierCount > 20)
-        { reason = Tr($"FiscalAutonomy.CoreTierCount 非法 ({f.CoreTierCount})；范围 [1, 20]", $"FiscalAutonomy.CoreTierCount invalid ({f.CoreTierCount}); [1, 20]"); return false; }
-        if (f.AdequateProsperityDivisor < 1 || f.AdequateProsperityDivisor > 1000)
-        { reason = Tr($"FiscalAutonomy.AdequateProsperityDivisor 非法 ({f.AdequateProsperityDivisor})；范围 [1, 1000]", $"FiscalAutonomy.AdequateProsperityDivisor invalid ({f.AdequateProsperityDivisor}); [1, 1000]"); return false; }
-        if (f.AdequateThreatWeight < 0 || f.AdequateThreatWeight > 1000)
-        { reason = Tr($"FiscalAutonomy.AdequateThreatWeight 非法 ({f.AdequateThreatWeight})；范围 [0, 1000]", $"FiscalAutonomy.AdequateThreatWeight invalid ({f.AdequateThreatWeight}); [0, 1000]"); return false; }
-        if (f.MaxGarrisonHardCap < f.MinGarrisonFloor || f.MaxGarrisonHardCap > 2000)
-        { reason = Tr($"FiscalAutonomy.MaxGarrisonHardCap 非法 ({f.MaxGarrisonHardCap})；范围 [MinGarrisonFloor, 2000]", $"FiscalAutonomy.MaxGarrisonHardCap invalid ({f.MaxGarrisonHardCap}); [MinGarrisonFloor, 2000]"); return false; }
-        if (f.AdequateBase < f.MinGarrisonFloor || f.AdequateBase > f.MaxGarrisonHardCap)
-        { reason = Tr("FiscalAutonomy.AdequateBase 必须落在 [MinGarrisonFloor, MaxGarrisonHardCap] 区间内", "FiscalAutonomy.AdequateBase must be in [MinGarrisonFloor, MaxGarrisonHardCap]"); return false; }
 
-        // ── 时间展开调度器 value 函数 ──
-        if (f.ValueFloorBase < 0 || f.ValueFloorBase > 20000)
-        { reason = Tr($"FiscalAutonomy.ValueFloorBase 非法 ({f.ValueFloorBase})；范围 [0, 20000]", $"FiscalAutonomy.ValueFloorBase invalid ({f.ValueFloorBase}); [0, 20000]"); return false; }
-        if (f.ValueCoreBase < 0 || f.ValueCoreBase > 10000)
-        { reason = Tr($"FiscalAutonomy.ValueCoreBase 非法 ({f.ValueCoreBase})；范围 [0, 10000]", $"FiscalAutonomy.ValueCoreBase invalid ({f.ValueCoreBase}); [0, 10000]"); return false; }
-        if (f.SurplusEdgeCost < 1 || f.SurplusEdgeCost > 1000)
-        { reason = Tr($"FiscalAutonomy.SurplusEdgeCost 非法 ({f.SurplusEdgeCost})；范围 [1, 1000]", $"FiscalAutonomy.SurplusEdgeCost invalid ({f.SurplusEdgeCost}); [1, 1000]"); return false; }
         if (f.PatrolValue < 0 || f.PatrolValue > 5000)
         { reason = Tr($"FiscalAutonomy.PatrolValue 非法 ({f.PatrolValue})；范围 [0, 5000]", $"FiscalAutonomy.PatrolValue invalid ({f.PatrolValue}); [0, 5000]"); return false; }
         if (f.DisbandPerDayCap < 0 || f.DisbandPerDayCap > 200)
@@ -771,10 +754,6 @@ public static class ConfigurationManager
             if (!IsFiniteFloat(val) || val < 0f || val > 8f)
             { reason = Tr($"FiscalAutonomy.{name} 非法 ({val})；范围 [0, 8]", $"FiscalAutonomy.{name} invalid ({val}); [0, 8]"); return false; }
         }
-        if (!IsFiniteFloat(f.CoreDimRange) || f.CoreDimRange < 0f || f.CoreDimRange > 1f)
-        { reason = Tr($"FiscalAutonomy.CoreDimRange 非法 ({f.CoreDimRange})；范围 [0, 1]", $"FiscalAutonomy.CoreDimRange invalid ({f.CoreDimRange}); [0, 1]"); return false; }
-        if (!IsFiniteFloat(f.CoreDimMidpoint) || f.CoreDimMidpoint < 0f || f.CoreDimMidpoint > 1f)
-        { reason = Tr($"FiscalAutonomy.CoreDimMidpoint 非法 ({f.CoreDimMidpoint})；范围 [0, 1]", $"FiscalAutonomy.CoreDimMidpoint invalid ({f.CoreDimMidpoint}); [0, 1]"); return false; }
         if (!IsFiniteFloat(f.ProsperityNormalizer) || f.ProsperityNormalizer < 500f || f.ProsperityNormalizer > 20000f)
         { reason = Tr($"FiscalAutonomy.ProsperityNormalizer 非法 ({f.ProsperityNormalizer})；范围 [500, 20000]", $"FiscalAutonomy.ProsperityNormalizer invalid ({f.ProsperityNormalizer}); [500, 20000]"); return false; }
         if (!IsFiniteFloat(f.CapitalStrategicBonus) || f.CapitalStrategicBonus < 1f || f.CapitalStrategicBonus > 3f)
@@ -810,20 +789,21 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.TownStrategicBonus 非法 ({f.TownStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.TownStrategicBonus invalid ({f.TownStrategicBonus}); [1, 3]"); return false; }
         if (f.BaseValuePerTier < 0 || f.BaseValuePerTier > 10000)
         { reason = Tr($"FiscalAutonomy.BaseValuePerTier 非法 ({f.BaseValuePerTier})；范围 [0, 10000]", $"FiscalAutonomy.BaseValuePerTier invalid ({f.BaseValuePerTier}); [0, 10000]"); return false; }
-        // ── PR-6 (2026-05-24) B 池容量上限校验 ──
-        if (f.ReservePoolCap < 0 || f.ReservePoolCap > 1000)
-        { reason = Tr($"FiscalAutonomy.ReservePoolCap 非法 ({f.ReservePoolCap})；范围 [0, 1000]（0 = 关闭 B 池）", $"FiscalAutonomy.ReservePoolCap invalid ({f.ReservePoolCap}); [0, 1000] (0 = disable B-pool)"); return false; }
-        // ── PR-7 (2026-05-24) B 池招募模板校验 ──
-        if (f.ReserveTemplate != null)
+        // ── 卫队容量上限 + 价值常数 + 招募模板校验 ──
+        if (f.HonorGuardCap < 0 || f.HonorGuardCap > 1000)
+        { reason = Tr($"FiscalAutonomy.HonorGuardCap 非法 ({f.HonorGuardCap})；范围 [0, 1000]（0 = 关闭卫队）", $"FiscalAutonomy.HonorGuardCap invalid ({f.HonorGuardCap}); [0, 1000] (0 = disable honor guard)"); return false; }
+        if (f.HonorGuardValueBase < 0 || f.HonorGuardValueBase > 50_000)
+        { reason = Tr($"FiscalAutonomy.HonorGuardValueBase 非法 ({f.HonorGuardValueBase})；范围 [0, 50000]", $"FiscalAutonomy.HonorGuardValueBase invalid ({f.HonorGuardValueBase}); [0, 50000]"); return false; }
+        if (f.HonorGuardTemplate != null)
         {
-            if (f.ReserveTemplate.Count > 50)
-            { reason = Tr($"FiscalAutonomy.ReserveTemplate 条目过多 ({f.ReserveTemplate.Count})；上限 50", $"FiscalAutonomy.ReserveTemplate too many entries ({f.ReserveTemplate.Count}); max 50"); return false; }
-            foreach (var kv in f.ReserveTemplate)
+            if (f.HonorGuardTemplate.Count > 50)
+            { reason = Tr($"FiscalAutonomy.HonorGuardTemplate 条目过多 ({f.HonorGuardTemplate.Count})；上限 50", $"FiscalAutonomy.HonorGuardTemplate too many entries ({f.HonorGuardTemplate.Count}); max 50"); return false; }
+            foreach (var kv in f.HonorGuardTemplate)
             {
                 if (string.IsNullOrEmpty(kv.Key))
-                { reason = Tr("FiscalAutonomy.ReserveTemplate 存在空 key", "FiscalAutonomy.ReserveTemplate has an empty key"); return false; }
+                { reason = Tr("FiscalAutonomy.HonorGuardTemplate 存在空 key", "FiscalAutonomy.HonorGuardTemplate has an empty key"); return false; }
                 if (kv.Value < 0 || kv.Value > 100)
-                { reason = Tr($"FiscalAutonomy.ReserveTemplate['{kv.Key}'] 非法 ({kv.Value})；范围 [0, 100]", $"FiscalAutonomy.ReserveTemplate['{kv.Key}'] invalid ({kv.Value}); [0, 100]"); return false; }
+                { reason = Tr($"FiscalAutonomy.HonorGuardTemplate['{kv.Key}'] 非法 ({kv.Value})；范围 [0, 100]", $"FiscalAutonomy.HonorGuardTemplate['{kv.Key}'] invalid ({kv.Value}); [0, 100]"); return false; }
             }
         }
         reason = "";
