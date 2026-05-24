@@ -8,10 +8,10 @@ using SovereignTowns.WebConfig;
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
-/// Tab 4「兵员模板 / Troop template」VM。
-/// 左侧：可搜索 / 过滤的兵种名录；右侧：已选名单 + 自动归一化的占比滑条。
-/// 占比归一化数学逐行 port 自 WebUI 的 addTroop / updateTroopRatio / removeTroop /
-/// clearTroops / _snapTroopSumTo1（index.html ~1635-1714），必须与 WebUI 完全一致。
+/// Tab 3「B 池模板 / Reserve pool template」VM（PR-10, 2026-05-24）。
+/// 左侧：可搜索 / 过滤的兵种名录；右侧：已选名单 + 计划招募数量（整数，[0,100]）。
+/// 编辑 _config.FiscalAutonomy.ReserveTemplate（int counts，独立，不归一化）。
+/// _config 是 ControlPanelVM 持有的克隆副本，通过顶栏 Save 按钮才真正写盘。
 /// </summary>
 public sealed class TemplatesTabVM : ViewModel
 {
@@ -54,10 +54,9 @@ public sealed class TemplatesTabVM : ViewModel
     [DataSourceProperty] public string ClearLabel { get; }
     [DataSourceProperty] public string EmptyListText { get; }
     [DataSourceProperty] public string NoMatchText { get; }
-    [DataSourceProperty] public string RatioNormalizedSuffix { get; }
     [DataSourceProperty] public string CapHintText { get; }
 
-    // ── mode banner ──
+    // ── mode banner (kept for XML binding compatibility; always shows generic-mode banner) ──
     [DataSourceProperty] public string ModeBannerMark => "!";
     [DataSourceProperty] public string ModeBannerText { get; }
     [DataSourceProperty] public string SwitchToExactLabel { get; }
@@ -207,11 +206,11 @@ public sealed class TemplatesTabVM : ViewModel
             if (t != null && !string.IsNullOrEmpty(t.id) && !_troopById.ContainsKey(t.id))
                 _troopById[t.id] = t;
 
-        // ── 静态文案（逐字 port index.html ~696-845）──
-        Title = ControlPanelLoc.Tr("兵员模板", "Troop template");
+        // ── 静态文案 ──
+        Title = ControlPanelLoc.Tr("B 池模板", "Reserve pool template");
         Intro = ControlPanelLoc.Tr(
-            "指定每个兵种的占比（自动归一化到 100%），实际人数 = 占比 × 目标驻军人数。",
-            "Set the share of each troop type (auto-normalized to 100%); actual count = share × target garrison size.");
+            "指定 B 池每个兵种的计划招募数量（整数，0-100，最多 50 种）。PR-7 调度器每日按模板补充 B 池。",
+            "Set the target headcount for each troop type in the B-pool (integer, 0-100, up to 50 types). The PR-7 scheduler fills the pool daily according to this template.");
         CatalogSectionLabel = ControlPanelLoc.Tr("兵种名录", "Troop catalog");
         CatalogHint = ControlPanelLoc.Tr("点 ＋ 加入名单", "Click + to add to the list");
         SearchPlaceholder = ControlPanelLoc.Tr(
@@ -226,17 +225,17 @@ public sealed class TemplatesTabVM : ViewModel
             "名单为空。从左侧「兵种名录」点 ＋ 加入。",
             "The list is empty. Add troops with + from the \"Troop catalog\" on the left.");
         NoMatchText = ControlPanelLoc.Tr("无匹配兵种", "No matching troops");
-        RatioNormalizedSuffix = ControlPanelLoc.Tr("（自动归一化）", "(auto-normalized)");
         CapHintText = ControlPanelLoc.Tr(
             "· 仅显示前 200 条，继续输入收缩", "· showing first 200 only, keep typing to narrow");
 
+        // Mode banner: kept for XML binding compat; B-pool template has no generic/exact distinction.
         ModeBannerText = ControlPanelLoc.Tr(
-            "当前为「通用比例匹配」模式 —— 下面勾选的兵种不会生效。招募只看兵种比例和 Tier 范围。",
-            "Currently in \"Generic ratio matching\" mode — the troops ticked below have no effect. Recruitment looks only at troop ratios and tier range.");
+            "B 池模板模式：设置每种兵员的计划招募数量，调度器每日按此补充 B 池。",
+            "B-pool template mode: set the target count for each troop type; the scheduler fills the pool daily.");
         SwitchToExactLabel = ControlPanelLoc.Tr("改用精确模板模式", "Switch to exact template mode");
         ExactModeOkText = ControlPanelLoc.Tr(
-            "✓ 当前为「精确兵员模板」模式 —— 下面勾选的兵种即驻军招募目标。",
-            "✓ Currently in \"Exact troop template\" mode — the troops ticked below are the garrison recruitment targets.");
+            "✓ B 池模板已设置。",
+            "✓ B-pool template is configured.");
 
         // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
         _isGenericMode = true;
@@ -251,22 +250,30 @@ public sealed class TemplatesTabVM : ViewModel
         RefreshHeaderCounts();
     }
 
-    private TownGarrisonRule Defaults => _config.GlobalDefaults;
+    // PR-10 (2026-05-24): Template now reads/writes _config.FiscalAutonomy.ReserveTemplate.
+    // _config is the clone held by ControlPanelVM; mutations are persisted via the top-bar Save button.
+    // Validator limits: ≤50 entries, count ∈ [0,100], no empty keys.
+    private const int TemplateCap = 50;
+    private const int CountMax = 100;
+    private const int CountStep = 5;
 
-    // PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule.
-    // TemplatesTab is now a visual stub; all mutations go to a local ephemeral dict (not saved).
-    private readonly Dictionary<string, float> _ephemeralTemplate = new Dictionary<string, float>();
-    private Dictionary<string, float> Template => _ephemeralTemplate;
+    private Dictionary<string, int> Template
+    {
+        get
+        {
+            if (_config.FiscalAutonomy == null) _config.FiscalAutonomy = new FiscalAutonomyConfig();
+            if (_config.FiscalAutonomy.ReserveTemplate == null)
+                _config.FiscalAutonomy.ReserveTemplate = new Dictionary<string, int>();
+            return _config.FiscalAutonomy.ReserveTemplate;
+        }
+    }
 
     // ══════════════════════════════════════════════
     //  Commands
     // ══════════════════════════════════════════════
 
-    /// <summary>PR-5'(2026-05-24): UseGenericMatching removed; exact mode no longer exists — no-op.</summary>
-    public void ExecuteSwitchToExactMode()
-    {
-        // no-op: UseGenericMatching removed from TownGarrisonRule
-    }
+    /// <summary>No-op: B-pool template has no generic/exact mode distinction.</summary>
+    public void ExecuteSwitchToExactMode() { }
 
     public void ExecuteToggleHideSelected()
     {
@@ -300,33 +307,26 @@ public sealed class TemplatesTabVM : ViewModel
 
     private void DoClearTroops()
     {
-        // PR-5'(2026-05-24): ExactTroopTemplate removed; clear the ephemeral local template only.
-        _ephemeralTemplate.Clear();
+        Template.Clear();
+        _markDirty?.Invoke();
         RebuildSelectedList();
         RefreshFilteredAddedFlags();
         RefreshHeaderCounts();
     }
 
     // ══════════════════════════════════════════════
-    //  占比归一化 — 逐行 port 自 WebUI（index.html ~1635-1714）
-    //  总和约 = 1.0；新增 / 删除 / 调整时按比例 rescale 让 Σ 保持 1.0。
+    //  B 池模板编辑 — count/int 语义（PR-10）
+    //  每种兵员独立计划数量，无归一化约束。上限：≤50 种，每种 [0,100]。
     // ══════════════════════════════════════════════
 
-    /// <summary>port addTroop（index.html ~1635）。</summary>
+    /// <summary>新增兵种到模板，默认计划数量 30。</summary>
     public void AddTroop(string id)
     {
         var tmpl = Template;
         if (string.IsNullOrEmpty(id) || tmpl.ContainsKey(id)) return;
+        if (tmpl.Count >= TemplateCap) return;  // validator cap = 50
 
-        // 新条目分得 1/(N+1) 份，其他条目按比例缩 N/(N+1)
-        var ids = new List<string>(tmpl.Keys);
-        float newRatio = ids.Count == 0 ? 1.0f : 1.0f / (ids.Count + 1);
-        float oldSum = 0f;
-        foreach (var k in ids) oldSum += tmpl[k];
-        float factor = ids.Count == 0 ? 0f : (1.0f - newRatio) / Math.Max(1e-6f, oldSum);
-        foreach (var k in ids) tmpl[k] = Math.Max(0f, tmpl[k] * factor);
-        tmpl[id] = newRatio;
-        SnapTroopSumTo1(id);
+        tmpl[id] = 30;
         _markDirty?.Invoke();
 
         RebuildSelectedList();
@@ -334,50 +334,29 @@ public sealed class TemplatesTabVM : ViewModel
         RefreshHeaderCounts();
     }
 
-    /// <summary>port updateTroopRatio（index.html ~1647）。SelectedTroops 不重建 —— 只刷新行。</summary>
-    public void UpdateTroopRatio(string id, float raw)
+    /// <summary>修改某兵种的计划数量（clamp [0,100]；0 时从模板移除）。</summary>
+    public void SetTroopCount(string id, int count)
     {
         var tmpl = Template;
         if (string.IsNullOrEmpty(id) || !tmpl.ContainsKey(id)) return;
         _markDirty?.Invoke();
 
-        float v = raw;
-        if (float.IsNaN(v) || float.IsInfinity(v)) v = 0f;
-        v = Math.Max(0f, Math.Min(1f, v));
-        tmpl[id] = v;
-
-        // 把剩余 (1 - v) 在其他条目上按原占比 rescale
-        var others = new List<string>();
-        foreach (var k in tmpl.Keys) if (k != id) others.Add(k);
-        float remaining = 1f - v;
-
-        if (others.Count == 0)
+        int v = Math.Max(0, Math.Min(CountMax, count));
+        if (v == 0)
         {
-            tmpl[id] = 1.0f; // 唯一条目强制独占 100%
-            RefreshSelectedRows();
-            RefreshHeaderCounts();
-            return;
-        }
-
-        float otherSum = 0f;
-        foreach (var k in others) otherSum += tmpl[k];
-        if (otherSum > 1e-6f)
-        {
-            float f = remaining / otherSum;
-            foreach (var k in others) tmpl[k] = Math.Max(0f, tmpl[k] * f);
+            tmpl.Remove(id);
+            RebuildSelectedList();
+            RefreshFilteredAddedFlags();
         }
         else
         {
-            float each = Math.Max(0f, remaining / others.Count);
-            foreach (var k in others) tmpl[k] = each;
+            tmpl[id] = v;
+            RefreshSelectedRows();
         }
-        SnapTroopSumTo1(id);
-
-        RefreshSelectedRows();
         RefreshHeaderCounts();
     }
 
-    /// <summary>port removeTroop（index.html ~1673）。</summary>
+    /// <summary>从模板移除兵种。</summary>
     public void RemoveTroop(string id)
     {
         var tmpl = Template;
@@ -385,50 +364,9 @@ public sealed class TemplatesTabVM : ViewModel
         _markDirty?.Invoke();
         tmpl.Remove(id);
 
-        // 把空出的份额按原占比分给剩余条目
-        var ids = new List<string>(tmpl.Keys);
-        if (ids.Count > 0)
-        {
-            float s = 0f;
-            foreach (var k in ids) s += tmpl[k];
-            if (s < 1e-6f)
-            {
-                float each = 1.0f / ids.Count;
-                foreach (var k in ids) tmpl[k] = each;
-            }
-            else
-            {
-                float f = 1.0f / s;
-                foreach (var k in ids) tmpl[k] = Math.Max(0f, tmpl[k] * f);
-            }
-        }
-
         RebuildSelectedList();
         RefreshFilteredAddedFlags();
         RefreshHeaderCounts();
-    }
-
-    /// <summary>port _snapTroopSumTo1（index.html ~1698）—— 修浮点漂移让 Σ 精确 = 1。</summary>
-    private void SnapTroopSumTo1(string lockedKey)
-    {
-        var tmpl = Template;
-        var ids = new List<string>(tmpl.Keys);
-        if (ids.Count == 0) return;
-        float total = 0f;
-        foreach (var k in ids) total += tmpl[k];
-        float drift = 1f - total;
-        if (Math.Abs(drift) < 1e-4f) return;
-
-        var others = new List<string>();
-        foreach (var k in ids) if (k != lockedKey) others.Add(k);
-        if (others.Count == 0)
-        {
-            tmpl[lockedKey] = Math.Max(0f, Math.Min(1f, tmpl[lockedKey] + drift));
-            return;
-        }
-        string biggest = others[0];
-        foreach (var k in others) if (tmpl[k] > tmpl[biggest]) biggest = k;
-        tmpl[biggest] = Math.Max(0f, Math.Min(1f, tmpl[biggest] + drift));
     }
 
     // ══════════════════════════════════════════════
@@ -485,7 +423,7 @@ public sealed class TemplatesTabVM : ViewModel
             row.IsAdded = tmpl.ContainsKey(row.Id);
     }
 
-    /// <summary>整表重建 SelectedTroops（仅在 Add / Remove / Clear 时调用，绝不在拖动滑条时）。</summary>
+    /// <summary>整表重建 SelectedTroops（仅在 Add / Remove / Clear 时调用）。</summary>
     private void RebuildSelectedList()
     {
         SelectedTroops.Clear();
@@ -494,7 +432,7 @@ public sealed class TemplatesTabVM : ViewModel
             _troopById.TryGetValue(kv.Key, out var entry);
             SelectedTroops.Add(new TroopTemplateRowVM(
                 kv.Key, entry,
-                GetRatio, UpdateTroopRatio, RemoveTroop, GetTargetTotal));
+                GetCount, SetTroopCount, RemoveTroop));
         }
     }
 
@@ -504,31 +442,26 @@ public sealed class TemplatesTabVM : ViewModel
         foreach (var row in SelectedTroops) row.Refresh();
     }
 
-    private float GetRatio(string id)
+    private int GetCount(string id)
     {
         var tmpl = Template;
-        return tmpl.TryGetValue(id, out float v) ? v : 0f;
+        return tmpl.TryGetValue(id, out int v) ? v : 0;
     }
 
-    private int GetTargetTotal()
-    {
-        int t = Defaults.TargetTotalCount;
-        return t < 0 ? 0 : t;
-    }
-
-    /// <summary>port exactTroopTotal / troopRatioSum / ratioSumOk（index.html ~1330-1340, 1726）。</summary>
+    /// <summary>刷新已选名单头部计数：兵种数、总计划兵数。</summary>
     private void RefreshHeaderCounts()
     {
         var tmpl = Template;
-        float sum = 0f;
-        foreach (var v in tmpl.Values) sum += v;
-        int target = GetTargetTotal();
+        int totalCount = 0;
+        foreach (var v in tmpl.Values) totalCount += v;
 
         SelectedCount = tmpl.Count;
-        TargetTotalText = target.ToString();
-        ExactTroopTotalText = ((int)Math.Round(sum * target)).ToString();
-        RatioSumPercentText = (sum * 100f).ToString("0") + "%";
-        RatioSumOk = sum >= 0.9f && sum <= 1.1f;
+        // 复用现有 XML 绑定属性：RatioSumPercentText → "总计 N 人"，RatioSumOk → always true。
+        RatioSumPercentText = ControlPanelLoc.Tr("总计 " + totalCount + " 人", "Total " + totalCount + " troops");
+        RatioSumOk = true;
+        // ExactTroopTotalText / TargetTotalText: repurpose to show total count / cap.
+        ExactTroopTotalText = totalCount.ToString();
+        TargetTotalText = TemplateCap.ToString();
     }
 
     // ══════════════════════════════════════════════
