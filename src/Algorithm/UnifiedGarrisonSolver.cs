@@ -396,10 +396,13 @@ public static class UnifiedGarrisonSolver
                     AddE(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
                     originSupply += bucket.Count;
                     int recTier = Math.Max(1, Math.Min(6, bucket.MinTier));
+                    // PR-2 G4 (2026-05-24): 招新兵的真金币 cost 入 gold 通道。
+                    // vanilla DefaultPartyWageModel.GetTroopRecruitmentCost 公式：T1=20/T2=50/T3=100/T4=200/T5=400/T6=600。
+                    int inPlaceRecruitCost = RecruitCostByTier(recTier);
                     for (int tau = 0; tau <= T - 1; tau++)
                     {
                         int to = Transit(bucket.Role, recTier, tau);
-                        AddE(origin, to, bucket.Count, new EdgeCost(timeUnits: tau), EdgeCat.Recruit);
+                        AddE(origin, to, bucket.Count, new EdgeCost(gold: inPlaceRecruitCost, timeUnits: tau), EdgeCat.Recruit);
                         if (tau == 0) decodeInfo[(origin, to)] = (DecodeKind.InPlace, capitalSettlement, null!, bucket.Role);
                     }
                     AddE(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
@@ -423,12 +426,16 @@ public static class UnifiedGarrisonSolver
                         AddE(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
                         originSupply += bucket.Count;
                         int recTier = Math.Max(1, Math.Min(6, bucket.MinTier));
+                        // PR-2 G4 (2026-05-24): 招新兵的真金币 cost 入 gold 通道（叠加 routing overhead）。
+                        // vanilla DefaultPartyWageModel.GetTroopRecruitmentCost。
+                        int villageRecruitCost = RecruitCostByTier(recTier);
+                        int recGold = recOverhead + villageRecruitCost;
                         for (int arrival = etaV; arrival <= T - 1; arrival++)
                         {
                             int to = Transit(bucket.Role, recTier, arrival);
                             // 旧公式 cost = arrival·K + recOverhead + recRisk
-                            // 新合成 = gold(overhead) + K·time(arrival) + risk
-                            var recEc = new EdgeCost(gold: recOverhead, timeUnits: arrival, pathRisk: recRisk);
+                            // PR-2 G4: gold 通道现含 recruitCost + routing overhead
+                            var recEc = new EdgeCost(gold: recGold, timeUnits: arrival, pathRisk: recRisk);
                             AddE(origin, to, bucket.Count, recEc, EdgeCat.Recruit);
                             if (arrival == etaV)  // dispatch tick = arrival − etaV == 0
                                 decodeInfo[(origin, to)] = (DecodeKind.Recruiter, village, null!, bucket.Role);
