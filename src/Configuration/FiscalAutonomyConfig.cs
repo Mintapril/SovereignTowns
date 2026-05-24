@@ -135,4 +135,21 @@ public sealed class FiscalAutonomyConfig
     /// 故上限 ≈ 33M；默认 T=16 时余量到 134M）且 TickHoldingValueK > 任意 per-edge
     /// strategic value（防符号反转）。默认 20_000_000 与旧 K 同值。</summary>
     public int TickHoldingValueK { get; set; } = 20_000_000;
+
+    // ── PR-4 (2026-05-24) S6 出击 (Sally) ──
+    // sally edge 与 patrol edge 同构（holding → sink → superSink），但 sink 是 per-settlement
+    // 而非 capital 唯一。允许多座城/堡同时派 sally。
+
+    /// <summary>Sally edge 战略价值基常数。与 PatrolValue 同量级（默认 5000）。
+    /// 求解时 cost = (T-τ)·K − SallyValueBase × threat × strat × power(tier)，越大越愿意派 sally。</summary>
+    public int SallyValueBase { get; set; } = 5_000;
+
+    /// <summary>首府 sally 额外加成（非首府 = 1.0）。与 CapitalStrategicBonus 平行。默认 1.5。</summary>
+    public float CapitalSallyBonus { get; set; } = 1.5f;
+
+    /// <summary>每个 sally 队的固定头数。决定 sallyHeadroom 量化粒度。默认 30。</summary>
+    public int SallyTeamSize { get; set; } = 30;
+
+    /// <summary>单 settlement 最多同时存在的 sally 队数（cap）。默认 1，避免 sally 风暴。</summary>
+    public int MaxSallyPartiesPerCity { get; set; } = 1;
 }
