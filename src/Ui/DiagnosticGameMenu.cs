@@ -1,13 +1,17 @@
 using System;
 using System.Diagnostics;
 using SovereignTowns.Capital;
+using SovereignTowns.Configuration;
+using SovereignTowns.Parties;
 using SovereignTowns.WebConfig;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.GameMenus;
+using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.Localization;
+using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Ui;
@@ -65,6 +69,17 @@ public static class DiagnosticGameMenu
                     optionText: "{=!}{ST_CAPITAL_STATUS}",
                     condition: new GameMenuOption.OnConditionDelegate(IsCapitalStatusVisible),
                     consequence: new GameMenuOption.OnConsequenceDelegate(OnCapitalStatusSelected),
+                    isLeave: false,
+                    index: -1,
+                    isRepeatable: true);
+
+                // PR-8：B 池状态行 — 仅在玩家站在自己的首府 town 且 B 池功能已启用（cap>0）时显示。
+                starter.AddGameMenuOption(
+                    menuId: menu,
+                    optionId: "sovereign_towns_reserve_pool_status",
+                    optionText: "{=!}{ST_RESERVE_POOL_STATUS}",
+                    condition: new GameMenuOption.OnConditionDelegate(IsReservePoolStatusVisible),
+                    consequence: new GameMenuOption.OnConsequenceDelegate(OnReservePoolStatusSelected),
                     isLeave: false,
                     index: -1,
                     isRepeatable: true);
@@ -208,6 +223,68 @@ public static class DiagnosticGameMenu
 
     /// <summary>状态行点击 consequence — 不应触发，但作为防御回弹回原菜单。</summary>
     private static void OnCapitalStatusSelected(MenuCallbackArgs args)
+    {
+        TryReturnToSettlementMenu();
+    }
+
+    // ── PR-8: B 池状态行 ──
+
+    /// <summary>
+    /// PR-8：「B 池」常驻状态行条件。
+    /// 三重门控：
+    ///   1. 当前 settlement 是玩家氏族拥有的 Town（非城堡）且是当前首府
+    ///   2. ReservePoolCap &gt; 0（功能已启用）
+    ///   3. B 池 party 实际存在（ReservePoolManager 已为此首府创建了 B 池）
+    /// 注入 ST_RESERVE_POOL_STATUS 文本变量以显示头数/容量。
+    /// </summary>
+    private static bool IsReservePoolStatusVisible(MenuCallbackArgs args)
+    {
+        try
+        {
+            var s = Settlement.CurrentSettlement;
+            if (s == null || !s.IsTown || s.OwnerClan != Clan.PlayerClan) return false;
+
+            var playerMgr = PlayerCapital;
+            if (playerMgr == null) return false;
+
+            var capital = playerMgr.GetCapital();
+            if (capital == null || capital != s.Town) return false;
+
+            int cap = ConfigurationManager.Current?.FiscalAutonomy?.ReservePoolCap ?? 0;
+            if (cap == 0) return false;
+
+            // 从 settlement.Parties 找 B 池 party（与 ReservePoolTabVM 保持相同扫描逻辑）。
+            MobileParty? pool = null;
+            foreach (var party in s.Parties)
+            {
+                if (party?.PartyComponent is StGarrisonReservePartyComponent)
+                {
+                    pool = party;
+                    break;
+                }
+            }
+            if (pool == null) return false;
+
+            int headcount = pool.MemberRoster?.TotalManCount ?? 0;
+            var statusTemplate = new TextObject("{=ST_Menu_ReservePoolStatus}Sovereign Towns: reserve pool {HEADCOUNT}/{CAP} troops");
+            statusTemplate.SetTextVariable("HEADCOUNT", headcount);
+            statusTemplate.SetTextVariable("CAP", cap);
+
+            try { MBTextManager.SetTextVariable("ST_RESERVE_POOL_STATUS", statusTemplate, false); }
+            catch { /* SetTextVariable 偶尔抛 — 不致命 */ }
+
+            args.IsEnabled = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("DiagnosticGameMenu.IsReservePoolStatusVisible failed", ex);
+            return false;
+        }
+    }
+
+    /// <summary>B 池状态行点击 consequence — 不应触发，作为防御回弹回原菜单。</summary>
+    private static void OnReservePoolStatusSelected(MenuCallbackArgs args)
     {
         TryReturnToSettlementMenu();
     }
