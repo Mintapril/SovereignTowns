@@ -27,6 +27,7 @@
     <string id="ST_Menu_CapitalStatus_Other" text="主权城镇：当前首府 = {CAPITAL}" />
     <string id="ST_Menu_SetCapital" text="主权城镇：设为首府" />
     <string id="ST_Menu_OpenWebConfig" text="主权城镇：打开网页控制面板" />
+    <string id="ST_Menu_ManageReservePool" text="主权城镇：管理 B 池" />
 
     <!-- 通用占位词（实体名缺失时回填）。 -->
     <string id="ST_Common_Unset" text="&lt;未设&gt;" />

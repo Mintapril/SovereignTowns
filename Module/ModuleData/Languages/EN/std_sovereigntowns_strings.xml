@@ -28,6 +28,7 @@
     <string id="ST_Menu_CapitalStatus_Other" text="Sovereign Towns: current capital = {CAPITAL}" />
     <string id="ST_Menu_SetCapital" text="Sovereign Towns: set as capital" />
     <string id="ST_Menu_OpenWebConfig" text="Sovereign Towns: open web control panel" />
+    <string id="ST_Menu_ManageReservePool" text="Sovereign Towns: manage reserve pool" />
 
     <!-- Shared placeholder fragments used when a referenced entity is missing or unset. -->
     <string id="ST_Common_Unset" text="(none)" />

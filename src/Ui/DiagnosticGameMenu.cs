@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using Helpers;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Parties;
@@ -73,13 +74,14 @@ public static class DiagnosticGameMenu
                     index: -1,
                     isRepeatable: true);
 
-                // PR-8：B 池状态行 — 仅在玩家站在自己的首府 town 且 B 池功能已启用（cap>0）时显示。
+                // PR-9：「管理 B 池」可点击菜单选项 — 在玩家站在自己的首府 town 且 B 池存在时显示。
+                // 点击后调 vanilla PartyScreenHelper.OpenScreenAsManageTroops 开原版兵员管理界面。
                 starter.AddGameMenuOption(
                     menuId: menu,
-                    optionId: "sovereign_towns_reserve_pool_status",
-                    optionText: "{=!}{ST_RESERVE_POOL_STATUS}",
-                    condition: new GameMenuOption.OnConditionDelegate(IsReservePoolStatusVisible),
-                    consequence: new GameMenuOption.OnConsequenceDelegate(OnReservePoolStatusSelected),
+                    optionId: "sovereign_towns_manage_reserve_pool",
+                    optionText: "{=ST_Menu_ManageReservePool}Sovereign Towns: manage reserve pool",
+                    condition: new GameMenuOption.OnConditionDelegate(IsManageReservePoolAvailable),
+                    consequence: new GameMenuOption.OnConsequenceDelegate(OnManageReservePoolSelected),
                     isLeave: false,
                     index: -1,
                     isRepeatable: true);
@@ -106,7 +108,7 @@ public static class DiagnosticGameMenu
                     index: -1,
                     isRepeatable: true);
             }
-            Logger.Info("DiagnosticGameMenu: registered capital_status / set_capital / open_web_config on town + castle");
+            Logger.Info("DiagnosticGameMenu: registered capital_status / manage_reserve_pool / set_capital / open_web_config on town + castle");
         }
         catch (Exception ex)
         {
@@ -227,20 +229,24 @@ public static class DiagnosticGameMenu
         TryReturnToSettlementMenu();
     }
 
-    // ── PR-8: B 池状态行 ──
+    // ── PR-9: 「管理 B 池」可点击选项 ──
+    // PR-9 (2026-05-24): 原 PR-8 只读状态行替换为可点击操作项，
+    // 点击后调 vanilla PartyScreenHelper.OpenScreenAsManageTroops 打开原版兵员管理界面。
 
     /// <summary>
-    /// PR-8：「B 池」常驻状态行条件。
+    /// PR-9：「管理 B 池」条件。
     /// 三重门控：
     ///   1. 当前 settlement 是玩家氏族拥有的 Town（非城堡）且是当前首府
     ///   2. ReservePoolCap &gt; 0（功能已启用）
     ///   3. B 池 party 实际存在（ReservePoolManager 已为此首府创建了 B 池）
-    /// 注入 ST_RESERVE_POOL_STATUS 文本变量以显示头数/容量。
     /// </summary>
-    private static bool IsReservePoolStatusVisible(MenuCallbackArgs args)
+    private static bool IsManageReservePoolAvailable(MenuCallbackArgs args)
     {
         try
         {
+            try { args.optionLeaveType = GameMenuOption.LeaveType.Submenu; }
+            catch { /* enum value or property absent on this build — non-fatal */ }
+
             var s = Settlement.CurrentSettlement;
             if (s == null || !s.IsTown || s.OwnerClan != Clan.PlayerClan) return false;
 
@@ -253,40 +259,47 @@ public static class DiagnosticGameMenu
             int cap = ConfigurationManager.Current?.FiscalAutonomy?.ReservePoolCap ?? 0;
             if (cap == 0) return false;
 
-            // 从 settlement.Parties 找 B 池 party（与 ReservePoolTabVM 保持相同扫描逻辑）。
-            MobileParty? pool = null;
-            foreach (var party in s.Parties)
-            {
-                if (party?.PartyComponent is StGarrisonReservePartyComponent)
-                {
-                    pool = party;
-                    break;
-                }
-            }
-            if (pool == null) return false;
-
-            int headcount = pool.MemberRoster?.TotalManCount ?? 0;
-            var statusTemplate = new TextObject("{=ST_Menu_ReservePoolStatus}Sovereign Towns: reserve pool {HEADCOUNT}/{CAP} troops");
-            statusTemplate.SetTextVariable("HEADCOUNT", headcount);
-            statusTemplate.SetTextVariable("CAP", cap);
-
-            try { MBTextManager.SetTextVariable("ST_RESERVE_POOL_STATUS", statusTemplate, false); }
-            catch { /* SetTextVariable 偶尔抛 — 不致命 */ }
-
-            args.IsEnabled = false;
-            return true;
+            // B 池 party 必须已存在才显示选项。
+            var pool = ReservePoolManager.GetPoolStatic(s);
+            return pool != null;
         }
         catch (Exception ex)
         {
-            Logger.Error("DiagnosticGameMenu.IsReservePoolStatusVisible failed", ex);
+            Logger.Error("DiagnosticGameMenu.IsManageReservePoolAvailable failed", ex);
             return false;
         }
     }
 
-    /// <summary>B 池状态行点击 consequence — 不应触发，作为防御回弹回原菜单。</summary>
-    private static void OnReservePoolStatusSelected(MenuCallbackArgs args)
+    /// <summary>
+    /// PR-9：「管理 B 池」consequence — 调 vanilla PartyScreenHelper.OpenScreenAsManageTroops
+    /// 打开原版兵员管理界面（左侧 B 池 troops，右侧 main party，支持 transfer/split/recruit）。
+    /// PartyScreen 自管理屏幕栈；关闭后玩家回到大地图，不调 TryReturnToSettlementMenu。
+    /// 反编译证据（2026-05-24，TaleWorlds.CampaignSystem.dll）：
+    ///   OpenScreenAsManageTroops(MobileParty leftParty) 单参数 → PushState(partyState)。
+    /// </summary>
+    private static void OnManageReservePoolSelected(MenuCallbackArgs args)
     {
-        TryReturnToSettlementMenu();
+        try
+        {
+            var s = Settlement.CurrentSettlement;
+            if (s == null) return;
+
+            var pool = ReservePoolManager.GetPoolStatic(s);
+            if (pool == null)
+            {
+                Logger.Warn("DiagnosticGameMenu.OnManageReservePoolSelected: B-pool not found for current settlement");
+                TryReturnToSettlementMenu();
+                return;
+            }
+
+            PartyScreenHelper.OpenScreenAsManageTroops(pool);
+            // PartyScreen 自推屏幕栈；不需要 TryReturnToSettlementMenu。
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("DiagnosticGameMenu.OnManageReservePoolSelected failed", ex);
+            TryReturnToSettlementMenu();
+        }
     }
 
     private static bool IsSetCapitalAvailable(MenuCallbackArgs args)
