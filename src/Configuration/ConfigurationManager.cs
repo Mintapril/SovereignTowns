@@ -840,6 +840,15 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.CostWeightRisk 非法 ({f.CostWeightRisk})；范围 [0, 10]", $"FiscalAutonomy.CostWeightRisk invalid ({f.CostWeightRisk}); [0, 10]"); return false; }
         if (f.CostWeightStrategic < 0 || f.CostWeightStrategic > 10)
         { reason = Tr($"FiscalAutonomy.CostWeightStrategic 非法 ({f.CostWeightStrategic})；范围 [0, 10]", $"FiscalAutonomy.CostWeightStrategic invalid ({f.CostWeightStrategic}); [0, 10]"); return false; }
+        // ── PR-4 (2026-05-24): S6 Sally 校验 ──
+        if (f.SallyValueBase < 0 || f.SallyValueBase > 50_000)
+        { reason = Tr($"FiscalAutonomy.SallyValueBase 非法 ({f.SallyValueBase})；范围 [0, 50000]", $"FiscalAutonomy.SallyValueBase invalid ({f.SallyValueBase}); [0, 50000]"); return false; }
+        if (!IsFiniteFloat(f.CapitalSallyBonus) || f.CapitalSallyBonus < 1f || f.CapitalSallyBonus > 5f)
+        { reason = Tr($"FiscalAutonomy.CapitalSallyBonus 非法 ({f.CapitalSallyBonus})；范围 [1, 5]", $"FiscalAutonomy.CapitalSallyBonus invalid ({f.CapitalSallyBonus}); [1, 5]"); return false; }
+        if (f.SallyTeamSize < 5 || f.SallyTeamSize > 200)
+        { reason = Tr($"FiscalAutonomy.SallyTeamSize 非法 ({f.SallyTeamSize})；范围 [5, 200]", $"FiscalAutonomy.SallyTeamSize invalid ({f.SallyTeamSize}); [5, 200]"); return false; }
+        if (f.MaxSallyPartiesPerCity < 0 || f.MaxSallyPartiesPerCity > 5)
+        { reason = Tr($"FiscalAutonomy.MaxSallyPartiesPerCity 非法 ({f.MaxSallyPartiesPerCity})；范围 [0, 5]", $"FiscalAutonomy.MaxSallyPartiesPerCity invalid ({f.MaxSallyPartiesPerCity}); [0, 5]"); return false; }
         reason = "";
         return true;
     }

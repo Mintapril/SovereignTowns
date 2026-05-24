@@ -646,6 +646,31 @@ public static class ControlPanelSpecs
                         HintZh="合成 cost 中战略价值通道（驻防 + 巡逻收益）的倍数。在 cost 中取负 → 值越大越鼓励多守军 / 多巡逻。0 = 不要任何战略收益（极端 minimal），1 = PR-1 默认。",
                         HintEn="Multiplier of the strategic value channel (defense + patrol payoff) in cost composition. Enters cost as negative → higher values encourage more garrison + patrol. 0 = ignore strategic payoff (extreme minimal), 1 = PR-1 default.",
                         Min=0, Max=10, Discrete=true, Step=1, Def=1, Advanced=true },
+
+                    // ════════ 段 8：PR-4 S6 出击 (Sally) ════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="SallyValueBase",
+                        LabelZh="出击战略价值基常数", LabelEn="Sally strategic value base",
+                        HintZh="MCMF 出击边的价值基常数。值越大，调度器越愿意派出击队。与 PatrolValue 同量级。默认 5000。",
+                        HintEn="Base strategic value constant for MCMF sally edges. Higher = solver more willing to dispatch sally parties. Same scale as PatrolValue. Default 5000.",
+                        Min=0, Max=50000, Discrete=true, Step=500, Def=5000, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="CapitalSallyBonus",
+                        LabelZh="首府出击加成系数", LabelEn="Capital sally bonus multiplier",
+                        HintZh="首府 sally edge 价值乘子（非首府 = 1.0）。首府防御优先级更高，出击意愿更强。默认 1.5。",
+                        HintEn="Sally edge value multiplier for capital settlements (non-capital = 1.0). Capital has higher defensive priority, stronger sally incentive. Default 1.5.",
+                        Min=1, Max=5, Discrete=false, Step=0.1, Def=1.5, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="SallyTeamSize",
+                        LabelZh="出击队固定规模（人）", LabelEn="Sally team fixed headcount",
+                        HintZh="每支出击队的固定头数。决定 sallyHeadroom 量化粒度（headroom = teamSize × maxParties）。默认 30。",
+                        HintEn="Fixed headcount per sally party. Determines sallyHeadroom granularity (headroom = teamSize × maxParties). Default 30.",
+                        Min=5, Max=200, Discrete=true, Step=5, Def=30, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="MaxSallyPartiesPerCity",
+                        LabelZh="每城最多同时出击队数", LabelEn="Max concurrent sally parties per city",
+                        HintZh="单座城镇/城堡同时最多存在的出击队数量。0 = 关闭出击。1 = 默认（防止 sally 风暴）。最大 5。",
+                        HintEn="Maximum concurrent sally parties per settlement. 0 = disable sally. 1 = default (prevent sally storm). Max 5.",
+                        Min=0, Max=5, Discrete=true, Step=1, Def=1, Advanced=true },
                 },
             },
         };
