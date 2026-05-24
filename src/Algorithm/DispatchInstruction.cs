@@ -80,3 +80,16 @@ public sealed class PatrolInstruction : DispatchInstruction
 
     public Settlement Capital { get; }
 }
+
+public sealed class SallyInstruction : DispatchInstruction
+{
+    /// <summary>出击队派发指令。<see cref="DispatchInstruction.Count"/> = MCMF 决定的本 tick
+    /// sally 总头数（跨 role 求和）；role 不参与 sally 语义，取 Infantry 占位。</summary>
+    public SallyInstruction(Settlement source, int heads)
+        : base(GenericTroopRole.Infantry, heads)
+    {
+        Source = source;
+    }
+
+    public Settlement Source { get; }
+}
