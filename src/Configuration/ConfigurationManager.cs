@@ -827,6 +827,19 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.CapitalStrategicBonus 非法 ({f.CapitalStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.CapitalStrategicBonus invalid ({f.CapitalStrategicBonus}); [1, 3]"); return false; }
         if (!IsFiniteFloat(f.ReferenceSpeedPerDay) || f.ReferenceSpeedPerDay < 1f || f.ReferenceSpeedPerDay > 20f)
         { reason = Tr($"FiscalAutonomy.ReferenceSpeedPerDay 非法 ({f.ReferenceSpeedPerDay})；范围 [1, 20]", $"FiscalAutonomy.ReferenceSpeedPerDay invalid ({f.ReferenceSpeedPerDay}); [1, 20]"); return false; }
+
+        // ── PR-3 (2026-05-24): EdgeCost 4 通道权重校验 ──
+        // TickHoldingValueK 上限 33M = int.MaxValue / 64（HorizonTicks clamp 上限）。
+        // 下限 1M 防止 K 太小让 strategic 通道把 cost 推到负无穷,SSP 找不到最短路。
+        if (f.TickHoldingValueK < 1_000_000 || f.TickHoldingValueK > 33_000_000)
+        { reason = Tr($"FiscalAutonomy.TickHoldingValueK 非法 ({f.TickHoldingValueK})；范围 [1_000_000, 33_000_000]", $"FiscalAutonomy.TickHoldingValueK invalid ({f.TickHoldingValueK}); [1_000_000, 33_000_000]"); return false; }
+        // CostWeight* 通道权重：0 = 关闭该通道；10 = 强烈偏重（实战极少超 3）。
+        if (f.CostWeightGold < 0 || f.CostWeightGold > 10)
+        { reason = Tr($"FiscalAutonomy.CostWeightGold 非法 ({f.CostWeightGold})；范围 [0, 10]", $"FiscalAutonomy.CostWeightGold invalid ({f.CostWeightGold}); [0, 10]"); return false; }
+        if (f.CostWeightRisk < 0 || f.CostWeightRisk > 10)
+        { reason = Tr($"FiscalAutonomy.CostWeightRisk 非法 ({f.CostWeightRisk})；范围 [0, 10]", $"FiscalAutonomy.CostWeightRisk invalid ({f.CostWeightRisk}); [0, 10]"); return false; }
+        if (f.CostWeightStrategic < 0 || f.CostWeightStrategic > 10)
+        { reason = Tr($"FiscalAutonomy.CostWeightStrategic 非法 ({f.CostWeightStrategic})；范围 [0, 10]", $"FiscalAutonomy.CostWeightStrategic invalid ({f.CostWeightStrategic}); [0, 10]"); return false; }
         reason = "";
         return true;
     }
@@ -902,12 +915,7 @@ public static class ConfigurationManager
         { reason = Tr($"Thresholds.SallyCooldownHours 非法 ({t.SallyCooldownHours})；范围 [0, 168]", $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"); return false; }
         if (t.SallyMinSustainedTicks < 1 || t.SallyMinSustainedTicks > 48)
         { reason = Tr($"Thresholds.SallyMinSustainedTicks 非法 ({t.SallyMinSustainedTicks})；范围 [1, 48]", $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"); return false; }
-        if (!IsRatio(t.AutoUpgradeMinTierRatio))
-        { reason = Tr($"Thresholds.AutoUpgradeMinTierRatio 非法 ({t.AutoUpgradeMinTierRatio})；范围 [0, 1]", $"Thresholds.AutoUpgradeMinTierRatio invalid ({t.AutoUpgradeMinTierRatio}); [0, 1]"); return false; }
-        if (t.AutoUpgradeMinBudget < 0 || t.AutoUpgradeMinBudget > 50000)
-        { reason = Tr($"Thresholds.AutoUpgradeMinBudget 非法 ({t.AutoUpgradeMinBudget})；范围 [0, 50000]", $"Thresholds.AutoUpgradeMinBudget invalid ({t.AutoUpgradeMinBudget}); [0, 50000]"); return false; }
-        if (t.AutoUpgradeMaxPerCall < 1 || t.AutoUpgradeMaxPerCall > 500)
-        { reason = Tr($"Thresholds.AutoUpgradeMaxPerCall 非法 ({t.AutoUpgradeMaxPerCall})；范围 [1, 500]", $"Thresholds.AutoUpgradeMaxPerCall invalid ({t.AutoUpgradeMaxPerCall}); [1, 500]"); return false; }
+        // 2026-05-24:AutoUpgrade* 三字段已删除,vanilla 接管升级,不再需要 mod 端 validation。
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruiterVillageCandidateCap < 4 || t.RecruiterVillageCandidateCap > 300)
         { reason = Tr($"Thresholds.RecruiterVillageCandidateCap 非法 ({t.RecruiterVillageCandidateCap})；范围 [4, 300]", $"Thresholds.RecruiterVillageCandidateCap invalid ({t.RecruiterVillageCandidateCap}); [4, 300]"); return false; }
