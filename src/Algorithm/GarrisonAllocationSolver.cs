@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Helpers;
 using SovereignTowns.Capital;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
@@ -23,12 +22,10 @@ public static class GarrisonAllocationSolver
 
     /// <summary>
     /// 氏族工资预算:GarrisonWageBudgetRatio × Σ(每城税+关税)。村庄收入排除(易被劫,保守)。
-    /// 若 clan 处于战争 且 金库余额 &gt; 0 → 取 max(常规预算, Σ adequate×wagePerTroop) ——
-    /// 战时始终保证能养满每城"充足"(adequate)驻军,与 Solve 主循环的 floor/hardCap/adequate
-    /// 口径完全一致;不再受 manual-mode 的 TargetTotalCount/TargetPower 旋钮污染。
     /// 任何失败 → 返回 0(分配将退化为不养兵,安全)。
+    /// PR-5'(2026-05-24)：删除了战时 IsClanAtWar 上调分支 + AdequateFor floor/hardCap 口径依赖。
     /// </summary>
-    // internal: UnifiedGarrisonSolver(方案2 合并 solver)复用同一预算口径,不重新实现战时底线。
+    // internal: UnifiedGarrisonSolver(方案2 合并 solver)复用同一预算口径。
     internal static long ClanWageBudget(CapitalManager manager, List<Town> towns, FiscalAutonomyConfig cfg, int wagePerTroop)
     {
         try
@@ -59,25 +56,7 @@ public static class GarrisonAllocationSolver
 
             float ratio = cfg.GarrisonWageBudgetRatio;
             if (ratio < 0f) ratio = 0f;
-            long regular = (long)Math.Round(sustainable * ratio);
-
-            // 战时上调:clan 与任意势力交战 且 金库有余额 → 取 max(常规, 全额充足驻军工资)。
-            // configFull 用各城 adequate 头数(与 Solve 主循环同一 floor/hardCap/adequate 口径),
-            // 确保战时预算恰好够养满价值层 —— 而不是被 manual-mode 旋钮间接放大或卡死。
-            if (IsClanAtWar(clan) && clan.Gold > 0)
-            {
-                long fullGarrisonHeads = 0;
-                foreach (var t in towns)
-                {
-                    if (t?.Settlement == null) continue;
-                    int floor = Math.Max(0, cfg.MinGarrisonFloor);
-                    int hardCap = HardCapFor(t, cfg);
-                    fullGarrisonHeads += AdequateFor(t, cfg, floor, hardCap);
-                }
-                long configFull = fullGarrisonHeads * (long)Math.Max(1, wagePerTroop);
-                return Math.Max(regular, configFull);
-            }
-            return regular;
+            return (long)Math.Round(sustainable * ratio);
         }
         catch (Exception ex)
         {
@@ -86,61 +65,17 @@ public static class GarrisonAllocationSolver
         }
     }
 
-    /// <summary>clan 是否与任意势力交战。FactionHelper.GetStances + IsAtWarWith(DefaultClanFinanceModel 同套路)。</summary>
-    // internal: also called by GarrisonXpInjector (war-buffer upgrade gate).
-    internal static bool IsClanAtWar(Clan clan)
-    {
-        try
-        {
-            var mapFaction = clan?.MapFaction;
-            if (mapFaction == null) return false;
-            var stances = FactionHelper.GetStances(mapFaction);
-            if (stances == null) return false;
-            foreach (var stance in stances)
-            {
-                if (stance == null) continue;
-                var other = stance.Faction1 == mapFaction ? stance.Faction2 : stance.Faction1;
-                if (other != null && mapFaction.IsAtWarWith(other)) return true;
-            }
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("GarrisonAllocationSolver.IsClanAtWar failed", ex);
-            return false;
-        }
-    }
-
     /// <summary>
-    /// 满级单兵工资 = PartyWageModel.GetCharacterWage(满级 tier 的代表兵种)。
-    /// 满级 tier 取自首府 TownGarrisonRule.MaxTier(取不到默认 5)。
+    /// 满级单兵工资 = PartyWageModel.GetCharacterWage(tier 5 的代表兵种)。
+    /// PR-5'(2026-05-24)：MaxTier 已从 TownGarrisonRule 删除，固定使用 tier=5。
     /// 代表兵种用 GarrisonPowerEvaluator.MakeStubTroop 的 tier 查找。任何失败 → 返回 1(保守)。
-    /// internal:CapitalLogisticsManager 的 GarrisonAssessment.DailyWageDelta 复用此口径
-    /// (避免重复实现)。<paramref name="towns"/> 仅作 GetCapital 失败时的首府兜底来源。
+    /// internal:CapitalLogisticsManager 的 GarrisonAssessment.DailyWageDelta 复用此口径。
     /// </summary>
     internal static int WagePerTroopAtMaxTier(CapitalManager manager, List<Town> towns)
     {
         try
         {
-            int maxTier = 5;
-            // 首府优先;无首府(刚失守等)退化为 clan.Fiefs 里第一个 town。
-            Town? capitalTown = null;
-            try
-            {
-                capitalTown = manager?.GetCapital();
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn($"GarrisonAllocationSolver.WagePerTroopAtMaxTier: GetCapital threw, falling back to first town: {ex.Message}");
-                capitalTown = null;
-            }
-            if (capitalTown == null)
-                capitalTown = towns.FirstOrDefault(t => t != null && t.IsTown);
-            if (capitalTown != null)
-            {
-                var rule = ConfigurationManager.GetRuleFor(capitalTown);
-                if (rule != null && rule.MaxTier > 0) maxTier = rule.MaxTier;
-            }
+            const int maxTier = 5;
 
             // 全限定:见 ClanWageBudget 注释。
             var wageModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.PartyWageModel;
@@ -162,62 +97,14 @@ public static class GarrisonAllocationSolver
     }
 
     /// <summary>
-    /// adequate(S):clamp(AdequateBase + Prosperity/AdequateProsperityDivisor
-    ///   + round(NearbyLandThreatIntensity × AdequateThreatWeight), floor, hardCap)。
-    /// 城镇额外下限锚定:adequate 不低于 round(hardCap × TownAdequateVanillaAnchorRatio) ——
-    /// hardCap 即 vanilla 驻军 PartySizeLimit,公式基线对普通城镇偏低时用 vanilla 容量兜底。
-    /// 城堡不参与锚定(t.IsTown==false 时跳过)。
-    /// 任何失败 → 返回 clamp(floor, hardCap) 的下界(floor)。
-    /// </summary>
-    // internal: UnifiedGarrisonSolver 复用同一 tier 口径(adequate 头数)。
-    internal static int AdequateFor(Town t, FiscalAutonomyConfig cfg, int floor, int hardCap)
-    {
-        try
-        {
-            var s = t?.Settlement;
-            if (s == null) return Math.Max(0, floor);
-
-            float prosperity = 0f;
-            try { prosperity = t!.Prosperity; } catch { prosperity = 0f; }
-
-            float threatIntensity = 0f;
-            try { threatIntensity = s.NearbyLandThreatIntensity; } catch { threatIntensity = 0f; }
-
-            int prosperityDivisor = Math.Max(1, cfg.AdequateProsperityDivisor);
-            float raw = cfg.AdequateBase
-                        + prosperity / prosperityDivisor
-                        + (float)Math.Round(threatIntensity * cfg.AdequateThreatWeight);
-
-            int adequate = (int)Math.Round(raw);
-
-            // 城镇 adequate 下限锚定到 vanilla 容量的一部分(城堡跳过)。anchor ≤ hardCap(比例 ≤ 1),
-            // 故不会与下面的 hardCap 上限冲突;若 anchor < floor 仍由 floor 兜底。
-            if (t!.IsTown)
-            {
-                float anchorRatio = Math.Max(0f, cfg.TownAdequateVanillaAnchorRatio);
-                int anchor = (int)Math.Round(hardCap * anchorRatio);
-                if (adequate < anchor) adequate = anchor;
-            }
-
-            if (adequate < floor) adequate = floor;
-            if (adequate > hardCap) adequate = hardCap;
-            return adequate;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"GarrisonAllocationSolver.AdequateFor failed for '{t?.Settlement?.StringId}'", ex);
-            return Math.Max(0, floor);
-        }
-    }
-
-    /// <summary>
     /// hardCap(S):vanilla 驻军 PartySizeLimit。GarrisonParty 是 MobileParty,其 .Party(PartyBase)
-    /// 暴露 PartySizeLimit。取不到 → cfg.MaxGarrisonHardCap(默认 400)。
+    /// 暴露 PartySizeLimit。取不到 → 硬编码 400。
+    /// PR-5'(2026-05-24)：MaxGarrisonHardCap 字段已从 FiscalAutonomyConfig 删除，fallback 改为硬编码 400。
     /// </summary>
     // internal: UnifiedGarrisonSolver 复用同一 tier 口径(hardCap 头数)。
     internal static int HardCapFor(Town t, FiscalAutonomyConfig cfg)
     {
-        int fallback = Math.Max(1, cfg.MaxGarrisonHardCap);
+        const int fallback = 400;
         try
         {
             var garrison = t?.GarrisonParty;
@@ -230,5 +117,8 @@ public static class GarrisonAllocationSolver
             return fallback;
         }
     }
+
+    // PR-5'(2026-05-24): AdequateFor 已删除。单段 TierDefs cap = hardCap × TargetFraction。
+    // IsClanAtWar 已删除。ClanWageBudget 不再区分战时/和平期。
 
 }

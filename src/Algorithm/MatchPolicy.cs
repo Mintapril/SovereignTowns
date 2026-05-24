@@ -77,33 +77,15 @@ public static class MatchPolicy
     public static int DesiredCount(TownGarrisonRule rule, GenericTroopRole role, int desiredTotal)
     {
         if (rule == null || desiredTotal <= 0) return 0;
-
-        if (rule.UseGenericMatching)
-        {
-            return GenericTroopMatcher.TargetCount(GenericTroopMatcher.RoleRatio(rule, role), desiredTotal);
-        }
-
-        var template = TroopTemplateModeService.ResolveExactTemplate(rule, desiredTotal);
-        int total = 0;
-        foreach (var kv in template)
-        {
-            if (GenericTroopMatcher.GetRole(kv.Key) == role)
-                total += Math.Max(0, kv.Value);
-        }
-        return total;
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return GenericTroopMatcher.TargetCount(GenericTroopMatcher.RoleRatio(rule, role), desiredTotal);
     }
 
     public static bool AllowsRole(TownGarrisonRule rule, GenericTroopRole role)
     {
         if (rule == null || role == GenericTroopRole.Unknown) return false;
-        if (rule.UseGenericMatching)
-            return GenericTroopMatcher.RoleRatio(rule, role) > 0f;
-
-        foreach (var target in TroopTemplateModeService.ResolveExactTemplateTargets(rule))
-        {
-            if (GenericTroopMatcher.GetRole(target) == role) return true;
-        }
-        return false;
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return GenericTroopMatcher.RoleRatio(rule, role) > 0f;
     }
 
     public static int MatchPenalty(TroopBucket bucket, TownGarrisonRule rule, int hardPenalty, int tierPenalty)
@@ -113,25 +95,8 @@ public static class MatchPolicy
 
         if (rule == null || bucket.Count <= 0) return hardPenalty;
         if (!AllowsRole(rule, bucket.Role)) return hardPenalty;
-
-        if (rule.UseGenericMatching)
-        {
-            int tierGap = Math.Max(0, rule.MinTier - bucket.MinTier);
-            return tierPenalty * tierGap;
-        }
-
-        var representative = bucket.Representative;
-        if (representative == null) return hardPenalty;
-
-        int best = int.MaxValue;
-        foreach (var target in TroopTemplateModeService.ResolveExactTemplateTargets(rule))
-        {
-            if (!TroopTemplateMatcher.CanUpgradeToTarget(representative, target)) continue;
-            int tierGap = Math.Max(0, GenericTroopMatcher.GetTierBucket(target) - bucket.MinTier);
-            best = Math.Min(best, tierPenalty * tierGap);
-        }
-
-        return best == int.MaxValue ? hardPenalty : best;
+        // PR-5'(2026-05-24): UseGenericMatching/MinTier removed; no tier-gap penalty from min-tier.
+        return 0;
     }
 
     public static int EdgeCost(float distance, int overhead, int matchPenalty, float deficitRatio, float leniency)
@@ -147,11 +112,8 @@ public static class MatchPolicy
     public static bool IsLowQualityForRule(TroopBucket bucket, TownGarrisonRule rule)
     {
         if (rule == null || bucket.Count <= 0) return false;
-        if (bucket.MinTier < rule.MinTier) return true;
-        if (rule.UseGenericMatching) return false;
-        if (bucket.Representative == null) return true;
-        return TroopTemplateModeService.ResolveExactTemplateTargets(rule)
-            .All(target => !TroopTemplateMatcher.CanUpgradeToTarget(bucket.Representative, target));
+        // PR-5'(2026-05-24): MinTier/UseGenericMatching/ExactTroopTemplate removed; no low-quality check.
+        return false;
     }
 
     private static float Clamp(float value, float min, float max)

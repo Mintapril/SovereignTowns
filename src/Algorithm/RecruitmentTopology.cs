@@ -39,7 +39,8 @@ public static class RecruitmentTopology
             if (rule != null)
             {
                 if (!TroopTemplateMatcher.MatchesRule(character, rule)) continue;
-                if (rule.UseGenericMatching && !GenericTroopMatcher.CultureFilterAllows(character, requiredCultureId))
+                // PR-5'(2026-05-24): UseGenericMatching removed; culture filter always applies.
+                if (!GenericTroopMatcher.CultureFilterAllows(character, requiredCultureId))
                     continue;
             }
 

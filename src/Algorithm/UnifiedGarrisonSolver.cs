@@ -176,22 +176,8 @@ public static class UnifiedGarrisonSolver
             int wagePerTroop = Math.Max(1, GarrisonAllocationSolver.WagePerTroopAtMaxTier(manager!, towns));
             long clanWageBudget = GarrisonAllocationSolver.ClanWageBudget(manager!, towns, cfg, wagePerTroop);
 
-            // Phase 6(2026-05-24):战时 + Clan.Gold ≤ 0 = 缓冲耗尽。holding cost 加 starvation penalty,
-            // 让 MCMF 主动减兵 / 巡逻消化盈余,而不是默认贴 hardCap 留兵继续亏金。
-            // K/4 是软推动:小到不会盖过 floor/core 守军 value(几千~ K 级),大到能让 surplus / 模板外
-            // tier 被强制 disband/patrol。
-            bool starving = false;
-            try
-            {
-                starving = clan.Gold <= 0 && GarrisonAllocationSolver.IsClanAtWar(clan);
-            }
-            catch (Exception starveEx)
-            {
-                Logger.Warn($"UnifiedGarrisonSolver: starvation check failed for clan={clan.StringId}: {starveEx.Message}");
-            }
-            int starvationPenalty = starving ? K / 4 : 0;
-            if (starving)
-                Logger.Info($"UNIFIED-STARVATION clan={clan.StringId} Gold={clan.Gold} → holding penalty=K/4");
+            // PR-5'(2026-05-24): starvation penalty branch (IsClanAtWar + clan.Gold) removed.
+            // Single-segment TierDefs with TargetFraction replaces floor/core/surplus; surplus is gone.
 
             var graph = new MinCostFlow();
             var edgeCat = new Dictionary<(int, int), EdgeCat>();
@@ -300,15 +286,14 @@ public static class UnifiedGarrisonSolver
                             if (roleCap <= 0) continue;
                             for (int tier = 1; tier <= 6; tier++)
                             {
-                                float tierShare = TierShareWithinRole(rule, role, tier);
-                                if (tierShare <= 0f) continue;
+                                // PR-5'(2026-05-24): TierShareWithinRole deleted. Uniform tier split = 1/6.
+                                float tierShare = 1f / 6f;
                                 int subCap = (int)Math.Round(roleCap * tierShare);
                                 if (subCap <= 0) continue;
                                 // Phase 3(2026-05-24):wage 按 vanilla tier 表,value 乘 power(tier) 让高 tier 兵 cost 更负。
-                                // Phase 6:战时缓冲耗尽时加 starvationPenalty,主动减兵。
-                                // PR-1 (2026-05-24): wage + starvation 进 gold 通道；K 进 time 通道；value 进 strategic 通道。
+                                // PR-1 (2026-05-24): wage 进 gold 通道；K 进 time 通道；value 进 strategic 通道。
                                 // ClampValue(value × power, K) 保留原语义（防 strategic 溢出 ±K 区间触发符号反转）。
-                                int holdGold = WageOf(tier) + starvationPenalty;
+                                int holdGold = WageOf(tier);
                                 int holdStrategic = ClampValue(value * PowerOf(tier), K);
                                 var holdEc = new EdgeCost(gold: holdGold, timeUnits: 1, strategic: holdStrategic);
                                 int from = G(s, role, tau, tier), to = G(s, role, tau + 1, tier);
@@ -586,21 +571,8 @@ public static class UnifiedGarrisonSolver
             // ── Solve(分帧 SSP)── swSolve 只累计 MoveNext 内的 CPU,排除 yield 帧间隙。
             long buildMs = sw.ElapsedMilliseconds;
 
-            // 诊断:首府 tick-0 tier 结构。守军止于「tier value ≤ wage」处 —— 对照 wage / adequate
-            // 即知 merged 欠配(tick0Garrison < legacy)是 value/wage 还是 adequate 上限所致。
-            try
-            {
-                int diagFloor = Math.Max(0, cfg.MinGarrisonFloor);
-                int diagHardCap = GarrisonAllocationSolver.HardCapFor(capitalTown, cfg);
-                int diagAdequate = GarrisonAllocationSolver.AdequateFor(capitalTown, cfg, diagFloor, diagHardCap);
-                var diagTiers = TierDefs(capitalTown, capitalSettlement, true, 0, cfg, forecast);
-                var sb = new System.Text.StringBuilder();
-                foreach (var (cap, value) in diagTiers) sb.Append($"({cap}@{value:F0}) ");
-                Logger.Info(
-                    $"MERGED-TIERS clan={clan.StringId} wage={wagePerTroop} budget={clanWageBudget} "
-                  + $"floor={diagFloor} adequate={diagAdequate} hardCap={diagHardCap} tier(cap@value)=[ {sb}]");
-            }
-            catch (Exception ex) { Logger.Error("MERGED-TIERS diagnostic failed", ex); }
+            // PR-5'(2026-05-24): MERGED-TIERS diagnostic removed (used AdequateFor + MinGarrisonFloor).
+            // Replacement: single-segment TierDefs cap = hardCap × TargetFraction, logged below.
 
             var swSolve = new System.Diagnostics.Stopwatch();
             int sspFrames = 0;
@@ -709,25 +681,7 @@ public static class UnifiedGarrisonSolver
               + $"build={buildMs}ms (recruit={recruitMs}ms) solve={solveMs}ms (sspFrames={sspFrames}) "
               + $"decode={decodeMs}ms wall={sw.ElapsedMilliseconds}ms");
 
-            // Phase 8(2026-05-24):per-settlement adequate(愿望) vs solved(实际) 对比诊断。
-            // 愿望 = AdequateFor 公式驱动;实际 = MCMF 解出的 tick-0 持有头数。差距 > 0 表明
-            // 供给/路径/预算/cap 之一是当前瓶颈。
-            try
-            {
-                var diagSb = new System.Text.StringBuilder();
-                foreach (var tDiag in towns)
-                {
-                    var sDiag = tDiag.Settlement;
-                    if (sDiag == null) continue;
-                    int diagFloor2 = Math.Max(0, cfg.MinGarrisonFloor);
-                    int diagHardCap2 = GarrisonAllocationSolver.HardCapFor(tDiag, cfg);
-                    int adequate = GarrisonAllocationSolver.AdequateFor(tDiag, cfg, diagFloor2, diagHardCap2);
-                    int solved = result.Target.TryGetValue(sDiag, out var sv) ? sv : 0;
-                    diagSb.Append($"{sDiag.StringId}:want={adequate}/got={solved} ");
-                }
-                Logger.Info($"MERGED-GAP clan={clan.StringId} {diagSb}");
-            }
-            catch (Exception ex) { Logger.Error("MERGED-GAP diagnostic failed", ex); }
+            // PR-5'(2026-05-24): MERGED-GAP diagnostic removed (used AdequateFor + MinGarrisonFloor).
         }
         finally
         {
@@ -736,72 +690,23 @@ public static class UnifiedGarrisonSolver
     }
 
     /// <summary>
-    /// 某城某 tick 的 (tier 容量, tier value) 序列 —— floor/core/surplus,沿用今天 Merged* 口径;
-    /// threat 乘子取 <paramref name="forecast"/> 的该 tick 投影。manual 模式用玩家手动目标作容量(M5)。
+    /// PR-5'(2026-05-24): 单段 cap = hardCap × TargetFraction，value = BaseValuePerTier × threat × strat。
+    /// 删除了 floor/core/surplus 三段逻辑、CoreTierCount、CoreDimRange、CoreDimMidpoint、
+    /// ValueFloorBase、ValueCoreBase、SurplusEdgeCost、AdequateFor 依赖。
     /// </summary>
     private static List<(int Cap, float Value)> TierDefs(
         Town t, Settlement s, bool isCapital, int tau,
         FiscalAutonomyConfig cfg, IHorizonForecast forecast)
     {
-        int floor = Math.Max(0, cfg.MinGarrisonFloor);
         int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
-        int adequate = GarrisonAllocationSolver.AdequateFor(t, cfg, floor, hardCap);
+        int totalCap = (int)Math.Round(hardCap * Math.Max(0f, Math.Min(1f, cfg.TargetFraction)));
         float threat = ThreatWeightOf(SafeThreatAt(forecast, s, tau), cfg);
         float strat = StrategicWeight(s, isCapital, cfg);
-        int coreSpan = Math.Max(0, adequate - floor);
-        int coreCount = Math.Max(1, cfg.CoreTierCount);
-        int surplusSpan = Math.Max(0, hardCap - adequate);
-
-        var defs = new List<(int, float)>();
-        if (floor > 0)
-            defs.Add((floor, cfg.ValueFloorBase * threat * strat));
-        for (int k = 0; k < coreCount; k++)
-        {
-            int cap = coreSpan * (k + 1) / coreCount - coreSpan * k / coreCount;
-            if (cap <= 0) continue;
-            float dim = 1.0f - cfg.CoreDimRange * ((k + cfg.CoreDimMidpoint) / coreCount);
-            defs.Add((cap, cfg.ValueCoreBase * dim * threat * strat));
-        }
-        if (surplusSpan > 0)
-            defs.Add((surplusSpan, -Math.Max(1, cfg.SurplusEdgeCost)));
-        return defs;
+        float value = cfg.BaseValuePerTier * threat * strat;
+        return new List<(int, float)> { (totalCap, value) };
     }
 
-    /// <summary>
-    /// 该 (role, tier) 在 rule 模板中相对该 role 内部的占比 ∈ [0, 1]。
-    /// - ExactTemplate 模式:扫 rule.ExactTroopTemplate,按 (role, tier) 聚合 weight,归一化到 role 内
-    /// - Generic 模式:tier == clamp(rule.MaxTier, 1, 6) ? 1 : 0(目标顶 tier,中间 tier 是过渡)
-    /// 若 role 没有任何 share(模板未覆盖该 role),返回 0 — 该 (role, tier) 节点 holding cap = 0,
-    /// 进入的兵需走 upgrade edge / transfer / disband / patrol 才能消化。
-    /// </summary>
-    private static float TierShareWithinRole(TownGarrisonRule rule, GenericTroopRole role, int tier)
-    {
-        if (rule == null) return tier == 1 ? 1f : 0f;
-        int maxTier = Math.Max(1, Math.Min(6, rule.MaxTier));
-        if (rule.UseGenericMatching)
-            return tier == maxTier ? 1f : 0f;
-
-        if (rule.ExactTroopTemplate == null || rule.ExactTroopTemplate.Count == 0)
-            return tier == maxTier ? 1f : 0f;
-
-        var mbom = TaleWorlds.ObjectSystem.MBObjectManager.Instance;
-        if (mbom == null) return tier == maxTier ? 1f : 0f;
-
-        float roleSum = 0f, roleTierSum = 0f;
-        foreach (var kv in rule.ExactTroopTemplate)
-        {
-            if (string.IsNullOrEmpty(kv.Key) || kv.Value <= 0f) continue;
-            CharacterObject? ch;
-            try { ch = mbom.GetObject<CharacterObject>(kv.Key); }
-            catch { continue; }
-            if (ch == null || ch.IsHero) continue;
-            if (GenericTroopMatcher.GetRole(ch) != role) continue;
-            roleSum += kv.Value;
-            if (GenericTroopMatcher.GetTierBucket(ch) == tier) roleTierSum += kv.Value;
-        }
-        if (roleSum <= 0f) return 0f;
-        return roleTierSum / roleSum;
-    }
+    // PR-5'(2026-05-24): TierShareWithinRole deleted. Uniform tier split = 1/6 used directly at call site.
 
     private static RiskLevel SafeThreatAt(IHorizonForecast forecast, Settlement s, int tau)
     {
@@ -914,8 +819,11 @@ public static class UnifiedGarrisonSolver
         }
     }
 
-    /// <summary>strategic 乘子:(首府 ? cfg.CapitalStrategicBonus : 1.0)
-    /// × clamp(Prosperity / cfg.ProsperityNormalizer, 0.5, 1.5)。</summary>
+    /// <summary>
+    /// PR-5'(2026-05-24): strategic 乘子 = typeBonus × prosperity_factor。
+    /// typeBonus: Town × TownStrategicBonus, isCapital additionally × CapitalStrategicBonus, Castle 1.0.
+    /// prosperity_factor = clamp(Prosperity / ProsperityNormalizer, 0.5, 1.5).
+    /// </summary>
     private static float StrategicWeight(Settlement s, bool isCapital, FiscalAutonomyConfig cfg)
     {
         float prosperity = 0f;
@@ -923,17 +831,20 @@ public static class UnifiedGarrisonSolver
         catch { prosperity = 0f; }
 
         float normalizer = cfg.ProsperityNormalizer > 0f ? cfg.ProsperityNormalizer : 4000f;
-        float pf = prosperity / normalizer;
-        if (pf < 0.5f) pf = 0.5f;
-        if (pf > 1.5f) pf = 1.5f;
-        return (isCapital ? cfg.CapitalStrategicBonus : 1.0f) * pf;
+        float pf = Math.Max(0.5f, Math.Min(1.5f, prosperity / normalizer));
+
+        float typeBonus = 1f;
+        if (s != null && s.IsTown) typeBonus *= cfg.TownStrategicBonus;
+        if (isCapital) typeBonus *= cfg.CapitalStrategicBonus;
+        return typeBonus * pf;
     }
 
-    /// <summary>该城现有驻军是否禁止主动遣散:功能开关关 / manual 模式 / 围城 / 高危。
-    /// 保护城仍建 disbandGate,但正常段 cap=0(只 overflow 兜底,见 §6.3)。</summary>
+    /// <summary>
+    /// PR-5'(2026-05-24): DisbandUnaffordableExcess 已删除。保护仅在围城 / 高危时触发。
+    /// 正常遣散始终允许（由 solver 的 bypass 费用模型控制量）。
+    /// </summary>
     private static bool IsProtectedFromDisband(Settlement s, FiscalAutonomyConfig cfg)
     {
-        if (!cfg.DisbandUnaffordableExcess) return true;
         try
         {
             if (s.IsUnderSiege) return true;
