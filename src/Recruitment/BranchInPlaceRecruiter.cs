@@ -61,7 +61,9 @@ public static class BranchInPlaceRecruiter
                 return 0;
             }
 
-            var branchRule = ConfigurationManager.GetBranchRuleFor(town) ?? BranchRule.CreateDefault();
+            // PR-5'(2026-05-24): BranchRule removed; use TownGarrisonRule via GetRuleFor.
+            // LowTierMinFraction had no equivalent in TownGarrisonRule; hardcode 0.3f (former BranchRule default).
+            const float lowTierMinFraction = 0.3f;
             float currentPower = GarrisonPowerEvaluator.ComputeRosterPower(memberRoster);
             if (currentPower >= desiredPower)
             {
@@ -76,7 +78,7 @@ public static class BranchInPlaceRecruiter
 
             // 决定本轮策略：低 tier 不足 → 优先低 tier；否则优先高 tier。
             bool prioritizeLowTier =
-                GarrisonPowerEvaluator.LowTierHeadCountFraction(memberRoster) < branchRule.LowTierMinFraction;
+                GarrisonPowerEvaluator.LowTierHeadCountFraction(memberRoster) < lowTierMinFraction;
 
             var notables = branch.Notables;
             if (notables == null) return 0;

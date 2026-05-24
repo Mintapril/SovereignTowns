@@ -426,14 +426,18 @@ public sealed class CapitalLogisticsManager
         }
         else
         {
-            var branchRule = ConfigurationManager.GetBranchRuleFor(settlement.Town) ?? BranchRule.CreateDefault();
+            // PR-5'(2026-05-24): BranchRule removed. Derive targetPower from cfg.TargetFraction × hardCap.
+            var _cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+            int _hardCap = GarrisonAllocationSolver.HardCapFor(settlement.Town, _cfg);
+            int _targetHeads = (int)Math.Round(_hardCap * _cfg.TargetFraction);
+            int _targetPower = _targetHeads * 2; // rough power proxy: avg tier-3 troop ≈ 2 power units
             int recruited = BranchInPlaceRecruiter.RecruitFromBranchNotables(
                 settlement,
-                branchRule.TargetPower,
+                _targetPower,
                 $"mcmf branch in-place flow={instruction.Count}");
             if (recruited > 0)
             {
-                Logger.Info($"CapitalLogistics MCMF: branch in-place recruited {recruited} troop(s) settlement='{settlement.Name}' targetPower={branchRule.TargetPower}");
+                Logger.Info($"CapitalLogistics MCMF: branch in-place recruited {recruited} troop(s) settlement='{settlement.Name}' targetPower={_targetPower}");
                 return true;
             }
             return false;
@@ -785,9 +789,9 @@ public sealed class CapitalLogisticsManager
             var t = s?.Town;
             if (t == null) return 0;
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            int floor = Math.Max(0, cfg.MinGarrisonFloor);
             int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
-            return GarrisonAllocationSolver.AdequateFor(t, cfg, floor, hardCap);
+            // PR-5'(2026-05-24): AdequateFor removed; single-segment cap = hardCap × TargetFraction.
+            return (int)Math.Round(hardCap * cfg.TargetFraction);
         }
         catch (Exception ex)
         {

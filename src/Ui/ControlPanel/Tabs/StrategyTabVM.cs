@@ -73,8 +73,8 @@ public sealed class StrategyTabVM : ViewModel
             "驻军目标、招募、巡逻调拨、出击等各子系统的数值参数。全局规则应用于所有受管首府；非首府只受「非首府驻军」标签页约束。",
             "Numeric parameters for the garrison-target, recruitment, patrol/transfer, sally and other subsystems. Global rules apply to all managed capitals; branches are governed only by the \"Branches\" tab.");
         Intro2 = ControlPanelLoc.Tr(
-            "每条参数都标注了出厂默认值；改过的项会出现「↺ 恢复默认」。开发者级旋钮（MCMF / 调度内部参数）默认折叠，普通玩家无需调整。",
-            "Each parameter shows its factory default; a changed item gets a \"↺ Reset\" link. Developer-level knobs (MCMF / scheduler internals) are collapsed by default and ordinary players need not touch them.");
+            "每条参数都标注了出厂默认值；改过的项会出现「↺ 恢复默认」。开发者级旋钮（调度器内部参数）默认折叠，普通玩家无需调整。",
+            "Each parameter shows its factory default; a changed item gets a \"↺ Reset\" link. Developer-level knobs (scheduler internals) are collapsed by default and ordinary players need not touch them.");
         AdvancedToggleLabel = ControlPanelLoc.Tr(
             "显示高级参数（开发者旋钮）", "Show advanced parameters (developer knobs)");
         ResetGroupLabel = ControlPanelLoc.Tr("本组恢复默认", "Reset this group");
@@ -102,7 +102,8 @@ public sealed class StrategyTabVM : ViewModel
     /// <summary>
     /// 从 <see cref="ControlPanelSpecs.AllGroups"/> 重建可见分组列表。
     /// 镜像 WebUI 的 visibleSettingsGroups：showAdvanced=false 时丢掉 Advanced spec、
-    /// 丢掉过滤后为空的分组，并丢掉整组 Advanced 的分组（mcmf）。
+    /// 丢掉过滤后为空的分组，并丢掉整组 Advanced 的分组（当前 8 组里无此情况；
+    /// 字段保留以支持将来加入整组开发者级分组）。
     /// </summary>
     private void RebuildGroups()
     {
@@ -110,7 +111,7 @@ public sealed class StrategyTabVM : ViewModel
 
         foreach (var group in ControlPanelSpecs.AllGroups)
         {
-            if (!_showAdvanced && group.Advanced) continue; // 整组高级（mcmf）
+            if (!_showAdvanced && group.Advanced) continue; // 整组高级（当前无此情况，保留兜底）
 
             var vm = new SettingsGroupVM(group, _config, _markDirty, _showAdvanced, OnSelectGroup);
             if (vm.RowCount == 0) continue; // 过滤后无可见行

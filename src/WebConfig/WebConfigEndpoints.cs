@@ -110,7 +110,7 @@ internal static class WebConfigEndpoints
 
             // 兜底空字段，与 ConfigurationManager.TryLoadFromDisk 一致。
             parsed.GlobalDefaults ??= TownGarrisonRule.CreateDefault();
-            parsed.BranchDefaults ??= BranchRule.CreateDefault();
+            // PR-5'(2026-05-24): BranchDefaults/BranchRule removed from GlobalConfig.
             parsed.EnabledFeatures ??= new EnabledFeatures();
             parsed.ClanPatrol ??= new ClanPatrolConfig();
             parsed.Thresholds ??= new PartyThresholds();
@@ -262,8 +262,7 @@ internal static class WebConfigEndpoints
                 configVersion = cfg.ConfigVersion,
                 lastModified = cfg.LastModified,
                 features = cfg.EnabledFeatures,
-                branchTargetPower = cfg.BranchDefaults?.TargetPower ?? 0,
-                exactTroopTemplateCount = cfg.GlobalDefaults?.ExactTroopTemplate?.Count ?? 0,
+                // PR-5'(2026-05-24): branchTargetPower/BranchDefaults and exactTroopTemplateCount/ExactTroopTemplate removed.
                 uiLang = GetUiLang(),
             };
             WebConfigServer.WriteJson(ctx, 200, status);
@@ -318,7 +317,6 @@ internal static class WebConfigEndpoints
             string playerClanId = FinancialSnapshot.PlayerClanId;
             var all = SovereignTowns.Managers.CapitalLogisticsManager.LatestAssessments;
             var list = new List<object>();
-            bool manualMode = ConfigurationManager.Current?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
 
             if (!string.IsNullOrEmpty(playerClanId)
                 && all.TryGetValue(playerClanId, out var entries) && entries != null)
@@ -337,7 +335,7 @@ internal static class WebConfigEndpoints
                 }
             }
 
-            WebConfigServer.WriteJson(ctx, 200, new { manualMode, count = list.Count, assessments = list });
+            WebConfigServer.WriteJson(ctx, 200, new { count = list.Count, assessments = list });
         }
         catch (Exception ex)
         {
@@ -414,8 +412,6 @@ internal static class WebConfigEndpoints
                         discrete = s.Discrete,
                         def,
                         adv = s.Advanced,
-                        // 条件可见 —— 非空时该旋钮仅在手动驻军目标模式下渲染。
-                        requiresManualMode = string.IsNullOrEmpty(s.RequiresManualMode) ? null : s.RequiresManualMode,
                     });
                 }
 

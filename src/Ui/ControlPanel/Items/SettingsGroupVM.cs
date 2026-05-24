@@ -62,16 +62,10 @@ public sealed class SettingsGroupVM : ViewModel
         GroupLabel = Label;
         GroupHint = ControlPanelLoc.Tr(group.HintZh, group.HintEn);
 
-        // 条件可见旋钮（手动驻军目标模式专属）：auto 模式下隐藏整行。
-        // 注意 — 在面板内切换 AllowManualGarrisonTargets 后须重开面板才会重建此过滤
-        // （SettingsGroupVM 只在 StrategyTabVM.RebuildGroups / ShowAdvanced 切换时重建）。
-        // 项目处于 pre-release 快速迭代，按 YAGNI 接受此小代价，不为开关挂额外重建链路。
-        bool manualMode = config?.FiscalAutonomy?.AllowManualGarrisonTargets ?? false;
-
+        // 2026-05-24:手动驻军目标整体下线,删除 RequiresManualMode 过滤。
         foreach (var spec in group.Specs)
         {
             if (!showAdvanced && spec.Advanced) continue;
-            if (!manualMode && !string.IsNullOrEmpty(spec.RequiresManualMode)) continue;
 
             var s = spec; // 闭包捕获副本
             if (s.IsBool)

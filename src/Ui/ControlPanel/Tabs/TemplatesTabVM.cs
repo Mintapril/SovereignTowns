@@ -238,7 +238,8 @@ public sealed class TemplatesTabVM : ViewModel
             "✓ 当前为「精确兵员模板」模式 —— 下面勾选的兵种即驻军招募目标。",
             "✓ Currently in \"Exact troop template\" mode — the troops ticked below are the garrison recruitment targets.");
 
-        _isGenericMode = Defaults.UseGenericMatching;
+        // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
+        _isGenericMode = true;
 
         BuildCultureChips();
         BuildTypeChips();
@@ -252,27 +253,19 @@ public sealed class TemplatesTabVM : ViewModel
 
     private TownGarrisonRule Defaults => _config.GlobalDefaults;
 
-    private Dictionary<string, float> Template
-    {
-        get
-        {
-            if (Defaults.ExactTroopTemplate == null)
-                Defaults.ExactTroopTemplate = new Dictionary<string, float>();
-            return Defaults.ExactTroopTemplate;
-        }
-    }
+    // PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule.
+    // TemplatesTab is now a visual stub; all mutations go to a local ephemeral dict (not saved).
+    private readonly Dictionary<string, float> _ephemeralTemplate = new Dictionary<string, float>();
+    private Dictionary<string, float> Template => _ephemeralTemplate;
 
     // ══════════════════════════════════════════════
     //  Commands
     // ══════════════════════════════════════════════
 
-    /// <summary>模式横幅按钮：切到精确模板模式（仅设 UseGenericMatching=false，不导航 —— 见 index.html:719）。</summary>
+    /// <summary>PR-5'(2026-05-24): UseGenericMatching removed; exact mode no longer exists — no-op.</summary>
     public void ExecuteSwitchToExactMode()
     {
-        if (!Defaults.UseGenericMatching) return;
-        Defaults.UseGenericMatching = false;
-        _markDirty?.Invoke();
-        IsGenericMode = false;
+        // no-op: UseGenericMatching removed from TownGarrisonRule
     }
 
     public void ExecuteToggleHideSelected()
@@ -307,8 +300,8 @@ public sealed class TemplatesTabVM : ViewModel
 
     private void DoClearTroops()
     {
-        Defaults.ExactTroopTemplate = new Dictionary<string, float>();
-        _markDirty?.Invoke();
+        // PR-5'(2026-05-24): ExactTroopTemplate removed; clear the ephemeral local template only.
+        _ephemeralTemplate.Clear();
         RebuildSelectedList();
         RefreshFilteredAddedFlags();
         RefreshHeaderCounts();

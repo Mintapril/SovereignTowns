@@ -142,11 +142,9 @@ public static class CapitalInPlaceRecruiter
 
                     // 通用匹配：按规则过滤文化/贵族/禁用项，再看兵种桶 + Tier 范围 + 比例。
                     if (!TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
-                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。仅通用匹配模式生效：
-                    // 精确模板模式下模板本身即显式白名单,玩家点名的跨文化兵种(如 khuzait_*)
-                    // 不应被 GenericCultureFilter 二次否决。
-                    if (rule.UseGenericMatching
-                        && !GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。
+                    // PR-5'(2026-05-24): UseGenericMatching removed; culture filter always applies.
+                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
 
                     // MCMF 指定了 role:只招能服务该 role 的志愿兵(精确模式认升级路径,
                     // 与 MatchesRule 同口径 —— T1 新兵 role=Infantry,但若可升级成 sharpshooter
@@ -194,7 +192,8 @@ public static class CapitalInPlaceRecruiter
             // 能升级到该 role 的模板目标)。MCMF 会持续请求该 role → 反复刷此行即说明 in-place 对该 role 无解。
             if (recruited == 0 && candidatesScanned > 0)
             {
-                Logger.Warn($"CapitalInPlace '{capital.Name}': 扫到 {candidatesScanned} 个候选但 0 招募 — 无志愿兵可服务 role={role}（Tier {rule.MinTier}-{rule.MaxTier} 过滤 / 无兵种能升级到该 role 的模板目标）。");
+                // PR-5'(2026-05-24): MinTier/MaxTier removed; simplified log message.
+                Logger.Warn($"CapitalInPlace '{capital.Name}': 扫到 {candidatesScanned} 个候选但 0 招募 — 无志愿兵可服务 role={role}（文化过滤 / role 不匹配）。");
             }
         }
         catch (Exception ex)

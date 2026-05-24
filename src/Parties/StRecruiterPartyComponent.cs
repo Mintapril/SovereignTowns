@@ -528,10 +528,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                     // 取可升级模板目标,与 solver 建图分桶保持一致。
                     if (_assignedRole != GenericTroopRole.Unknown
                         && !TroopTemplateMatcher.CanServeRole(troop, rule, _assignedRole)) continue;
-                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。仅通用匹配模式生效 ——
-                    // 精确模板模式下模板即显式白名单,玩家点名的跨文化兵种不应被 GenericCultureFilter 否决。
-                    if ((rule == null || rule.UseGenericMatching)
-                        && !GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
+                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。
+                    // PR-5'(2026-05-24): UseGenericMatching removed; culture filter always applies.
+                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
                     float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
                     if (float.IsNegativeInfinity(score)) continue;
                     scoredCandidates.Add((troop, volunteerTypes, i, score));

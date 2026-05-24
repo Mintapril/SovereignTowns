@@ -17,7 +17,8 @@ namespace SovereignTowns.Upgrades;
 /// <para>
 /// 背景：vanilla 给 town GarrisonParty 的兵种 XP 极少，导致驻军兵种无法触发自然升级。
 /// 本服务在 DailyTickSettlement 给每个受管氏族所属 Town 的驻军逐兵种注入一定 XP，使
-/// <see cref="TroopUpgradeService.TryUpgradeGarrison"/> 在下一次评估时能读到足以升级的 XP。
+/// vanilla PartyUpgraderCampaignBehavior(MapEventEnded / DailyTickPartyEvent)在下一次自动升级
+/// 评估时能读到足以升级的 XP。
 /// </para>
 /// <para>
 /// XP 模型策略（关键技术决策，v1.3.15）：
@@ -151,7 +152,8 @@ public static class GarrisonXpInjector
                 if (ch.IsHero) continue;
                 if (elem.Number <= 0) continue;
                 // 仅当兵种 Tier 在规则上限（含）以内才注入，超过上限的精锐不浪费 XP
-                if (ch.Tier > rule.MaxTier) continue;
+                // PR-5'(2026-05-24): MaxTier removed from TownGarrisonRule; hardcode max tier = 6.
+                if (ch.Tier > 6) continue;
 
                 try
                 {
@@ -178,42 +180,12 @@ public static class GarrisonXpInjector
                 Logger.Debug($"GarrisonXpInjector: town='{settlement.StringId}' elements={injectedElements} totalXp={injectedXpTotal} base={perTroopBase} townBonus={townBonus}");
             }
 
-            // 2026-05-12 差距 2 修复：原 TryUpgradeGarrison 仅在 capital-only 路径触发，
-            // 导致非首府 town 与所有 castle 累积 XP 却"卡 tier"。XP 注入后立即触发本城升级，
-            // 让受管氏族自有的每个城/堡都能正常升级兵种。
-            // 战时缓冲耗尽时暂停升级:clan 交战 且 金库余额 <= 0 → 停止推高 tier/工资。
-            try
-            {
-                bool skipUpgrade = false;
-                try
-                {
-                    var ownerClan = town.OwnerClan;
-                    if (ownerClan != null && GarrisonAllocationSolver.IsClanAtWar(ownerClan))
-                    {
-                        if (ownerClan.Gold <= 0)
-                        {
-                            skipUpgrade = true;
-                            Logger.Info(
-                                $"GarrisonXpInjector: upgrade paused for '{settlement.StringId}' — clan at war + Clan.Gold={ownerClan.Gold}");
-                        }
-                    }
-                }
-                catch (Exception warCheckEx)
-                {
-                    // Fail open: allow upgrade if this read-only heuristic check errors.
-                    Logger.Warn($"GarrisonXpInjector: war-buffer check failed for '{settlement.StringId}'", warCheckEx);
-                }
-
-                if (!skipUpgrade)
-                {
-                    int budgetCap = Math.Max(0, rule?.BudgetLimit ?? 5000);
-                    TroopUpgradeService.TryUpgradeGarrison(town, budgetCap, maxUpgradesPerCall: 20);
-                }
-            }
-            catch (Exception upgEx)
-            {
-                Logger.Error($"GarrisonXpInjector: per-settlement upgrade trigger failed for '{settlement.StringId}'", upgEx);
-            }
+            // 2026-05-24:升级触发权完全移交 vanilla PartyUpgraderCampaignBehavior(MapEventEnded /
+            // DailyTickPartyEvent auto-upgrade,反编译核实 garrison party 走 vanilla 自动升级)。
+            // MCMF 在 UnifiedGarrisonSolver 内通过 upgrade edge 拓扑 + tier-aware vanilla cost 公式
+            // 决定升级流量;实际升级由 vanilla 加权随机执行。模板偏差由 next-tick MCMF 在 holding cap /
+            // disband / patrol 上 self-correct。废 TroopUpgradeService 调用,XP 注入仍在(本函数前段)
+            // 让 vanilla 有足够 XP 自动升级。
         }
         catch (Exception ex)
         {

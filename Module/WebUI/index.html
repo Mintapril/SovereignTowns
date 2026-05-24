@@ -857,13 +857,8 @@
             </p>
             <div class="diamond-divider mb-6"></div>
 
-            <!-- 自动调度模式提示（手动驻军目标关闭时） -->
-            <div x-show="!config.FiscalAutonomy?.AllowManualGarrisonTargets"
-                 class="card p-5 mb-4 text-[13px] text-parchment-300"
-                 x-text="tr('当前为自动驻军调度模式：非首府目标兵力由中央调度器按防御价值与氏族预算决定，下方「目标兵力」旋钮已隐藏。如需手动设定，请在「策略参数 → 财政自治」中开启「允许手动驻军目标」。', 'Auto garrison dispatch mode is active: branch target strength is decided by the central dispatcher from defensive value and clan budget, so the “Target strength” knob below is hidden. To set it manually, enable “Allow manual garrison targets” under Strategy → Fiscal Autonomy.')"></div>
-
-            <!-- TargetPower（仅手动驻军目标模式可见） -->
-            <div x-show="config.FiscalAutonomy?.AllowManualGarrisonTargets" class="card p-5 mb-4">
+            <!-- 2026-05-24:手动驻军目标整体下线;TargetPower 旋钮(Step 3 删)/LowTier 旋钮始终显示 -->
+            <div class="card p-5 mb-4">
               <div class="grid grid-cols-12 gap-4 items-center">
                 <div class="col-span-12 md:col-span-4">
                   <div class="text-[15px] text-parchment-50 font-medium" x-text="tr('目标兵力', 'Target strength')"></div>
@@ -1125,13 +1120,11 @@
           // pickLang：把 *Zh/*En 双语字段映射成当前语言的 label/hint。
           // 语言切换时本 getter 重新求值 —— 渲染保持响应式（无须重拉 /api/specs）。
           const pickLang = (zh, en) => this.tr(zh, en);
-          // 手动驻军目标模式开关 —— 决定带 requiresManualMode 的旋钮是否渲染。
-          const manualMode = !!this.config?.FiscalAutonomy?.AllowManualGarrisonTargets;
+          // 2026-05-24:手动驻军目标整体下线,删除 requiresManualMode 过滤。
           return this.specGroups.map(g => {
-            // clean：未开启「高级参数」时隐藏 adv 旋钮；auto 模式下隐藏 requiresManualMode 旋钮。
+            // clean:未开启「高级参数」时隐藏 adv 旋钮。
             const specs = g.specs
               .filter(s => this.showAdvanced || !s.adv)
-              .filter(s => manualMode || !s.requiresManualMode)
               .map(s => ({
                 root: s.root || '',
                 key: s.key,
@@ -1144,7 +1137,6 @@
                 discrete: s.discrete,
                 def: s.def,
                 adv: s.adv,
-                requiresManualMode: s.requiresManualMode,
               }));
             return {
               key: g.key,

@@ -183,7 +183,8 @@ public sealed class CompositionTabVM : ViewModel
         TierResetLabel   = ControlPanelLoc.Tr("↺ 恢复默认 T2 – T5", "↺ Reset to default T2 – T5");
 
         // ── mode ──
-        _isGenericMode = _config.GlobalDefaults.UseGenericMatching;
+        // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
+        _isGenericMode = true;
 
         // ── culture chips ──
         BuildCultureChips();
@@ -208,18 +209,12 @@ public sealed class CompositionTabVM : ViewModel
 
     public void ExecuteSetGenericMode()
     {
-        if (_config.GlobalDefaults.UseGenericMatching) return;
-        _config.GlobalDefaults.UseGenericMatching = true;
-        _markDirty();
-        IsGenericMode = true;
+        // PR-5'(2026-05-24): UseGenericMatching removed; always generic — no-op.
     }
 
     public void ExecuteSetExactMode()
     {
-        if (!_config.GlobalDefaults.UseGenericMatching) return;
-        _config.GlobalDefaults.UseGenericMatching = false;
-        _markDirty();
-        IsGenericMode = false;
+        // PR-5'(2026-05-24): UseGenericMatching removed; exact mode no longer exists — no-op.
     }
 
     public void ExecuteGoToTemplatesTab()
@@ -249,10 +244,7 @@ public sealed class CompositionTabVM : ViewModel
 
     public void ExecuteResetTier()
     {
-        _config.GlobalDefaults.MinTier = 2;
-        _config.GlobalDefaults.MaxTier = 5;
-        _markDirty();
-        RefreshTierState();
+        // PR-5'(2026-05-24): MinTier/MaxTier removed from TownGarrisonRule — no-op.
     }
 
     // ══════════════════════════════════════════════
@@ -397,43 +389,20 @@ public sealed class CompositionTabVM : ViewModel
 
     private void BuildTierChips()
     {
+        // PR-5'(2026-05-24): MinTier/MaxTier removed from TownGarrisonRule; tier chips are inert.
         MinTierChips.Clear();
         MaxTierChips.Clear();
         for (int tier = 1; tier <= 6; tier++)
         {
-            var t = tier;
-            MinTierChips.Add(new ChipVM(t.ToString(), () =>
-            {
-                _config.GlobalDefaults.MinTier = t;
-                if (_config.GlobalDefaults.MaxTier < t)
-                    _config.GlobalDefaults.MaxTier = t;
-                _markDirty();
-                RefreshTierState();
-            }));
-            MaxTierChips.Add(new ChipVM(t.ToString(), () =>
-            {
-                if (t >= _config.GlobalDefaults.MinTier)
-                {
-                    _config.GlobalDefaults.MaxTier = t;
-                    _markDirty();
-                    RefreshTierState();
-                }
-            }));
+            MinTierChips.Add(new ChipVM(tier.ToString(), () => { }));
+            MaxTierChips.Add(new ChipVM(tier.ToString(), () => { }));
         }
     }
 
     private void RefreshTierState()
     {
-        var d = _config.GlobalDefaults;
-        for (int i = 0; i < 6; i++)
-        {
-            int tier = i + 1;
-            MinTierChips[i].IsActive = tier == d.MinTier;
-            MaxTierChips[i].IsActive  = tier == d.MaxTier;
-            MaxTierChips[i].IsDimmed  = tier < d.MinTier;
-        }
-        TierRangeText = ControlPanelLoc.Tr("当前范围：", "Current range: ")
-            + $"T{d.MinTier} – T{d.MaxTier}";
-        ShowTierReset = d.MinTier != 2 || d.MaxTier != 5;
+        // PR-5'(2026-05-24): MinTier/MaxTier removed; tier range UI is hidden/inert.
+        TierRangeText = ControlPanelLoc.Tr("（PR-5' 已简化，不再可配置）", "(PR-5' simplified; not configurable)");
+        ShowTierReset = false;
     }
 }

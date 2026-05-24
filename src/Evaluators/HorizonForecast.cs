@@ -14,13 +14,6 @@ public interface IHorizonForecast
     RiskLevel ThreatAt(Settlement s, int tick);
 }
 
-/// <summary>平展预测:所有 tick = 当前威胁。P3 机制验证用,不前瞻(§7.2)。</summary>
-public sealed class FlatForecast : IHorizonForecast
-{
-    public RiskLevel ThreatAt(Settlement s, int tick)
-        => RiskAssessmentService.Assess(s).Level;
-}
-
 /// <summary>
 /// 威胁预测(§7.2):tick 0 = 当前威胁;tick>0 = 把「ETA ≤ tick 的逼近敌军」按健康兵力
 /// 总和映射成威胁等级,与当前威胁取较高者。宣战时机不可测 → 只吃已存在的逼近敌军。

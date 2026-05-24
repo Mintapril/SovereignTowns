@@ -185,8 +185,7 @@ public static class GenericTroopMatcher
             if (IsListed(troop, rule.BannedTroopIds)) return false;
 
             int tier = GetTierBucket(troop);
-            if (tier < rule.MinTier || tier > rule.MaxTier) return false;
-            // B7.10: TierRatio bucket weighting removed — MinTier/MaxTier band is the only tier filter.
+            // PR-5'(2026-05-24): MinTier/MaxTier removed from TownGarrisonRule; no tier-band filter here.
 
             // 显式 AllowedCultureIds 允许表（AI 氏族由 AiCulturePresets 写入；玩家默认空）。
             // 注意：玩家面板的「文化过滤」(TownGarrisonRule.GenericCultureFilter) 不在此处生效 ——
@@ -298,8 +297,9 @@ public static class GenericTroopMatcher
     {
         try
         {
-            // 仅通用匹配模式生效；精确兵员模板模式由玩家显式选兵，不叠加文化过滤。
-            if (rule == null || !rule.UseGenericMatching) return null;
+            // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
+            // Culture filter always applies (when rule != null and capital is player clan).
+            if (rule == null) return null;
 
             // GenericCultureFilter 是玩家网页面板的设置，只作用于玩家氏族。AI 城即便 rule 回退到
             // GlobalDefaults（ApplyToAiSettlementsToo=false 或 preset 缺失），也不应被玩家设置左右；

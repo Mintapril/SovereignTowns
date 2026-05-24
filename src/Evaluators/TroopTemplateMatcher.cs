@@ -18,13 +18,8 @@ public static class TroopTemplateMatcher
     public static bool MatchesRule(CharacterObject? troop, TownGarrisonRule? rule)
     {
         if (rule is null) return false;
-
-        if (rule.UseGenericMatching)
-        {
-            return MatchesGenericTemplate(troop, rule);
-        }
-
-        return MatchesExactTemplate(troop, rule);
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return MatchesGenericTemplate(troop, rule);
     }
 
     public static float ScoreCandidate(
@@ -34,13 +29,8 @@ public static class TroopTemplateMatcher
         int targetTotal)
     {
         if (rule is null) return float.NegativeInfinity;
-
-        if (rule.UseGenericMatching)
-        {
-            return ScoreGenericTemplateCandidate(troop, rule, currentRoster);
-        }
-
-        return ScoreExactCandidate(troop, rule, currentRoster, targetTotal);
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return ScoreGenericTemplateCandidate(troop, rule, currentRoster);
     }
 
     public static float ScoreUpgradeTarget(
@@ -51,13 +41,8 @@ public static class TroopTemplateMatcher
         int targetTotal)
     {
         if (rule is null) return float.NegativeInfinity;
-
-        if (rule.UseGenericMatching)
-        {
-            return ScoreGenericTemplateUpgradeTarget(directTarget, rule, currentRoster);
-        }
-
-        return ScoreExactUpgradeTarget(source, directTarget, rule, currentRoster, targetTotal);
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return ScoreGenericTemplateUpgradeTarget(directTarget, rule, currentRoster);
     }
 
     public static bool CanUpgradeToTarget(CharacterObject? source, CharacterObject? finalTarget)
@@ -80,19 +65,8 @@ public static class TroopTemplateMatcher
     public static GenericTroopRole GetServiceRole(CharacterObject? troop, TownGarrisonRule? rule)
     {
         if (troop is null) return GenericTroopRole.Unknown;
-        if (rule is null || rule.UseGenericMatching) return GenericTroopMatcher.GetRole(troop);
-        if (!BaseEligible(troop, rule)) return GenericTroopRole.Unknown;
-
-        foreach (var target in TroopTemplateModeService.ResolveExactTemplateTargets(rule)
-                     .OrderByDescending(GenericTroopMatcher.GetTierBucket)
-                     .ThenBy(t => t.StringId ?? "", StringComparer.OrdinalIgnoreCase))
-        {
-            if (!CanUpgradeToTarget(troop, target)) continue;
-            var role = GenericTroopMatcher.GetRole(target);
-            if (role != GenericTroopRole.Unknown) return role;
-        }
-
-        return GenericTroopRole.Unknown;
+        // PR-5'(2026-05-24): UseGenericMatching removed; always use generic matching.
+        return GenericTroopMatcher.GetRole(troop);
     }
 
     public static bool CanServeRole(CharacterObject? troop, TownGarrisonRule? rule, GenericTroopRole role)

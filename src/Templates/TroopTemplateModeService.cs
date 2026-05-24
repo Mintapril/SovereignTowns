@@ -9,66 +9,33 @@ using Logger = SovereignTowns.Logging.Logger;
 namespace SovereignTowns.Templates;
 
 /// <summary>
-/// 模板/匹配模式的统一辅助。Exact 模式使用按 stringId 精确指定的兵员模板
-/// (CharacterObject.StringId -> 目标数量)；Generic 模式不读取具体模板，只读取兵种滑条和 Tier 范围。
-/// 切换 <see cref="TownGarrisonRule.UseGenericMatching"/> 不会改写模板内容。
+/// 模板/匹配模式的统一辅助。PR-5'(2026-05-24) 后仅剩 Generic 模式（UseGenericMatching/ExactTroopTemplate 已删除）。
+/// 旧 Exact 路径方法保留签名但均返回空集合，避免删除破坏仍存在的调用点编译。
 /// </summary>
 public static class TroopTemplateModeService
 {
-    /// <summary>纯标志位切换；模板内容保持不变。</summary>
+    /// <summary>PR-5'(2026-05-24): UseGenericMatching removed — no-op. Generic matching is always on.</summary>
     public static void SetUseGenericMatching(TownGarrisonRule? rule, bool useGeneric)
     {
-        if (rule is null) return;
-        rule.UseGenericMatching = useGeneric;
+        // no-op: field removed from TownGarrisonRule
     }
 
     /// <summary>
-    /// B7.20：把规则中的 <see cref="TownGarrisonRule.ExactTroopTemplate"/>（占比 0..1）
-    /// 解析为 CharacterObject -&gt; 实际目标人数 字典：<c>count = round(ratio × effectiveTarget)</c>。
-    /// 缺失 / 无效 / count=0 的条目跳过。
+    /// PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule. Always returns empty dict.
+    /// Kept for call-site compilation compatibility.
     /// </summary>
     public static Dictionary<CharacterObject, int> ResolveExactTemplate(TownGarrisonRule? rule, int effectiveTarget)
     {
-        var result = new Dictionary<CharacterObject, int>();
-        if (rule?.ExactTroopTemplate is null || rule.ExactTroopTemplate.Count == 0) return result;
-        if (effectiveTarget <= 0) return result;
-
-        foreach (var kv in rule.ExactTroopTemplate)
-        {
-            if (string.IsNullOrWhiteSpace(kv.Key) || kv.Value <= 0f) continue;
-            CharacterObject? troop = null;
-            try { troop = MBObjectManager.Instance.GetObject<CharacterObject>(kv.Key); }
-            catch { troop = null; }
-
-            if (troop is null) continue;
-            if (!IsValidTemplateTroop(troop, rule)) continue;
-            int count = (int)System.Math.Round(kv.Value * effectiveTarget);
-            if (count <= 0) continue;
-            result[troop] = result.TryGetValue(troop, out var existing) ? existing + count : count;
-        }
-
-        return result;
+        return new Dictionary<CharacterObject, int>();
     }
 
     /// <summary>
-    /// 仅返回模板中有效的 CharacterObject 集合（不计算具体人数）。
-    /// 用于 MatchesExactTemplate 之类的"只需 keys 是否包含"的判定路径，避开 effectiveTarget 依赖。
+    /// PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule. Always returns empty set.
+    /// Kept for call-site compilation compatibility.
     /// </summary>
     public static HashSet<CharacterObject> ResolveExactTemplateTargets(TownGarrisonRule? rule)
     {
-        var result = new HashSet<CharacterObject>();
-        if (rule?.ExactTroopTemplate is null || rule.ExactTroopTemplate.Count == 0) return result;
-        foreach (var kv in rule.ExactTroopTemplate)
-        {
-            if (string.IsNullOrWhiteSpace(kv.Key) || kv.Value <= 0f) continue;
-            CharacterObject? troop = null;
-            try { troop = MBObjectManager.Instance.GetObject<CharacterObject>(kv.Key); }
-            catch { troop = null; }
-            if (troop is null) continue;
-            if (!IsValidTemplateTroop(troop, rule)) continue;
-            result.Add(troop);
-        }
-        return result;
+        return new HashSet<CharacterObject>();
     }
 
     /// <summary>

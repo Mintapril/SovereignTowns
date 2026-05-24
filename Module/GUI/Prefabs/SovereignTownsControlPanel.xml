@@ -867,16 +867,7 @@
                                         <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                     Brush="SPOptions.Slider.Value.Text" Text="@Intro"
                                                     MarginTop="6" MarginBottom="14" />
-                                        <TextWidget IsVisible="@AutoMode"
-                                                    WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="SPOptions.Slider.Value.Text" Text="@AutoModeNotice"
-                                                    MarginBottom="10" />
-                                        <Widget IsVisible="@ManualMode"
-                                                WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren">
-                                          <Children>
-                                            <STCPSliderRow DataSource="{TargetPowerRow}" />
-                                          </Children>
-                                        </Widget>
+                                        <STCPSliderRow DataSource="{TargetPowerRow}" />
                                         <STCPSliderRow DataSource="{LowTierRow}" />
                                       </Children>
                                     </ListPanel>
