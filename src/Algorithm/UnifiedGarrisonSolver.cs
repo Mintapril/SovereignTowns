@@ -497,9 +497,11 @@ public static class UnifiedGarrisonSolver
                         {
                             int from = G(sUpg, role, tau, tier);
                             int to = G(sUpg, role, tau + xpTicks, tier + 1);
-                            // PR-1: upgrade 仅 gold 通道。timeUnits 在 PR-2 (T5 补漏) 显式化为 xpTicks。
-                            // 当前保旧行为：节点跨层延迟体现时间，cost 仅 gold。
-                            AddE(from, to, BigCap, new EdgeCost(gold: goldCost), EdgeCat.Internal);
+                            // PR-2 T5 (2026-05-24): timeUnits = xpTicks 显式化升级的时间机会成本。
+                            // 节点跨层延迟仅保 SSP 拓扑正确性；cost 必须显式承担 K · xpTicks
+                            // 才能让 MCMF 把"升级 vs 招高 tier vs 调拨"放在同尺度比较。
+                            // 升级总 cost = goldCost (vanilla 公式) + K · xpTicks（时间机会成本）。
+                            AddE(from, to, BigCap, new EdgeCost(gold: goldCost, timeUnits: xpTicks), EdgeCat.Internal);
                         }
                     }
                 }
