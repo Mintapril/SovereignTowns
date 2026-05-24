@@ -87,9 +87,9 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // 首府后勤评估迁到 HourlyTickEvent + 无状态间隔门控(CapitalLogisticsTickHours,默认 6h)。
             CampaignEvents.HourlyTickEvent.AddNonSerializedListener(this, OnHourlyTick);
             CampaignEvents.HourlyTickPartyEvent.AddNonSerializedListener(this, OnHourlyTickParty);
-            CampaignEvents.HourlyTickSettlementEvent.AddNonSerializedListener(this, OnHourlyTickSettlement);
-            // 2026-05-12 审查 B1 修复：HourlyTickSettlement 在城内停留时会跳 tick，
-            // 加 DailyTickSettlement 兜底，确保 sortie 评估最坏延迟 ≤ 24h（实际多数 ≤ 1h）。
+            // PR-4 (2026-05-24): HourlyTickSettlementEvent + DailyTickSettlement sally 调用已迁入 MCMF。
+            // SallyDispatcher 不再订阅 per-settlement 小时 tick，由 CapitalLogisticsManager 经
+            // SolveCoroutine → ExecuteAll 批量驱动（每 CapitalLogisticsTickHours 触发）。
             CampaignEvents.DailyTickSettlementEvent.AddNonSerializedListener(this, OnDailyTickSettlement);
             CampaignEvents.OnSettlementOwnerChangedEvent.AddNonSerializedListener(this, OnSettlementOwnerChanged);
             // MVP 5：战斗结束 → SallyForth 战后回程（精确触发，vs GDS 的 TickEvent 轮询 bug）
@@ -261,7 +261,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 _capitalRegistry,
                 _recruitmentDispatcher,
                 _transferDispatcher,
-                _patrolDispatcher);
+                _patrolDispatcher,
+                _sallyDispatcher);
 
             // B7.14：抑制 vanilla 在我们接管的城镇/城堡上的 GarrisonAutoRecruitment。
             // 时序：必须在 RecruitmentDispatcher 构造之后；否则 vanilla 在 Settlement.All 初次扫描前 hook 上来可能错过。
@@ -435,19 +436,8 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         }
     }
 
-    private void OnHourlyTickSettlement(Settlement settlement)
-    {
-        try
-        {
-            DrainWebConfigSync();
-            // 巡逻队不再每小时启发式创建 —— 由 CapitalLogisticsManager 经时间展开调度器派发。
-            _sallyDispatcher?.OnHourlyTickSettlement(settlement);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("OnHourlyTickSettlement failed", ex);
-        }
-    }
+    // OnHourlyTickSettlement removed in PR-4 (2026-05-24): HourlyTickSettlementEvent subscription
+    // deleted; sally dispatch now driven by CapitalLogisticsManager.ExecuteAll via MCMF.
 
     /// <summary>
     /// 兜底：vanilla HourlyTickSettlement 在城内停留时可能跳 tick（已知现象），
@@ -458,7 +448,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         try
         {
             DrainWebConfigSync();
-            _sallyDispatcher?.OnHourlyTickSettlement(settlement);
+            // PR-4 (2026-05-24): sally dispatch moved to CapitalLogisticsManager.ExecuteAll — removed here.
             // 用户明确：XP 注入 + 俘虏招募仅在首府进行；招兵/调拨/巡逻由 CapitalLogisticsManager 在 DailyTick 统一调度。
             // B7.15 multi-clan：以"该 settlement 的 ownerClan 是否把它当首府"为准 — 玩家或 AI 都按各自首府走。
             var mgr = _capitalRegistry?.GetForSettlement(settlement);
