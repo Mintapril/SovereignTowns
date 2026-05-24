@@ -37,6 +37,8 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         AddClassDefinition(typeof(Parties.StRecruiterPartyComponent), 6);
         AddClassDefinition(typeof(Parties.StTransferPartyComponent), 7);
         AddClassDefinition(typeof(Parties.StSallyPartyComponent), 8);
+        AddClassDefinition(typeof(Parties.StGarrisonReservePartyComponent), 9);
+        AddClassDefinition(typeof(Parties.ReserveRecruiterPartyComponent), 10);
     }
 
     protected override void DefineEnumTypes()
@@ -47,6 +49,7 @@ public sealed class SovereignTownsTypeDefiner : SaveableTypeDefiner
         AddEnumDefinition(typeof(Parties.StSallyPartyComponent.SallyPhase), 100);
         AddEnumDefinition(typeof(Parties.StRecruiterPartyComponent.RecruiterPhase), 101);
         AddEnumDefinition(typeof(Evaluators.GenericTroopRole), 102);
+        AddEnumDefinition(typeof(Parties.ReserveRecruiterPartyComponent.RecruiterPhase), 103);
     }
 
     protected override void DefineContainerDefinitions()
