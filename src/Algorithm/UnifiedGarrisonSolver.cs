@@ -192,14 +192,7 @@ public static class UnifiedGarrisonSolver
             var decodeInfo = new Dictionary<(int, int),
                 (DecodeKind Kind, Settlement A, Settlement B, GenericTroopRole Role)>();
             int edgeCount = 0;
-            void AddE(int from, int to, int cap, int cost, EdgeCat cat)
-            {
-                if (cap <= 0) return;
-                graph.AddEdge(from, to, cap, cost);
-                edgeCat[(from, to)] = cat;
-                edgeCount++;
-            }
-            void AddEcost(int from, int to, int cap, EdgeCost ec, EdgeCat cat)
+            void AddE(int from, int to, int cap, EdgeCost ec, EdgeCat cat)
             {
                 if (cap <= 0) return;
                 int cost = EdgeCostCompose.ToFlowCost(ec, cfg);
@@ -259,7 +252,7 @@ public static class UnifiedGarrisonSolver
                 foreach (var kv in bucketHeads)
                 {
                     if (kv.Value <= 0) continue;
-                    AddEcost(superSource, G(s, kv.Key.Role, 0, kv.Key.Tier), kv.Value, EdgeCost.Zero, EdgeCat.Internal);
+                    AddE(superSource, G(s, kv.Key.Role, 0, kv.Key.Tier), kv.Value, EdgeCost.Zero, EdgeCat.Internal);
                     originSupply += kv.Value;
                 }
             }
@@ -270,7 +263,7 @@ public static class UnifiedGarrisonSolver
             foreach (var (dest, role, tier, heads, arrivalTau) in CollectInFlightArrivals(clan, tickHours, T))
             {
                 if (dest == null || !townSet.Contains(dest)) continue;
-                AddEcost(superSource, G(dest, role, arrivalTau, tier), heads, new EdgeCost(timeUnits: arrivalTau), EdgeCat.Internal);
+                AddE(superSource, G(dest, role, arrivalTau, tier), heads, new EdgeCost(timeUnits: arrivalTau), EdgeCat.Internal);
                 originSupply += heads;
             }
 
@@ -313,7 +306,7 @@ public static class UnifiedGarrisonSolver
                                 int holdStrategic = ClampValue(value * PowerOf(tier), K);
                                 var holdEc = new EdgeCost(gold: holdGold, timeUnits: 1, strategic: holdStrategic);
                                 int from = G(s, role, tau, tier), to = G(s, role, tau + 1, tier);
-                                AddEcost(from, to, subCap, holdEc, EdgeCat.Stay);
+                                AddE(from, to, subCap, holdEc, EdgeCat.Stay);
                                 if (tau == 0)
                                 {
                                     decodeInfo[(from, to)] = (DecodeKind.HoldingL0, s, null!, role);
@@ -328,8 +321,8 @@ public static class UnifiedGarrisonSolver
                     {
                         gate = next++;
                         disbandGate[(s, tau)] = gate;
-                        AddEcost(gate, superSink, protectedCity ? 0 : disbandPerTickCap, EdgeCost.Zero, EdgeCat.Bypass);
-                        AddEcost(gate, superSink, BigCap, new EdgeCost(gold: overflowPenalty), EdgeCat.Bypass);
+                        AddE(gate, superSink, protectedCity ? 0 : disbandPerTickCap, EdgeCost.Zero, EdgeCat.Bypass);
+                        AddE(gate, superSink, BigCap, new EdgeCost(gold: overflowPenalty), EdgeCat.Bypass);
                     }
                     foreach (var role in MatchPolicy.Roles)
                     {
@@ -339,7 +332,7 @@ public static class UnifiedGarrisonSolver
                             // G→gate 标 Internal(非 Bypass):遣散是 G→gate→superSink 两跳,
                             // 若两段都记 Bypass,BypassFlow 会把同一批遣散兵计两次。只让
                             // gate→superSink 段计入 Bypass 统计,每个遣散兵恰好计一次。
-                            AddEcost(from, gate, BigCap, new EdgeCost(timeUnits: T - tau), EdgeCat.Internal);
+                            AddE(from, gate, BigCap, new EdgeCost(timeUnits: T - tau), EdgeCat.Internal);
                             if (tau == 0) decodeInfo[(from, gate)] = (DecodeKind.Disband, s, null!, role);
                         }
                     }
@@ -348,7 +341,7 @@ public static class UnifiedGarrisonSolver
                 // 时域出口:G[S,role,tier,T]→superSink(每 (role × tier) 各一条)。
                 foreach (var role in MatchPolicy.Roles)
                     for (int tier = 1; tier <= 6; tier++)
-                        AddEcost(G(s, role, T, tier), superSink, BigCap, EdgeCost.Zero, EdgeCat.Internal);
+                        AddE(G(s, role, T, tier), superSink, BigCap, EdgeCost.Zero, EdgeCat.Internal);
             }
 
             // ── 调拨边:现有驻军跨城 G[S,R,τ]→G[S',R',τ+d] ──
@@ -376,7 +369,7 @@ public static class UnifiedGarrisonSolver
                                 for (int tau = 0; tau + d <= T - 1; tau++)
                                 {
                                     int from = G(s, role, tau, tier), to = G(s2, role, tau + d, tier);
-                                    AddEcost(from, to, BigCap, txEc, EdgeCat.Transfer);
+                                    AddE(from, to, BigCap, txEc, EdgeCat.Transfer);
                                     if (tau == 0) decodeInfo[(from, to)] = (DecodeKind.Transfer, s, s2, role);
                                 }
                             }
@@ -400,16 +393,16 @@ public static class UnifiedGarrisonSolver
                 {
                     if (bucket.Count <= 0 || bucket.Role == GenericTroopRole.Unknown) continue;
                     int origin = next++;
-                    AddEcost(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
+                    AddE(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
                     originSupply += bucket.Count;
                     int recTier = Math.Max(1, Math.Min(6, bucket.MinTier));
                     for (int tau = 0; tau <= T - 1; tau++)
                     {
                         int to = Transit(bucket.Role, recTier, tau);
-                        AddEcost(origin, to, bucket.Count, new EdgeCost(timeUnits: tau), EdgeCat.Recruit);
+                        AddE(origin, to, bucket.Count, new EdgeCost(timeUnits: tau), EdgeCat.Recruit);
                         if (tau == 0) decodeInfo[(origin, to)] = (DecodeKind.InPlace, capitalSettlement, null!, bucket.Role);
                     }
-                    AddEcost(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
+                    AddE(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
                 }
 
                 // 候选村:RecOrigin[V,R] 单池;在飞边落 Transit[R, tier, τ_a],τ_a∈[ETA_V,T-1]。
@@ -427,7 +420,7 @@ public static class UnifiedGarrisonSolver
                     {
                         if (bucket.Count <= 0 || bucket.Role == GenericTroopRole.Unknown) continue;
                         int origin = next++;
-                        AddEcost(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
+                        AddE(superSource, origin, bucket.Count, EdgeCost.Zero, EdgeCat.Internal);
                         originSupply += bucket.Count;
                         int recTier = Math.Max(1, Math.Min(6, bucket.MinTier));
                         for (int arrival = etaV; arrival <= T - 1; arrival++)
@@ -436,11 +429,11 @@ public static class UnifiedGarrisonSolver
                             // 旧公式 cost = arrival·K + recOverhead + recRisk
                             // 新合成 = gold(overhead) + K·time(arrival) + risk
                             var recEc = new EdgeCost(gold: recOverhead, timeUnits: arrival, pathRisk: recRisk);
-                            AddEcost(origin, to, bucket.Count, recEc, EdgeCat.Recruit);
+                            AddE(origin, to, bucket.Count, recEc, EdgeCat.Recruit);
                             if (arrival == etaV)  // dispatch tick = arrival − etaV == 0
                                 decodeInfo[(origin, to)] = (DecodeKind.Recruiter, village, null!, bucket.Role);
                         }
-                        AddEcost(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
+                        AddE(origin, superSink, bucket.Count, new EdgeCost(timeUnits: T), EdgeCat.Bypass);  // 未招募出口
                     }
                 }
             }
@@ -453,7 +446,7 @@ public static class UnifiedGarrisonSolver
                 var (role, tier, tau) = kv.Key;
                 int tn = kv.Value;
                 // 留首府:Transit[R, tier, τ] → G[capital, R, tier, τ]。
-                AddEcost(tn, G(capitalSettlement, role, tau, tier), BigCap, EdgeCost.Zero, EdgeCat.Internal);
+                AddE(tn, G(capitalSettlement, role, tau, tier), BigCap, EdgeCost.Zero, EdgeCat.Internal);
                 // 转发分支:Transit[R, tier, τ] → G[branch, R, tier, τ+d]。
                 if (!allowTransfers) continue;
                 foreach (var t in towns)
@@ -465,7 +458,7 @@ public static class UnifiedGarrisonSolver
                     int fwdOverhead = Math.Max(0, thresholds.McmfTransferOverhead);
                     int fwdRisk = RouteRiskSurcharge(capitalSettlement, s, cfg);
                     int to = G(s, role, tau + d, tier);
-                    AddEcost(tn, to, BigCap, new EdgeCost(gold: fwdOverhead, timeUnits: d, pathRisk: fwdRisk), EdgeCat.Transfer);
+                    AddE(tn, to, BigCap, new EdgeCost(gold: fwdOverhead, timeUnits: d, pathRisk: fwdRisk), EdgeCat.Transfer);
                     if (tau == 0) decodeInfo[(tn, to)] = (DecodeKind.Transfer, capitalSettlement, s, role);
                 }
             }
@@ -499,7 +492,7 @@ public static class UnifiedGarrisonSolver
                             int to = G(sUpg, role, tau + xpTicks, tier + 1);
                             // PR-1: upgrade 仅 gold 通道。timeUnits 在 PR-2 (T5 补漏) 显式化为 xpTicks。
                             // 当前保旧行为：节点跨层延迟体现时间，cost 仅 gold。
-                            AddEcost(from, to, BigCap, new EdgeCost(gold: goldCost), EdgeCat.Internal);
+                            AddE(from, to, BigCap, new EdgeCost(gold: goldCost), EdgeCat.Internal);
                         }
                     }
                 }
@@ -514,7 +507,7 @@ public static class UnifiedGarrisonSolver
             {
                 int patrolValue = Math.Max(0, Math.Min(K - 1, cfg.PatrolValue));
                 int patrolSink = next++;
-                AddE(patrolSink, superSink, patrolHeadroom, 0, EdgeCat.Internal);
+                AddE(patrolSink, superSink, patrolHeadroom, EdgeCost.Zero, EdgeCat.Internal);
                 for (int tau = 0; tau < T; tau++)
                 {
                     foreach (var role in MatchPolicy.Roles)
@@ -523,8 +516,10 @@ public static class UnifiedGarrisonSolver
                         {
                             int from = G(capitalSettlement, role, tau, tier);
                             // Phase 3:patrol 收益按 tier power 加权(高 tier 巡逻战力更强)。
+                            // PR-1: (T-τ)·K → timeUnits 通道，patrolValue·power → strategic 通道（取负后等效）。
                             int tierPatrolValue = (int)Math.Round(patrolValue * PowerOf(tier));
-                            AddE(from, patrolSink, BigCap, (T - tau) * K - tierPatrolValue, EdgeCat.Patrol);
+                            var patrolEc = new EdgeCost(timeUnits: T - tau, strategic: tierPatrolValue);
+                            AddE(from, patrolSink, BigCap, patrolEc, EdgeCat.Patrol);
                             if (tau == 0)
                                 decodeInfo[(from, patrolSink)] = (DecodeKind.Patrol, capitalSettlement, null!, role);
                         }
