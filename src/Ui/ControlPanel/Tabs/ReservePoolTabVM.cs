@@ -26,6 +26,8 @@ public sealed class ReservePoolTabVM : ViewModel
     private string _poolStatus = "";
     private string _poolHeadcount = "";
     private string _poolCap = "";
+    private string _vanillaGarrisonCount = "";
+    private string _combinedCount = "";
 
     // ── 模板编辑属性（PR-7） ──
     private string _reserveTemplateJson = "";
@@ -50,6 +52,22 @@ public sealed class ReservePoolTabVM : ViewModel
     {
         get => _poolCap;
         private set { if (_poolCap != value) { _poolCap = value; OnPropertyChanged(nameof(PoolCap)); } }
+    }
+
+    /// <summary>PR-8：vanilla GarrisonParty 驻军头数（不含 B 池）。</summary>
+    [DataSourceProperty]
+    public string VanillaGarrisonCount
+    {
+        get => _vanillaGarrisonCount;
+        private set { if (_vanillaGarrisonCount != value) { _vanillaGarrisonCount = value; OnPropertyChanged(nameof(VanillaGarrisonCount)); } }
+    }
+
+    /// <summary>PR-8：vanilla + B 池合计头数（玩家实际可用守城兵力）。</summary>
+    [DataSourceProperty]
+    public string CombinedCount
+    {
+        get => _combinedCount;
+        private set { if (_combinedCount != value) { _combinedCount = value; OnPropertyChanged(nameof(CombinedCount)); } }
     }
 
     /// <summary>PR-7：B 池招募模板，JSON 格式（用户直接编辑）。
@@ -87,9 +105,11 @@ public sealed class ReservePoolTabVM : ViewModel
             var capital = CapitalRegistry.Instance?.GetForPlayer()?.GetCapitalSettlement();
             if (capital == null)
             {
-                PoolStatus    = ControlPanelLoc.Tr("无首府", "No capital");
-                PoolHeadcount = "-";
-                PoolCap       = "-";
+                PoolStatus           = ControlPanelLoc.Tr("无首府", "No capital");
+                PoolHeadcount        = "-";
+                PoolCap              = "-";
+                VanillaGarrisonCount = "-";
+                CombinedCount        = "-";
                 RefreshTemplateJson();
                 return;
             }
@@ -107,6 +127,9 @@ public sealed class ReservePoolTabVM : ViewModel
 
             int cap = ConfigurationManager.Current?.FiscalAutonomy?.ReservePoolCap ?? 0;
 
+            // PR-8：vanilla GarrisonParty 头数（encyclopedia 等 vanilla UI 只显示这个数字）。
+            int vanillaCount = capital.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+
             if (pool == null)
             {
                 PoolStatus    = cap == 0
@@ -114,6 +137,8 @@ public sealed class ReservePoolTabVM : ViewModel
                     : ControlPanelLoc.Tr("未创建", "Not created");
                 PoolHeadcount = "0";
                 PoolCap       = cap.ToString();
+                VanillaGarrisonCount = vanillaCount.ToString();
+                CombinedCount        = vanillaCount.ToString();
             }
             else
             {
@@ -123,6 +148,8 @@ public sealed class ReservePoolTabVM : ViewModel
                 PoolCap       = cap == 0
                     ? ControlPanelLoc.Tr("0（调度器不注入兵员）", "0 (scheduler will not fill)")
                     : cap.ToString();
+                VanillaGarrisonCount = vanillaCount.ToString();
+                CombinedCount        = (vanillaCount + headcount).ToString();
             }
 
             RefreshTemplateJson();
@@ -130,9 +157,11 @@ public sealed class ReservePoolTabVM : ViewModel
         catch (Exception ex)
         {
             SovereignTowns.Logging.Logger.Error("ReservePoolTabVM.Refresh failed", ex);
-            PoolStatus    = ControlPanelLoc.Tr("刷新失败", "Refresh error");
-            PoolHeadcount = "-";
-            PoolCap       = "-";
+            PoolStatus           = ControlPanelLoc.Tr("刷新失败", "Refresh error");
+            PoolHeadcount        = "-";
+            PoolCap              = "-";
+            VanillaGarrisonCount = "-";
+            CombinedCount        = "-";
         }
     }
 
