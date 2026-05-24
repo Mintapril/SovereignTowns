@@ -47,6 +47,10 @@ public sealed class UnifiedSolverResult
     /// 出的 PatrolInstruction.Count,通常 &lt; 本值(τ&gt;0 的巡逻流只是规划塑形,不产指令)。</summary>
     public int PatrolFlow { get; set; }
 
+    /// <summary>Σ sally sink 边流量(跨所有 tick、所有 settlement)。⚠️ 仅诊断:实际派发的出击
+    /// 头数 = τ=0 decode 出的 Σ SallyInstruction.Count,通常 &lt; 本值。</summary>
+    public int SallyFlow { get; set; }
+
     /// <summary>本次求解所用氏族驻军工资预算(金币/日,informational)。</summary>
     public long Budget { get; set; }
 
@@ -65,7 +69,7 @@ public sealed class UnifiedSolverResult
         => $"clan={clanId} settlements={SettlementCount} nodes={NodeCount} edges={EdgeCount} "
          + $"originSupply={OriginSupply} budgetCap={BudgetTroopCap} holdL0Cap={DemandTierCapacity} "
          + $"flow={TotalFlow} tick0Garrison={DemandFilled} "
-         + $"stay={StayFlow} recruit={RecruitFlow} transfer={TransferFlow} bypass={BypassFlow} patrol={PatrolFlow}";
+         + $"stay={StayFlow} recruit={RecruitFlow} transfer={TransferFlow} bypass={BypassFlow} patrol={PatrolFlow} sally={SallyFlow}";
 }
 
 /// <summary>
@@ -83,10 +87,10 @@ public static class UnifiedGarrisonSolver
     // 不变性约束（PR-3 将进 Validate()）：K × HorizonTicks ≤ int.MaxValue 且 K > max(per-edge strategic)。
 
     /// <summary>边的语义类别 —— Solve 后聚合 EdgeFlows 产差异日志。</summary>
-    private enum EdgeCat { Internal, Stay, Transfer, Recruit, Bypass, Patrol }
+    private enum EdgeCat { Internal, Stay, Transfer, Recruit, Bypass, Patrol, Sally }
 
     /// <summary>decode 用:layer-0 出发 / 指令相关边的登记。</summary>
-    private enum DecodeKind { Recruiter = 1, InPlace, Transfer, Disband, HoldingL0, Patrol }
+    private enum DecodeKind { Recruiter = 1, InPlace, Transfer, Disband, HoldingL0, Patrol, Sally }
 
     /// <summary>
     /// 同步求解封装 —— 一次排干 <see cref="SolveCoroutine"/>。同步驱动下 SSP 的 yield 退化为空
@@ -94,13 +98,14 @@ public static class UnifiedGarrisonSolver
     /// </summary>
     public static UnifiedSolverResult Solve(
         CapitalManager manager, Settlement capitalSettlement,
-        IHorizonForecast forecast, int patrolHeadroom = 0)
+        IHorizonForecast forecast, int patrolHeadroom = 0,
+        Dictionary<Settlement, int>? sallyHeadrooms = null)
     {
         UnifiedSolverResult? captured = null;
         try
         {
             var it = SolveCoroutine(manager, capitalSettlement, forecast, patrolHeadroom,
-                r => captured = r);
+                r => captured = r, sallyHeadrooms);
             while (it.MoveNext()) { }
         }
         catch (Exception ex)
@@ -122,7 +127,8 @@ public static class UnifiedGarrisonSolver
     public static System.Collections.IEnumerator SolveCoroutine(
         CapitalManager manager, Settlement capitalSettlement,
         IHorizonForecast forecast, int patrolHeadroom,
-        Action<UnifiedSolverResult> onResult)
+        Action<UnifiedSolverResult> onResult,
+        Dictionary<Settlement, int>? sallyHeadrooms = null)
     {
         var result = new UnifiedSolverResult();
         try
@@ -540,6 +546,43 @@ public static class UnifiedGarrisonSolver
                 }
             }
 
+            // ── Sally sink:per-settlement 盈余兵出击(receding-horizon,decode 只取 τ=0)──
+            // sally edge 与 patrol edge 同构（holding → sallySink[s] → superSink），但 sink 是
+            // per-settlement 而非 capital 唯一，允许多座城/堡同时派 sally。
+            // sallyHeadrooms[s] = SallyTeamSize × MaxSallyPartiesPerCity（由 CapitalLogisticsManager 传入）。
+            if (sallyHeadrooms != null)
+            {
+                int sallyValue = Math.Max(0, cfg.SallyValueBase);
+                foreach (var t in towns)
+                {
+                    var s = t.Settlement;
+                    if (s == null) continue;
+                    if (!sallyHeadrooms.TryGetValue(s, out int sallyHeadroom) || sallyHeadroom <= 0) continue;
+                    if (s.IsUnderSiege) continue;
+                    bool isCap = s == capitalSettlement;
+                    float sallyBonus = isCap ? Math.Max(1f, cfg.CapitalSallyBonus) : 1.0f;
+                    int sallySink = next++;
+                    AddE(sallySink, superSink, sallyHeadroom, EdgeCost.Zero, EdgeCat.Internal);
+                    for (int tau = 0; tau < T; tau++)
+                    {
+                        float threat = ThreatWeightOf(SafeThreatAt(forecast, s, tau), cfg);
+                        float strat = StrategicWeight(s, isCap, cfg);
+                        foreach (var role in MatchPolicy.Roles)
+                        {
+                            for (int tier = 1; tier <= 6; tier++)
+                            {
+                                int from = G(s, role, tau, tier);
+                                int tierSallyValue = (int)Math.Round(sallyValue * sallyBonus * threat * strat * PowerOf(tier));
+                                var sallyEc = new EdgeCost(timeUnits: T - tau, strategic: tierSallyValue);
+                                AddE(from, sallySink, BigCap, sallyEc, EdgeCat.Sally);
+                                if (tau == 0)
+                                    decodeInfo[(from, sallySink)] = (DecodeKind.Sally, s, null!, role);
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Solve(分帧 SSP)── swSolve 只累计 MoveNext 内的 CPU,排除 yield 帧间隙。
             long buildMs = sw.ElapsedMilliseconds;
 
@@ -601,6 +644,7 @@ public static class UnifiedGarrisonSolver
             foreach (var t in towns) result.Target[t.Settlement] = 0;
             var transfers = new Dictionary<(Settlement Src, Settlement Dst, GenericTroopRole Role), int>();
             int patrolHeads = 0;
+            var sallyHeadByCity = new Dictionary<Settlement, int>();
 
             foreach (var kv in flow.EdgeFlows)
             {
@@ -616,6 +660,7 @@ public static class UnifiedGarrisonSolver
                         case EdgeCat.Recruit: result.RecruitFlow += f; break;
                         case EdgeCat.Bypass: result.BypassFlow += f; break;
                         case EdgeCat.Patrol: result.PatrolFlow += f; break;
+                        case EdgeCat.Sally: result.SallyFlow += f; break;
                     }
                 }
 
@@ -642,6 +687,9 @@ public static class UnifiedGarrisonSolver
                     case DecodeKind.Patrol:
                         patrolHeads += f;
                         break;
+                    case DecodeKind.Sally:
+                        sallyHeadByCity[di.A] = (sallyHeadByCity.TryGetValue(di.A, out var sh) ? sh : 0) + f;
+                        break;
                 }
             }
 
@@ -651,6 +699,9 @@ public static class UnifiedGarrisonSolver
                     kv.Key.Src, kv.Key.Dst, kv.Key.Role, kv.Value));
             if (patrolHeads > 0)
                 result.Instructions.Add(new PatrolInstruction(capitalSettlement, patrolHeads));
+            foreach (var kv in sallyHeadByCity)
+                if (kv.Value > 0)
+                    result.Instructions.Add(new SallyInstruction(kv.Key, kv.Value));
 
             long decodeMs = sw.ElapsedMilliseconds - beforeDecode;
             Logger.Info(
