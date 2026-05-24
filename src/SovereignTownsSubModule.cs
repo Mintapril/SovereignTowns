@@ -138,6 +138,24 @@ public sealed class SovereignTownsSubModule : MBSubModuleBase
             TrySafeDebugPrint($"{Tag} MinCostFlow self-test threw: {ex.Message}");
         }
 
+        try
+        {
+            if (SovereignTowns.Algorithm.EdgeCostCompose.SelfTest(out var ecMessage))
+            {
+                if (_loggerInitialized) Logger.Info(ecMessage);
+            }
+            else
+            {
+                if (_loggerInitialized) Logger.Error(ecMessage);
+                TrySafeDebugPrint($"{Tag} {ecMessage}");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            if (_loggerInitialized) Logger.Error("EdgeCostCompose self-test threw", ex);
+            TrySafeDebugPrint($"{Tag} EdgeCostCompose self-test threw: {ex.Message}");
+        }
+
         try { base.OnGameStart(game, gameStarterObject); }
         catch (System.Exception ex) { TrySafeDebugPrint($"{Tag} base.OnGameStart threw: {ex}"); }
 
