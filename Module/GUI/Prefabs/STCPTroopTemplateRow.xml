@@ -65,24 +65,35 @@
           </Children>
         </ListPanel>
 
-        <!-- 占比滑条 -->
-        <SliderWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="20"
-                      VerticalAlignment="Center" MarginLeft="2" MarginRight="6" MarginBottom="2"
-                      DoNotUpdateHandleSize="true" Filler="TplFiller" Handle="TplHandle"
-                      MinValueFloat="0" MaxValueFloat="1" ValueFloat="@Ratio">
+        <!-- 数量步进行（PR-10：+5 / -5） -->
+        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed" SuggestedHeight="24"
+                   StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center"
+                   MarginLeft="2" MarginRight="6" MarginBottom="2">
           <Children>
-            <Widget DoNotAcceptEvents="true" WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                    SuggestedHeight="6" VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#2a2218FF" />
-            <Widget Id="TplFiller" DoNotAcceptEvents="true" WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                    SuggestedHeight="6" VerticalAlignment="Center"
-                    Sprite="BlankWhiteSquare_9" Color="#c8a165FF" />
-            <ImageWidget Id="TplHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed"
-                         SuggestedWidth="14" SuggestedHeight="18"
-                         HorizontalAlignment="Left" VerticalAlignment="Center"
-                         Sprite="BlankWhiteSquare_9" Color="#e6c585FF" />
+            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteDecrease"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="26" SuggestedHeight="22"
+                          VerticalAlignment="Center" MarginRight="4">
+              <Children>
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        Sprite="BlankWhiteSquare_9" Color="#2a2218FF" />
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                            Brush="SPOptions.Slider.Value.Text" Text="-"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Children>
+            </ButtonWidget>
+            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteIncrease"
+                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="26" SuggestedHeight="22"
+                          VerticalAlignment="Center">
+              <Children>
+                <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                        Sprite="BlankWhiteSquare_9" Color="#2a2218FF" />
+                <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
+                            Brush="SPOptions.Slider.Value.Text" Text="+"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Children>
+            </ButtonWidget>
           </Children>
-        </SliderWidget>
+        </ListPanel>
 
       </Children>
     </ListPanel>
