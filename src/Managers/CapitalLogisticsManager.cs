@@ -10,6 +10,7 @@ using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
 using SovereignTowns.Patrol;
 using SovereignTowns.Recruitment;
+using SovereignTowns.SallyForth;
 using SovereignTowns.Transfer;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Roster;
@@ -30,6 +31,7 @@ public sealed class CapitalLogisticsManager
     private readonly RecruitmentDispatcher _recruitmentDispatcher;
     private readonly TransferDispatcher _transferDispatcher;
     private readonly PatrolDispatcher _patrolDispatcher;
+    private readonly SallyDispatcher _sallyDispatcher;
 
     /// <summary>每 clan 在飞的派发求解协程任务 —— 重入防护(自愈式:已完成 / 取消即可覆盖,绝不长期占位)。</summary>
     private readonly Dictionary<Clan, AsyncSimulator.SimulatedTask> _mergedDispatchTask = new();
@@ -42,12 +44,14 @@ public sealed class CapitalLogisticsManager
         CapitalRegistry capitalRegistry,
         RecruitmentDispatcher recruitmentDispatcher,
         TransferDispatcher transferDispatcher,
-        PatrolDispatcher patrolDispatcher)
+        PatrolDispatcher patrolDispatcher,
+        SallyDispatcher sallyDispatcher)
     {
         _capitalRegistry = capitalRegistry ?? throw new ArgumentNullException(nameof(capitalRegistry));
         _recruitmentDispatcher = recruitmentDispatcher ?? throw new ArgumentNullException(nameof(recruitmentDispatcher));
         _transferDispatcher = transferDispatcher ?? throw new ArgumentNullException(nameof(transferDispatcher));
         _patrolDispatcher = patrolDispatcher ?? throw new ArgumentNullException(nameof(patrolDispatcher));
+        _sallyDispatcher = sallyDispatcher ?? throw new ArgumentNullException(nameof(sallyDispatcher));
     }
 
     public void EvaluateAll()
@@ -132,12 +136,23 @@ public sealed class CapitalLogisticsManager
             var features = ConfigurationManager.Current?.EnabledFeatures;
 
             var fa = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            IHorizonForecast forecast = fa.ForecastMode == ForecastMode.Threat
-                ? (IHorizonForecast)new ThreatForecast(fa.ThreatForecastScanRadius, fa.CapitalLogisticsTickHours)
-                : new FlatForecast();
+            IHorizonForecast forecast = new ThreatForecast(fa.ThreatForecastScanRadius, fa.CapitalLogisticsTickHours);
             int patrolHeadroom = features?.AutoPatrol == true
                 ? _patrolDispatcher.PatrolHeadroomHeads(capitalSettlement)
                 : 0;
+
+            // Sally headrooms:每城 = SallyTeamSize × MaxSallyPartiesPerCity(物理容量上限)。
+            // 由 SallyDispatcher 在 ExecuteAll 内部做冷却 / 围城等细粒度 gate 校验,此处只计算容量。
+            var sallyHeadrooms = new Dictionary<Settlement, int>();
+            int sallyCapPerCity = Math.Max(0, fa.SallyTeamSize * fa.MaxSallyPartiesPerCity);
+            if (sallyCapPerCity > 0 && features?.SallyForth == true)
+            {
+                foreach (var t in clan.Fiefs)
+                {
+                    if (t?.Settlement == null) continue;
+                    sallyHeadrooms[t.Settlement] = sallyCapPerCity;
+                }
+            }
 
             // 分帧求解:StartCoroutine 入 _pendingTasks,下一帧 AsyncSimulator.Update 起建图。
             var task = AsyncSimulator.StartCoroutine(
@@ -162,12 +177,14 @@ public sealed class CapitalLogisticsManager
                             Logger.Info("UNIFIED-DISPATCH " + unified.DiffLine(clanId));
                             StashMergedTargets(clan, unified);
                             ExecuteMergedInstructions(manager, unified);
+                            _sallyDispatcher.ExecuteAll(unified.Instructions.OfType<SallyInstruction>());
                         }
                         catch (Exception ex)
                         {
                             Logger.Error($"CapitalLogisticsManager.RunUnifiedDispatch callback failed (clan={clanId})", ex);
                         }
-                    }));
+                    },
+                    sallyHeadrooms));
             _mergedDispatchTask[clan] = task;
         }
         catch (Exception ex)
@@ -493,32 +510,93 @@ public sealed class CapitalLogisticsManager
     /// 把 MCMF 选定的一组目标村按"从首府出发的最近邻"排成征兵队多站行程。去重；
     /// 这只是把 MCMF 已决定的村集合排序成可走的路线，不做任何"选不选这个村"的二次决策。
     /// </summary>
+    /// <summary>
+    /// Phase 7(2026-05-24):征兵队 itinerary 优化:
+    /// - ≤8 村:暴力 TSP 枚举(N! 排列,8!=40320 < 5ms),含 start→...→last→start 回程。
+    /// - >8 村:NN 贪心 fallback(实测 MCMF 单 group 一般 ≤4 村,不应触发)。
+    /// 距离用 MapDistanceModel(寻路 cache 查表),与 UnifiedGarrisonSolver.RoutingDistance 同口径。
+    /// </summary>
     private static List<Settlement> OrderItineraryNearestNeighbor(
         Settlement start, IEnumerable<Settlement> villages)
     {
-        var remaining = new List<Settlement>();
+        var nodes = new List<Settlement>();
         foreach (var v in villages)
-            if (v != null && !remaining.Contains(v)) remaining.Add(v);
+            if (v != null && !nodes.Contains(v)) nodes.Add(v);
+        if (nodes.Count <= 1 || start == null) return nodes;
 
+        if (nodes.Count <= 8)
+        {
+            var bestOrder = new List<Settlement>(nodes);
+            double bestTotal = double.MaxValue;
+            TspPermute(nodes, 0, start, ref bestOrder, ref bestTotal);
+            return bestOrder;
+        }
+
+        // NN fallback for N > 8(在飞征兵队组队 cap 决定 N 一般 ≤ 4-5,此分支保守兜底)
+        var remaining = new List<Settlement>(nodes);
         var ordered = new List<Settlement>();
         var cursor = start;
         while (remaining.Count > 0 && cursor != null)
         {
-            var cursorPos = cursor.GetPosition2D;
             int bestIdx = 0;
-            float bestDist = float.MaxValue;
+            double bestDist = double.MaxValue;
             for (int i = 0; i < remaining.Count; i++)
             {
-                float d = (remaining[i].GetPosition2D - cursorPos).Length;
+                double d = SettlementDistance(cursor, remaining[i]);
                 if (d < bestDist) { bestDist = d; bestIdx = i; }
             }
             cursor = remaining[bestIdx];
             remaining.RemoveAt(bestIdx);
             ordered.Add(cursor);
         }
-        // cursor 为 null 的极端兜底：剩余村原样追加。
         ordered.AddRange(remaining);
         return ordered;
+    }
+
+    private static void TspPermute(
+        List<Settlement> arr, int from, Settlement start,
+        ref List<Settlement> bestOrder, ref double bestTotal)
+    {
+        if (from >= arr.Count)
+        {
+            double total = 0;
+            var cur = start;
+            for (int i = 0; i < arr.Count; i++)
+            {
+                total += SettlementDistance(cur, arr[i]);
+                cur = arr[i];
+            }
+            total += SettlementDistance(cur, start);  // 回 home
+            if (total < bestTotal)
+            {
+                bestTotal = total;
+                bestOrder = new List<Settlement>(arr);
+            }
+            return;
+        }
+        for (int i = from; i < arr.Count; i++)
+        {
+            (arr[from], arr[i]) = (arr[i], arr[from]);
+            TspPermute(arr, from + 1, start, ref bestOrder, ref bestTotal);
+            (arr[from], arr[i]) = (arr[i], arr[from]);
+        }
+    }
+
+    private static double SettlementDistance(Settlement a, Settlement b)
+    {
+        try
+        {
+            var model = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.MapDistanceModel;
+            if (model != null && a != null && b != null)
+            {
+                float d = model.GetDistance(a, b, false, false,
+                    TaleWorlds.CampaignSystem.Party.MobileParty.NavigationType.Default, out _);
+                if (d > 0f && d < TaleWorlds.CampaignSystem.ComponentInterfaces.MapDistanceModel.PossibleMaximumMapBoundary)
+                    return d;
+            }
+            return (double)(a!.GetPosition2D - b!.GetPosition2D).Length;
+        }
+        catch { return 1000.0; }
     }
 
     private bool ExecuteTransferDispatch(
@@ -693,15 +771,28 @@ public sealed class CapitalLogisticsManager
         }
     }
 
-    /// <summary>控制面板「推荐驻军」取值:取调度器 solver 最近完成的每城目标
-    /// (<see cref="_lastMergedTargets"/>);缓存未就绪(首个求解尚未完成)→ 返回 0。</summary>
+    /// <summary>
+    /// 控制面板「推荐驻军」取值:调度器**愿望值** = `AdequateFor(town)` 公式驱动目标。
+    /// = clamp(AdequateBase + Prosperity/Divisor + Threat×Weight, floor, hardCap)。
+    /// 修正(2026-05-24):此前返回 `_lastMergedTargets[clan][s]` 是 MCMF 解出的实际守军
+    /// (受供给/路径/预算约束的结果),抽空驻军后会显示 0,跟 UI 文案"推荐"语义错位。
+    /// MCMF 求解结果改由 <see cref="UnifiedSolverResult.Target"/> 在指令派发 / 诊断日志使用。
+    /// </summary>
     private int ResolveRecommendedGarrison(Clan clan, Settlement s)
     {
-        // clan / s 形参非空(调用方 StashFinancialSnapshot 已过滤);不写 != null 检查 ——
-        // 否则 nullable 流分析会把 s 标成可空,传给下方 TryGetValue 触发 CS8604。
-        if (_lastMergedTargets.TryGetValue(clan, out var mt)
-            && mt.TryGetValue(s, out var mrec))
-            return Math.Max(0, mrec);
-        return 0;
+        try
+        {
+            var t = s?.Town;
+            if (t == null) return 0;
+            var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
+            int floor = Math.Max(0, cfg.MinGarrisonFloor);
+            int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
+            return GarrisonAllocationSolver.AdequateFor(t, cfg, floor, hardCap);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ResolveRecommendedGarrison failed for s={s?.StringId}", ex);
+            return 0;
+        }
     }
 }
