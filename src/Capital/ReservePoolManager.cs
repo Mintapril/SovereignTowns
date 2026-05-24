@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Party;
 using TaleWorlds.CampaignSystem.Settlements;
 using Logger = SovereignTowns.Logging.Logger;
@@ -62,14 +63,40 @@ public sealed class ReservePoolManager
     }
 
     /// <summary>
-    /// <see cref="CapitalRegistry.OnSettlementOwnerChanged"/> 后调用：新首府若没有 B 池则建立；
-    /// 旧首府的 B 池留给新 owner（battle loot 自然转移），不主动销毁（PR-8 再处理）。
-    /// 此处仅保证"当前所有受管首府均有 B 池"。
+    /// <see cref="CapitalRegistry.OnSettlementOwnerChanged"/> 后调用：
+    ///   1. 销毁所有"key 不再是任何受管首府"的孤立 B 池（覆盖围城失守、礼赠、交换等所有易主路径）。
+    ///   2. 为当前所有受管首府确保 B 池存在。
+    ///
+    /// ── PR-8 (2026-05-24) 反编译核实 ──
+    /// vanilla Town.GetDefenderParties 通过 Settlement.Parties 枚举防御方，MapFaction 取自
+    /// HomeSettlement.OwnerClan.MapFaction。B 池被攻克后若不销毁，MapFaction 会随新 OwnerClan
+    /// 翻转 → B 池部队自动效忠攻击方，语义错误。故失守时必须销毁旧 B 池。
     /// </summary>
     public void OnSettlementOwnerChanged()
     {
         try
         {
+            // 步骤 1：收集当前受管首府集合。
+            var managedCapitals = new HashSet<Settlement>();
+            foreach (var mgr in _capitalRegistry.AllManagers)
+            {
+                var cap = mgr.GetCapitalSettlement();
+                if (cap != null) managedCapitals.Add(cap);
+            }
+
+            // 步骤 2：销毁已不属于任何受管首府的孤立 B 池。
+            var toDestroy = new List<Settlement>();
+            foreach (var kv in _pools)
+            {
+                if (!managedCapitals.Contains(kv.Key))
+                    toDestroy.Add(kv.Key);
+            }
+            foreach (var orphan in toDestroy)
+            {
+                DestroyPool(orphan);
+            }
+
+            // 步骤 3：为当前所有受管首府确保 B 池存在。
             foreach (var mgr in _capitalRegistry.AllManagers)
             {
                 try { EnsurePoolForManager(mgr); }
@@ -82,6 +109,44 @@ public sealed class ReservePoolManager
         catch (Exception ex)
         {
             Logger.Error("ReservePoolManager.OnSettlementOwnerChanged failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// PR-8：销毁指定首府的 B 池 party（LeaveSettlement → DestroyPartyAction）。
+    /// 幂等：若该首府没有已注册 B 池则静默返回。
+    /// </summary>
+    public void DestroyPool(Settlement capital)
+    {
+        if (capital == null) return;
+        if (!_pools.TryGetValue(capital, out var party))
+        {
+            Logger.Info($"ReservePoolManager.DestroyPool: no registered pool for '{capital.StringId}', nothing to do");
+            return;
+        }
+
+        _pools.Remove(capital);
+
+        if (party == null || !party.IsActive)
+        {
+            Logger.Info($"ReservePoolManager.DestroyPool: pool party for '{capital.StringId}' already inactive, removed from registry only");
+            return;
+        }
+
+        try
+        {
+            // B 池永驻首府（CurrentSettlement = capital）；DestroyPartyAction 不自动 Leave → 先显式 LeaveSettlement。
+            if (party.CurrentSettlement != null)
+            {
+                try { LeaveSettlementAction.ApplyForParty(party); }
+                catch (Exception leaveEx) { Logger.Warn($"ReservePoolManager.DestroyPool: LeaveSettlementAction failed for '{capital.StringId}' (continuing): {leaveEx.Message}"); }
+            }
+            DestroyPartyAction.Apply(null, party);
+            Logger.Info($"ReservePoolManager: B-pool destroyed for capital '{capital.StringId}' (owner changed)");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"ReservePoolManager.DestroyPool: DestroyPartyAction failed for '{capital.StringId}'", ex);
         }
     }
 

@@ -615,6 +615,21 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
         catch (Exception ex) { Logger.Error("WebConfigGameThreadSync.Drain failed", ex); }
     }
 
+    // ── B 池接入 vanilla siege（PR-8, 2026-05-24）──
+    // 反编译核实 (audits a8e6cdb2f6349ed6f): vanilla Town.GetDefenderParties 已经
+    // 枚举 Settlement.Parties 中所有满足条件 (!IsVillager && !IsCaravan && !IsMilitia &&
+    // MapFaction == friend) 的 party。B 池满足全部条件（IsGarrison=false 不被 filter，
+    // MapFaction 来自 HomeSettlement.OwnerClan.MapFaction）→ 围城防御 vanilla 自动包含。
+    //
+    // 因此 PR-8 不需要 GetDefenderParties 的 Harmony patch。
+    //
+    // 首府失守时：MapFaction 随新 OwnerClan 翻转 → B 池若不销毁会自动效忠攻击方。
+    // ReservePoolManager.OnSettlementOwnerChanged() 在步骤 1 检测孤立 B 池并销毁。
+    //
+    // 已知 UI 限制：encyclopedia 等 vanilla UI 显示 garrison 只读 Town.GarrisonParty,
+    // 不计入 B 池。PR-8 通过 mod 自己的 DiagnosticGameMenu + ReservePoolTabVM 显示真实
+    // "vanilla + B 池" combined count，玩家通过 mod UI 看到正确数字。
+
     /// <summary>
     /// settlement 易主回调（vanilla
     /// <c>CampaignEvents.OnSettlementOwnerChangedEvent</c>，签名
