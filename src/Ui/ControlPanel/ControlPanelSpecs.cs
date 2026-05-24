@@ -671,6 +671,25 @@ public static class ControlPanelSpecs
                         HintZh="单座城镇/城堡同时最多存在的出击队数量。0 = 关闭出击。1 = 默认（防止 sally 风暴）。最大 5。",
                         HintEn="Maximum concurrent sally parties per settlement. 0 = disable sally. 1 = default (prevent sally storm). Max 5.",
                         Min=0, Max=5, Discrete=true, Step=1, Def=1, Advanced=true },
+
+                    // ════════ 段 9：PR-5' (2026-05-24) 大简化新字段 ════════
+                    new SpecEntry { Root="FiscalAutonomy", Key="TargetFraction",
+                        LabelZh="驻军目标比例", LabelEn="Garrison target fraction",
+                        HintZh="每城驻军目标头数 = vanilla PartySizeLimit × 此比例。PR-5' 新字段，替代旧 floor/adequate/hardCap 三段公式。默认 0.7。",
+                        HintEn="Target garrison headcount per town = vanilla PartySizeLimit × this fraction. PR-5' replacement for the old floor/adequate/hardCap three-tier formula. Default 0.7.",
+                        Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.7, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="TownStrategicBonus",
+                        LabelZh="城镇战略加成（非城堡）", LabelEn="Town strategic bonus (non-castle)",
+                        HintZh="城镇（非城堡）在 strategic 乘子中的额外加成系数。城堡 = 1.0（无加成）。与首府加成叠乘：首府城镇 = 首府加成 × 城镇加成。默认 1.3。",
+                        HintEn="Extra strategic-multiplier coefficient for towns (non-castles). Castle = 1.0 (no bonus). Stacks with capital bonus: capital town = capital bonus × town bonus. Default 1.3.",
+                        Min=1.0, Max=3.0, Discrete=false, Step=0.05, Def=1.3, Advanced=true },
+
+                    new SpecEntry { Root="FiscalAutonomy", Key="BaseValuePerTier",
+                        LabelZh="单兵价值基常数（PR-5'）", LabelEn="Per-troop value base constant (PR-5')",
+                        HintZh="持有边单兵价值基常数。PR-5' 单段公式：value = 此值 × 威胁乘子 × 战略乘子 × power(tier)。替代旧 ValueFloorBase + ValueCoreBase 多段。默认 800。",
+                        HintEn="Holding-edge per-troop value base constant. PR-5' single-segment formula: value = this × threat × strategic × power(tier). Replaces legacy ValueFloorBase + ValueCoreBase multi-tier. Default 800.",
+                        Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
                 },
             },
         };
