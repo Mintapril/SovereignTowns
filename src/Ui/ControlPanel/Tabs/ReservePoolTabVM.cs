@@ -10,11 +10,12 @@ using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
-/// Tab 6「B 池状态」VM（PR-6）。
-/// 展示当前受管首府的 B 池（Capital Reserve Pool）party 状态：
-/// 是否存在、当前驻军头数、容量上限。
+/// Tab 6「B 池状态」VM（PR-6 / PR-7 / PR-9）。
+/// 展示当前受管首府的 B 池（Capital Reserve Pool）party 状态及招募模板编辑入口。
 ///
-/// PR-6 阶段仅做只读展示，MCMF 注入逻辑在 PR-7 实现。
+/// PR-9 (2026-05-24): troop list view moved to vanilla PartyScreen via town menu.
+/// Mod tab now only edits the recruitment template.
+/// VanillaGarrisonCount / CombinedCount removed — PartyScreen provides the live troop view.
 /// </summary>
 public sealed class ReservePoolTabVM : ViewModel
 {
@@ -26,8 +27,6 @@ public sealed class ReservePoolTabVM : ViewModel
     private string _poolStatus = "";
     private string _poolHeadcount = "";
     private string _poolCap = "";
-    private string _vanillaGarrisonCount = "";
-    private string _combinedCount = "";
 
     // ── 模板编辑属性（PR-7） ──
     private string _reserveTemplateJson = "";
@@ -52,22 +51,6 @@ public sealed class ReservePoolTabVM : ViewModel
     {
         get => _poolCap;
         private set { if (_poolCap != value) { _poolCap = value; OnPropertyChanged(nameof(PoolCap)); } }
-    }
-
-    /// <summary>PR-8：vanilla GarrisonParty 驻军头数（不含 B 池）。</summary>
-    [DataSourceProperty]
-    public string VanillaGarrisonCount
-    {
-        get => _vanillaGarrisonCount;
-        private set { if (_vanillaGarrisonCount != value) { _vanillaGarrisonCount = value; OnPropertyChanged(nameof(VanillaGarrisonCount)); } }
-    }
-
-    /// <summary>PR-8：vanilla + B 池合计头数（玩家实际可用守城兵力）。</summary>
-    [DataSourceProperty]
-    public string CombinedCount
-    {
-        get => _combinedCount;
-        private set { if (_combinedCount != value) { _combinedCount = value; OnPropertyChanged(nameof(CombinedCount)); } }
     }
 
     /// <summary>PR-7：B 池招募模板，JSON 格式（用户直接编辑）。
@@ -105,11 +88,9 @@ public sealed class ReservePoolTabVM : ViewModel
             var capital = CapitalRegistry.Instance?.GetForPlayer()?.GetCapitalSettlement();
             if (capital == null)
             {
-                PoolStatus           = ControlPanelLoc.Tr("无首府", "No capital");
-                PoolHeadcount        = "-";
-                PoolCap              = "-";
-                VanillaGarrisonCount = "-";
-                CombinedCount        = "-";
+                PoolStatus    = ControlPanelLoc.Tr("无首府", "No capital");
+                PoolHeadcount = "-";
+                PoolCap       = "-";
                 RefreshTemplateJson();
                 return;
             }
@@ -127,9 +108,6 @@ public sealed class ReservePoolTabVM : ViewModel
 
             int cap = ConfigurationManager.Current?.FiscalAutonomy?.ReservePoolCap ?? 0;
 
-            // PR-8：vanilla GarrisonParty 头数（encyclopedia 等 vanilla UI 只显示这个数字）。
-            int vanillaCount = capital.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
-
             if (pool == null)
             {
                 PoolStatus    = cap == 0
@@ -137,8 +115,6 @@ public sealed class ReservePoolTabVM : ViewModel
                     : ControlPanelLoc.Tr("未创建", "Not created");
                 PoolHeadcount = "0";
                 PoolCap       = cap.ToString();
-                VanillaGarrisonCount = vanillaCount.ToString();
-                CombinedCount        = vanillaCount.ToString();
             }
             else
             {
@@ -148,8 +124,6 @@ public sealed class ReservePoolTabVM : ViewModel
                 PoolCap       = cap == 0
                     ? ControlPanelLoc.Tr("0（调度器不注入兵员）", "0 (scheduler will not fill)")
                     : cap.ToString();
-                VanillaGarrisonCount = vanillaCount.ToString();
-                CombinedCount        = (vanillaCount + headcount).ToString();
             }
 
             RefreshTemplateJson();
@@ -157,11 +131,9 @@ public sealed class ReservePoolTabVM : ViewModel
         catch (Exception ex)
         {
             SovereignTowns.Logging.Logger.Error("ReservePoolTabVM.Refresh failed", ex);
-            PoolStatus           = ControlPanelLoc.Tr("刷新失败", "Refresh error");
-            PoolHeadcount        = "-";
-            PoolCap              = "-";
-            VanillaGarrisonCount = "-";
-            CombinedCount        = "-";
+            PoolStatus    = ControlPanelLoc.Tr("刷新失败", "Refresh error");
+            PoolHeadcount = "-";
+            PoolCap       = "-";
         }
     }
 
