@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Capital;
 using SovereignTowns.Common;
@@ -137,6 +138,64 @@ public sealed class SallyDispatcher
         catch (Exception ex)
         {
             Logger.Error($"SallyDispatcher.OnHourlyTickSettlement failed for '{PartyNameFormatter.SafeName(settlement)}'", ex);
+        }
+    }
+
+    // ────────── MCMF 批量消费接口 ──────────
+
+    /// <summary>
+    /// MCMF 调度器 (PR-4 S6) 的批量出击消费入口。每 CapitalLogisticsTickHours 由
+    /// <see cref="SovereignTowns.Managers.CapitalLogisticsManager"/> 调用一次，传入 solver
+    /// 决定的每城出击指令。内部复用 <see cref="TryCreateSallyParty"/> 执行逻辑；
+    /// 冷却 / 围城 / lifecycle cap 等 gate 在本方法内校验（细粒度 gate，MCMF 只提供容量意向）。
+    /// 注：跳过 _enemySustainedTicks 持续可见性检查 —— MCMF 威胁预测已在 solver 时域内汇总，
+    /// 无需此处再做小时粒度的重复校验。
+    /// </summary>
+    public void ExecuteAll(IEnumerable<SallyInstruction> instructions)
+    {
+        if (instructions == null) return;
+        foreach (var instruction in instructions)
+        {
+            try
+            {
+                var settlement = instruction?.Source;
+                if (settlement == null) continue;
+                if (!settlement.IsTown) continue;
+                if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) continue;
+                if (settlement.IsUnderSiege) continue;
+                if (!_lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindSallyForth)) continue;
+
+                // 冷却检查
+                if (_lastSallyEndedAt.TryGetValue(settlement, out var lastEnd))
+                {
+                    var hoursSinceLast = (CampaignTime.Now - lastEnd).ToHours;
+                    if (hoursSinceLast < SallyCooldownHours)
+                    {
+                        Logger.Debug($"SallyDispatcher.ExecuteAll '{PartyNameFormatter.SafeName(settlement)}': 冷却中 ({hoursSinceLast:F1}h < {SallyCooldownHours}h)，跳过");
+                        continue;
+                    }
+                }
+
+                var garrison = settlement.Town?.GarrisonParty;
+                var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
+                if (garrison == null) continue;
+
+                // 优先响应被劫掠的下辖村庄
+                var raidTarget = FindRaiderTargetingBoundVillage(settlement);
+                if (raidTarget != null)
+                {
+                    TryCreateSallyParty(settlement, garrison, garrisonCount, raidTarget);
+                    continue;
+                }
+
+                var target = FindBestEnemyTarget(settlement);
+                if (target == null) continue;
+                TryCreateSallyParty(settlement, garrison, garrisonCount, target);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"SallyDispatcher.ExecuteAll failed for settlement '{instruction?.Source?.StringId}'", ex);
+            }
         }
     }
 
