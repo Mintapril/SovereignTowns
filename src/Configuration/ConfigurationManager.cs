@@ -810,6 +810,22 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.TownStrategicBonus 非法 ({f.TownStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.TownStrategicBonus invalid ({f.TownStrategicBonus}); [1, 3]"); return false; }
         if (f.BaseValuePerTier < 0 || f.BaseValuePerTier > 10000)
         { reason = Tr($"FiscalAutonomy.BaseValuePerTier 非法 ({f.BaseValuePerTier})；范围 [0, 10000]", $"FiscalAutonomy.BaseValuePerTier invalid ({f.BaseValuePerTier}); [0, 10000]"); return false; }
+        // ── PR-6 (2026-05-24) B 池容量上限校验 ──
+        if (f.ReservePoolCap < 0 || f.ReservePoolCap > 1000)
+        { reason = Tr($"FiscalAutonomy.ReservePoolCap 非法 ({f.ReservePoolCap})；范围 [0, 1000]（0 = 关闭 B 池）", $"FiscalAutonomy.ReservePoolCap invalid ({f.ReservePoolCap}); [0, 1000] (0 = disable B-pool)"); return false; }
+        // ── PR-7 (2026-05-24) B 池招募模板校验 ──
+        if (f.ReserveTemplate != null)
+        {
+            if (f.ReserveTemplate.Count > 50)
+            { reason = Tr($"FiscalAutonomy.ReserveTemplate 条目过多 ({f.ReserveTemplate.Count})；上限 50", $"FiscalAutonomy.ReserveTemplate too many entries ({f.ReserveTemplate.Count}); max 50"); return false; }
+            foreach (var kv in f.ReserveTemplate)
+            {
+                if (string.IsNullOrEmpty(kv.Key))
+                { reason = Tr("FiscalAutonomy.ReserveTemplate 存在空 key", "FiscalAutonomy.ReserveTemplate has an empty key"); return false; }
+                if (kv.Value < 0 || kv.Value > 100)
+                { reason = Tr($"FiscalAutonomy.ReserveTemplate['{kv.Key}'] 非法 ({kv.Value})；范围 [0, 100]", $"FiscalAutonomy.ReserveTemplate['{kv.Key}'] invalid ({kv.Value}); [0, 100]"); return false; }
+            }
+        }
         reason = "";
         return true;
     }

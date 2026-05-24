@@ -166,4 +166,21 @@ public sealed class FiscalAutonomyConfig
     /// <summary>holding edge value 基常数（PR-5' 替代旧 ValueCoreBase / ValueFloorBase 多段）。
     /// 单段 value = 此值 × threat × strat × power(tier)。默认 800。</summary>
     public int BaseValuePerTier { get; set; } = 800;
+
+    // ── PR-6 (2026-05-24) B 池容量上限 ──
+    /// <summary>B 池（Capital Reserve Pool）驻军容量上限（头数）。
+    /// 0 = 关闭 B 池功能（不创建 party）；&gt; 0 = B 池最多可持有此数量驻军。
+    /// MCMF 调度器（PR-7）在向 B 池注入兵员时受此上限约束。默认 0（功能关闭，PR-7 实现后再启用）。</summary>
+    public int ReservePoolCap { get; set; } = 0;
+
+    // ── PR-7 (2026-05-24) B 池招募模板 ──
+    /// <summary>
+    /// B 池招募兵种模板：troopId → desiredCount（每个兵种在 B 池中希望维持的头数）。
+    /// null 或空 dict = 不派 B 池征兵队。
+    /// 校验：≤ 50 条目，每条 ≤ 100，count ≥ 0，key 非空。
+    /// troopId 有效性在 Dispatcher 层懒校验（MBObjectManager 在 OnSessionLaunched 后才可用）。
+    ///
+    /// 示例：{"imperial_veteran_infantry": 30, "imperial_palatine_guard": 20}
+    /// </summary>
+    public System.Collections.Generic.Dictionary<string, int>? ReserveTemplate { get; set; }
 }
