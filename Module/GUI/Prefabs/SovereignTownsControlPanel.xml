@@ -119,17 +119,7 @@
                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
                           </Children>
                         </ButtonWidget>
-                        <ButtonWidget DoNotPassEventsToChildren="true"
-                                      Command.Click="ExecuteSelectTab4" IsSelected="@IsTab4Active"
-                                      UpdateChildrenStates="true"
-                                      WidthSizePolicy="StretchToParent" HeightSizePolicy="Fixed"
-                                      SuggestedHeight="52" MarginBottom="7" Brush="Header.Tab.Center">
-                          <Children>
-                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                        Brush="Clan.TabControl.Text" Text="@Tab4Label"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-                          </Children>
-                        </ButtonWidget>
+                        <!-- Tab 4 按钮已删除（BranchesTab 整个移除）。 -->
                         <ButtonWidget DoNotPassEventsToChildren="true"
                                       Command.Click="ExecuteSelectTab5" IsSelected="@IsTab5Active"
                                       UpdateChildrenStates="true"
@@ -844,46 +834,8 @@
                                   </Children>
                                 </Widget>
 
-                                <!-- ════ Tab 4：非首府驻军 ════ -->
-                                <Widget IsVisible="@IsTab4Active"
-                                        WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent">
-                                  <Children>
-                                    <ListPanel DataSource="{BranchesTab}"
-                                               WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
-                                               StackLayout.LayoutMethod="VerticalBottomToTop">
-                                      <Children>
-                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                   StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center">
-                                          <Children>
-                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                        Brush="Clan.TabControl.Text" Text="@Title" VerticalAlignment="Center" />
-                                            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteResetAll"
-                                                          IsVisible="@ShowResetAll"
-                                                          WidthSizePolicy="CoverChildren" HeightSizePolicy="Fixed"
-                                                          SuggestedHeight="28" VerticalAlignment="Center">
-                                              <Children>
-                                                <Widget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
-                                                        Sprite="BlankWhiteSquare_9" Color="#3a2f1cFF">
-                                                  <Children>
-                                                    <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="StretchToParent"
-                                                                Brush="SPOptions.Slider.Value.Text" Text="@ResetAllLabel"
-                                                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                                MarginLeft="10" MarginRight="10" />
-                                                  </Children>
-                                                </Widget>
-                                              </Children>
-                                            </ButtonWidget>
-                                          </Children>
-                                        </ListPanel>
-                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                    Brush="SPOptions.Slider.Value.Text" Text="@Intro"
-                                                    MarginTop="6" MarginBottom="14" />
-                                        <STCPSliderRow DataSource="{TargetPowerRow}" />
-                                        <STCPSliderRow DataSource="{LowTierRow}" />
-                                      </Children>
-                                    </ListPanel>
-                                  </Children>
-                                </Widget>
+                                <!-- Tab 4「非首府驻军」整个删除：BranchDefaults 后端已在 PR-5' 移除，
+                                     ShowResetAll 反射 NRE 会让整个面板 LoadMovie 失败。 -->
 
                                 <!-- ════ Tab 5：状态一览（看板，默认页）════ -->
                                 <Widget IsVisible="@IsTab5Active"

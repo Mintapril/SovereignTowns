@@ -25,7 +25,6 @@ public sealed class ControlPanelVM : ViewModel
     private StrategyTabVM _strategyTab;
     private CompositionTabVM _compositionTab;
     private TemplatesTabVM _templatesTab;
-    private BranchesTabVM _branchesTab;
     private ActivityTabVM _activityTab;
     private HonorGuardTabVM _honorGuardTab;
 
@@ -55,13 +54,6 @@ public sealed class ControlPanelVM : ViewModel
     {
         get => _templatesTab;
         private set { _templatesTab = value; OnPropertyChanged(nameof(TemplatesTab)); }
-    }
-
-    [DataSourceProperty]
-    public BranchesTabVM BranchesTab
-    {
-        get => _branchesTab;
-        private set { _branchesTab = value; OnPropertyChanged(nameof(BranchesTab)); }
     }
 
     [DataSourceProperty]
@@ -201,7 +193,7 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public bool IsTab1Active => _activeTab == 1;
     [DataSourceProperty] public bool IsTab2Active => _activeTab == 2;
     [DataSourceProperty] public bool IsTab3Active => _activeTab == 3;
-    [DataSourceProperty] public bool IsTab4Active => _activeTab == 4;
+    // Tab 4 已删除（BranchesTab）—— BranchDefaults backing 在 PR-5' 早被移除。
     [DataSourceProperty] public bool IsTab5Active => _activeTab == 5;
     [DataSourceProperty] public bool IsTab6Active => _activeTab == 6;
 
@@ -209,7 +201,7 @@ public sealed class ControlPanelVM : ViewModel
     [DataSourceProperty] public string Tab1Label => ControlPanelLoc.Tr("策略参数", "Strategy");
     [DataSourceProperty] public string Tab2Label => ControlPanelLoc.Tr("兵种编制", "Composition");
     [DataSourceProperty] public string Tab3Label => ControlPanelLoc.Tr("卫队编制", "Honor guard composition");
-    [DataSourceProperty] public string Tab4Label => ControlPanelLoc.Tr("非首府驻军", "Other holdings");
+    // Tab 4 Label 已删除（BranchesTab）。
     [DataSourceProperty] public string Tab5Label => ControlPanelLoc.Tr("状态一览", "Overview");
     [DataSourceProperty] public string Tab6Label => ControlPanelLoc.Tr("卫队", "Honor Guard");
     [DataSourceProperty] public string ActivityLogLabel => ControlPanelLoc.Tr("活动日志", "Activity log");
@@ -272,7 +264,6 @@ public sealed class ControlPanelVM : ViewModel
             StrategyTab    = new StrategyTabVM(_config, MarkDirty);
             CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
-            BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
         ActivityTab    = new ActivityTabVM();
         HonorGuardTab = new HonorGuardTabVM();
@@ -297,7 +288,7 @@ public sealed class ControlPanelVM : ViewModel
     public void ExecuteSelectTab1() => ActiveTab = 1;
     public void ExecuteSelectTab2() => ActiveTab = 2;
     public void ExecuteSelectTab3() => ActiveTab = 3;
-    public void ExecuteSelectTab4() => ActiveTab = 4;
+    // ExecuteSelectTab4 已删除（Tab 4 BranchesTab 整个移除）。
     public void ExecuteSelectTab5() => ActiveTab = 5;
     public void ExecuteSelectTab6() => ActiveTab = 6;
 
@@ -380,7 +371,6 @@ public sealed class ControlPanelVM : ViewModel
             StrategyTab    = new StrategyTabVM(_config, MarkDirty);
             CompositionTab = new CompositionTabVM(_config, MarkDirty, () => ActiveTab = 3);
             TemplatesTab   = new TemplatesTabVM(_config, MarkDirty, () => ActiveTab = 2);
-            BranchesTab    = new BranchesTabVM(_config, MarkDirty);
         }
         ActivityTab    = new ActivityTabVM();
         HonorGuardTab = new HonorGuardTabVM();
