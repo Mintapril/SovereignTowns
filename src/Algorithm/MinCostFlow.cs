@@ -23,7 +23,7 @@ public sealed class MinCostFlow
 {
     private sealed class Edge
     {
-        public Edge(int from, int to, int reverseIndex, int capacity, int cost, bool original)
+        public Edge(int from, int to, int reverseIndex, int capacity, long cost, bool original)
         {
             From = from;
             To = to;
@@ -38,12 +38,12 @@ public sealed class MinCostFlow
         public int To { get; }
         public int ReverseIndex { get; }
         public int Capacity { get; set; }
-        public int Cost { get; }
+        public long Cost { get; }
         public int OriginalCapacity { get; }
         public bool Original { get; }
     }
 
-    private readonly Dictionary<int, List<Edge>> _graph = new Dictionary<int, List<Edge>>();
+    private readonly List<List<Edge>> _graph = new List<List<Edge>>();
     private readonly List<Edge> _originalEdges = new List<Edge>();
 
 #if DEBUG
@@ -59,11 +59,12 @@ public sealed class MinCostFlow
 
     public void AddNode(int id)
     {
-        if (!_graph.ContainsKey(id))
-            _graph[id] = new List<Edge>();
+        if (id < 0) return;
+        while (_graph.Count <= id) _graph.Add(null);
+        if (_graph[id] == null) _graph[id] = new List<Edge>();
     }
 
-    public void AddEdge(int from, int to, int capacity, int cost)
+    public void AddEdge(int from, int to, int capacity, long cost)
     {
         if (capacity <= 0) return;
         if (cost < 0) throw new ArgumentOutOfRangeException(nameof(cost), "Public edge cost must be non-negative.");
@@ -110,19 +111,18 @@ public sealed class MinCostFlow
     /// </summary>
     public System.Collections.IEnumerator SolveStepwise(int source, int sink, int yieldEvery)
     {
-        if (!_graph.ContainsKey(source) || !_graph.ContainsKey(sink) || source == sink)
+        if (source < 0 || sink < 0 || source >= _graph.Count || sink >= _graph.Count
+            || _graph[source] == null || _graph[sink] == null || source == sink)
         {
             LastResult = new MinCostFlowResult(0, 0, new Dictionary<(int From, int To), int>());
             yield break;
         }
 
-        var potentials = new Dictionary<int, long>(_graph.Count);
-        foreach (var id in _graph.Keys)
-            potentials[id] = 0L;
-
-        var distance = new Dictionary<int, long>(_graph.Count);
-        var parentNode = new Dictionary<int, int>(_graph.Count);
-        var parentEdgeIndex = new Dictionary<int, int>(_graph.Count);
+        int n = _graph.Count;
+        var potentials = new long[n];           // 默认全 0
+        var distance = new long[n];
+        var parentNode = new int[n];
+        var parentEdgeIndex = new int[n];
         var heap = new MinHeap();
 
         int totalFlow = 0;
@@ -172,21 +172,24 @@ public sealed class MinCostFlow
     private bool TryFindShortestPath(
         int source,
         int sink,
-        Dictionary<int, long> potentials,
-        Dictionary<int, long> distance,
-        Dictionary<int, int> parentNode,
-        Dictionary<int, int> parentEdgeIndex,
+        long[] potentials,
+        long[] distance,
+        int[] parentNode,
+        int[] parentEdgeIndex,
         MinHeap heap)
     {
         const long Inf = long.MaxValue / 4;
 
-        distance.Clear();
-        parentNode.Clear();
-        parentEdgeIndex.Clear();
-        heap.Clear();
+        // Reset all per-augmentation arrays in one pass.
+        // parentNode and parentEdgeIndex must be -1 (no parent), not 0 (valid node id).
+        for (int i = 0; i < distance.Length; i++)
+        {
+            distance[i] = Inf;
+            parentNode[i] = -1;
+            parentEdgeIndex[i] = -1;
+        }
 
-        foreach (var id in _graph.Keys)
-            distance[id] = Inf;
+        heap.Clear();
 
         distance[source] = 0L;
         heap.Push(0L, source);
@@ -196,8 +199,10 @@ public sealed class MinCostFlow
             heap.Pop(out long d, out int u);
             if (d > distance[u]) continue;
 
-            long pu = potentials[u];
             var edges = _graph[u];
+            if (edges == null) continue;
+
+            long pu = potentials[u];
             for (int i = 0; i < edges.Count; i++)
             {
                 var edge = edges[i];
@@ -225,12 +230,12 @@ public sealed class MinCostFlow
             }
         }
 
-        if (!parentNode.ContainsKey(sink)) return false;
+        if (parentNode[sink] < 0) return false;
 
-        foreach (var kv in distance)
+        for (int i = 0; i < distance.Length; i++)
         {
-            if (kv.Value < Inf)
-                potentials[kv.Key] += kv.Value;
+            if (distance[i] < Inf)
+                potentials[i] += distance[i];
         }
 
         return true;

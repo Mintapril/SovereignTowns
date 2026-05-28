@@ -5,7 +5,7 @@ namespace SovereignTowns.Algorithm;
 /// <summary>
 /// MCMF 边权 4 通道结构。把"金币 / 时间 / 路径风险 / 战略价值"四类语义独立的
 /// cost 项拆开，由 <see cref="EdgeCostCompose.ToFlowCost"/> 用 Config 权重线性合成成
-/// SSP 需要的单一 int。
+/// SSP 需要的单一 long。
 ///
 /// 设计目标：让 cost 的物理含义可解释（玩家/作者调权重时能想清楚），且增加新 cost
 /// 项时不再需要校准"K 守恒"那一坨魔法常量。
@@ -38,7 +38,7 @@ public readonly struct EdgeCost
 }
 
 /// <summary>
-/// EdgeCost → int flow cost 的合成器。求解器调用唯一入口。
+/// EdgeCost → long flow cost 的合成器。求解器调用唯一入口。
 ///
 /// 合成公式：cost = α·Gold + K·TimeUnits + γ·PathRisk − δ·Strategic
 /// 其中 α/γ/δ = Config 权重，K = TickHoldingValueK（替代旧 const K = 20_000_000）。
@@ -48,13 +48,24 @@ public readonly struct EdgeCost
 /// </summary>
 public static class EdgeCostCompose
 {
-    /// <summary>把 4 通道 EdgeCost 合成成 SSP 使用的 int cost。SSP 是单标量优化算法，必须线性合成。</summary>
-    public static int ToFlowCost(in EdgeCost ec, FiscalAutonomyConfig cfg)
+    /// <summary>把 4 通道 EdgeCost 合成成 SSP 使用的 long cost。SSP 是单标量优化算法，必须线性合成。</summary>
+    public static long ToFlowCost(in EdgeCost ec, FiscalAutonomyConfig cfg)
     {
-        return cfg.CostWeightGold      * ec.Gold
-             + cfg.TickHoldingValueK   * ec.TimeUnits
-             + cfg.CostWeightRisk      * ec.PathRisk
-             - cfg.CostWeightStrategic * ec.Strategic;
+        return (long)cfg.CostWeightGold      * ec.Gold
+             + (long)cfg.TickHoldingValueK   * ec.TimeUnits
+             + (long)cfg.CostWeightRisk      * ec.PathRisk
+             - (long)cfg.CostWeightStrategic * ec.Strategic;
+    }
+
+    /// <summary>
+    /// SSP graph public edges must be non-negative because MinCostFlow uses Dijkstra with
+    /// Johnson potentials. Strategic rewards are still allowed to drive a cost down to 0,
+    /// but not below it.
+    /// </summary>
+    public static long ToPublicFlowCost(in EdgeCost ec, FiscalAutonomyConfig cfg, out long rawCost)
+    {
+        rawCost = ToFlowCost(ec, cfg);
+        return rawCost < 0 ? 0L : rawCost;
     }
 
     /// <summary>
@@ -72,7 +83,7 @@ public static class EdgeCostCompose
         const int LegacyK = 20_000_000;
 
         // (1) Zero
-        int zero = ToFlowCost(EdgeCost.Zero, cfg);
+        long zero = ToFlowCost(EdgeCost.Zero, cfg);
         if (zero != 0)
         {
             message = $"EdgeCost.Zero expected cost=0, got {zero}";
@@ -82,8 +93,8 @@ public static class EdgeCostCompose
         // (2) holding sample: tier=3 → wage=5, suppose value*power = 800
         //     legacy: K + 5 − 800 = 19_999_205
         var hold = new EdgeCost(gold: 5, timeUnits: 1, strategic: 800);
-        int holdCost = ToFlowCost(hold, cfg);
-        int holdLegacy = LegacyK + 5 - 800;
+        long holdCost = ToFlowCost(hold, cfg);
+        long holdLegacy = LegacyK + 5 - 800;
         if (holdCost != holdLegacy)
         {
             message = $"holding sample expected {holdLegacy}, got {holdCost}";
@@ -93,8 +104,8 @@ public static class EdgeCostCompose
         // (3) transfer sample: d=3, overhead=100, risk=50
         //     legacy: 3·K + 100 + 50 = 60_000_150
         var tx = new EdgeCost(gold: 100, timeUnits: 3, pathRisk: 50);
-        int txCost = ToFlowCost(tx, cfg);
-        int txLegacy = 3 * LegacyK + 100 + 50;
+        long txCost = ToFlowCost(tx, cfg);
+        long txLegacy = 3 * LegacyK + 100 + 50;
         if (txCost != txLegacy)
         {
             message = $"transfer sample expected {txLegacy}, got {txCost}";
@@ -103,8 +114,8 @@ public static class EdgeCostCompose
 
         // (4) disband sample: τ=0, T=16 → (T-τ)·K = 16·K
         var dis = new EdgeCost(timeUnits: 16);
-        int disCost = ToFlowCost(dis, cfg);
-        int disLegacy = 16 * LegacyK;
+        long disCost = ToFlowCost(dis, cfg);
+        long disLegacy = 16 * LegacyK;
         if (disCost != disLegacy)
         {
             message = $"disband sample expected {disLegacy}, got {disCost}";
@@ -114,14 +125,25 @@ public static class EdgeCostCompose
         // (5) weight scaling: 把 CostWeightStrategic 设为 3，strategic 分量应放大 3 倍
         var cfgScaled = new FiscalAutonomyConfig { CostWeightStrategic = 3 };
         var strat = new EdgeCost(strategic: 100);
-        int stratCost = ToFlowCost(strat, cfgScaled);
+        long stratCost = ToFlowCost(strat, cfgScaled);
         if (stratCost != -300)
         {
             message = $"strategic weight scaling expected -300, got {stratCost}";
             return false;
         }
 
-        message = "EdgeCostCompose self-test passed (5 cases)";
+        // (6) public graph edge safety: raw strategic rewards may go negative, but the
+        // public SSP cost passed to MinCostFlow is clamped at zero.
+        var cfgReward = new FiscalAutonomyConfig { TickHoldingValueK = 100, CostWeightStrategic = 1 };
+        var reward = new EdgeCost(timeUnits: 1, strategic: 150);
+        long publicCost = ToPublicFlowCost(reward, cfgReward, out long rawRewardCost);
+        if (rawRewardCost != -50 || publicCost != 0)
+        {
+            message = $"public cost clamp expected raw=-50 public=0, got raw={rawRewardCost} public={publicCost}";
+            return false;
+        }
+
+        message = "EdgeCostCompose self-test passed (6 cases)";
         return true;
     }
 }

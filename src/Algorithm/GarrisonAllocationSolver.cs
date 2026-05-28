@@ -56,7 +56,10 @@ public static class GarrisonAllocationSolver
 
             float ratio = cfg.GarrisonWageBudgetRatio;
             if (ratio < 0f) ratio = 0f;
-            return (long)Math.Round(sustainable * ratio);
+            long budget = (long)Math.Round(sustainable * ratio);
+            int nTroops = wagePerTroop > 0 ? (int)(budget / wagePerTroop) : 0;
+            Logger.Info($"[GARRISON-DIAG] ClanWageBudget clan='{clan.StringId}' fiefs={towns.Count} sustainableIncome={sustainable}d/day ratio={ratio:F2} → budget={budget}d/day (wagePerTroop={wagePerTroop} → N={nTroops} troops affordable)");
+            return budget;
         }
         catch (Exception ex)
         {
@@ -66,8 +69,10 @@ public static class GarrisonAllocationSolver
     }
 
     /// <summary>
-    /// 满级单兵工资 = PartyWageModel.GetCharacterWage(tier 5 的代表兵种)。
-    /// PR-5'(2026-05-24)：MaxTier 已从 TownGarrisonRule 删除，固定使用 tier=5。
+    /// 代表性单兵工资 = PartyWageModel.GetCharacterWage(tier 3 兵种)。
+    /// 2026-05-29: 旧用 tier=5（满级 12d/day）算最坏开销，导致 N=budget/12 严重低估；
+    /// 实际驻军平均 tier 2-3，wage~3-5d/day。改用 tier 3（wage~5d/day），N 更贴近实际容量，
+    /// cap 在收入充足时能稳定顶到 hardCap (vanilla PartySizeLimit) 而非在 200-300 漂浮。
     /// 代表兵种用 GarrisonPowerEvaluator.MakeStubTroop 的 tier 查找。任何失败 → 返回 1(保守)。
     /// internal:CapitalLogisticsManager 的 GarrisonAssessment.DailyWageDelta 复用此口径。
     /// </summary>
@@ -75,19 +80,22 @@ public static class GarrisonAllocationSolver
     {
         try
         {
-            const int maxTier = 5;
+            // 2026-05-29: tier 3 = "中等驻军兵"代表（与 UnifiedGarrisonSolver pool 代表性 tier 同步）。
+            const int repTier = 3;
 
             // 全限定:见 ClanWageBudget 注释。
             var wageModel = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.PartyWageModel;
             if (wageModel == null) return 1;
 
             // 代表兵种:优先匹配 tier 的非英雄兵种;MakeStubTroop 找不到时退化为任意非英雄兵。
-            var rep = GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: false)
-                      ?? GarrisonPowerEvaluator.MakeStubTroop(maxTier, mounted: true);
+            var rep = GarrisonPowerEvaluator.MakeStubTroop(repTier, mounted: false)
+                      ?? GarrisonPowerEvaluator.MakeStubTroop(repTier, mounted: true);
             if (rep == null) return 1;
 
             int wage = wageModel.GetCharacterWage(rep);
-            return Math.Max(1, wage);
+            int returned = Math.Max(1, wage);
+            Logger.Info($"[GARRISON-DIAG] WagePerTroopAtMaxTier rep='{rep.StringId}' tier={repTier} (mid-tier representative) rawWage={wage}d/day → returned={returned}d/day");
+            return returned;
         }
         catch (Exception ex)
         {
@@ -118,7 +126,8 @@ public static class GarrisonAllocationSolver
         }
     }
 
-    // PR-5'(2026-05-24): AdequateFor 已删除。单段 TierDefs cap = hardCap × TargetFraction。
+    // PR-5'(2026-05-24): AdequateFor 已删除。
+    // 2026-05-28: TierDefs cap 改为 perCityCapacity (SolveCoroutine 算的预算分配),不再依赖 TargetFraction。
     // IsClanAtWar 已删除。ClanWageBudget 不再区分战时/和平期。
 
 }
