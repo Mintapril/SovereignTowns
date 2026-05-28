@@ -1,43 +1,15 @@
 using System;
-using System.Collections.Generic;
 using SovereignTowns.Configuration;
 using SovereignTowns.Evaluators;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.ObjectSystem;
-using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Templates;
 
 /// <summary>
-/// 模板/匹配模式的统一辅助。PR-5'(2026-05-24) 后仅剩 Generic 模式（UseGenericMatching/ExactTroopTemplate 已删除）。
-/// 旧 Exact 路径方法保留签名但均返回空集合，避免删除破坏仍存在的调用点编译。
+/// 模板/匹配模式的统一辅助。仅提供 IsValidTemplateTroop 候选过滤。
 /// </summary>
 public static class TroopTemplateModeService
 {
-    /// <summary>PR-5'(2026-05-24): UseGenericMatching removed — no-op. Generic matching is always on.</summary>
-    public static void SetUseGenericMatching(TownGarrisonRule? rule, bool useGeneric)
-    {
-        // no-op: field removed from TownGarrisonRule
-    }
-
-    /// <summary>
-    /// PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule. Always returns empty dict.
-    /// Kept for call-site compilation compatibility.
-    /// </summary>
-    public static Dictionary<CharacterObject, int> ResolveExactTemplate(TownGarrisonRule? rule, int effectiveTarget)
-    {
-        return new Dictionary<CharacterObject, int>();
-    }
-
-    /// <summary>
-    /// PR-5'(2026-05-24): ExactTroopTemplate removed from TownGarrisonRule. Always returns empty set.
-    /// Kept for call-site compilation compatibility.
-    /// </summary>
-    public static HashSet<CharacterObject> ResolveExactTemplateTargets(TownGarrisonRule? rule)
-    {
-        return new HashSet<CharacterObject>();
-    }
-
     /// <summary>
     /// 过滤兵种是否可作为模板/匹配候选。除原有规则（hero / 非 soldier / 非 regular / 民兵兵种 /
     /// 贵族开关）外，新增以下隐藏 / 不可招募过滤：

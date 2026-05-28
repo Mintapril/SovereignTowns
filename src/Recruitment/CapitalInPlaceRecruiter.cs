@@ -21,7 +21,7 @@ namespace SovereignTowns.Recruitment;
 ///   - 不创建 MobileParty / 不寻路
 ///   - 玩家氏族按固定单兵费用扣款，AI 氏族免费
 ///   - 不收 BudgetLimit 约束
-///   - 受 PartySizeLimit + rule.TargetTotalCount 钳制
+///   - 受 PartySizeLimit 钳制（目标人数由 MCMF 在预算约束下决定，不依赖手设字段）
 ///   - 由 CapitalLogisticsManager 在每日首府调度中触发；与 village notable 24h 刷新节奏一致
 ///
 /// 兵种归类：优先使用 vanilla <see cref="CharacterObject.DefaultFormationClass"/>；骑射独立，
@@ -152,10 +152,7 @@ public static class CapitalInPlaceRecruiter
                     if (!TroopTemplateMatcher.CanServeRole(troop, rule, role)) continue;
 
                     // B7.27：原地招募也要扣费（与外派对齐）。玩家氏族扣 5 denar，AI clan 免费。
-                    // 顺序：先 Charge → 再 AddToCounts。原来反向写在 rollback 抛异常时会留下
-                    // 已加进 garrison 的免费兵；颠倒后 Charge 失败直接放弃，AddToCounts 抛只损失
-                    // 这次的扣费（外部审计仍有记录），不会出现"扣费过 + 兵没进 garrison"的反向漏洞，
-                    // 因为 AddToCounts 失败时会 continue 跳过 volunteerTypes 清零 + recruited++。
+                    // 顺序：先 Charge → 再 AddToCounts。AddToCounts 失败时必须退款，避免"扣费成功但兵没进驻军"。
                     bool shouldCharge = SovereignTowns.Capital.CapitalRegistry.ShouldChargeClan(capital.OwnerClan);
                     if (shouldCharge && !ModTreasury.CanAfford(capital.OwnerClan, 5))
                     {
@@ -163,11 +160,13 @@ public static class CapitalInPlaceRecruiter
                         return recruited;
                     }
 
+                    bool charged = false;
                     if (shouldCharge && !ModTreasury.Charge(capital.OwnerClan, ExpenseCategory.RecruiterWage, 5, $"in_place capital={capital.StringId} troop={troop.StringId}"))
                     {
                         Logger.Info($"CapitalInPlace '{capital.Name}': ModTreasury.Charge 失败 — 终止本次招募（已招 {recruited} 人）");
                         return recruited;
                     }
+                    charged = shouldCharge;
 
                     try
                     {
@@ -175,7 +174,19 @@ public static class CapitalInPlaceRecruiter
                     }
                     catch (Exception ex)
                     {
-                        Logger.Warn($"  CapitalInPlace '{capital.Name}': AddToCounts threw for '{troop.StringId}' after charge — charge persists for audit, troop dropped: {ex.Message}");
+                        if (charged)
+                        {
+                            try
+                            {
+                                ModTreasury.Refund(capital.OwnerClan, ExpenseCategory.RecruiterWage, 5,
+                                    $"rollback in_place add failed capital={capital.StringId} troop={troop.StringId}");
+                            }
+                            catch (Exception refundEx)
+                            {
+                                Logger.Warn($"  CapitalInPlace '{capital.Name}': refund failed after AddToCounts failure for '{troop.StringId}': {refundEx.Message}");
+                            }
+                        }
+                        Logger.Warn($"  CapitalInPlace '{capital.Name}': AddToCounts threw for '{troop.StringId}' after charge; refunded={charged}: {ex.Message}");
                         continue;
                     }
 

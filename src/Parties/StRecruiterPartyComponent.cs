@@ -16,6 +16,7 @@ using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using TaleWorlds.Localization;
+using TaleWorlds.ObjectSystem;
 using TaleWorlds.SaveSystem;
 using ConfigurationManager = SovereignTowns.Configuration.ConfigurationManager;
 using Logger = SovereignTowns.Logging.Logger;
@@ -30,8 +31,12 @@ namespace SovereignTowns.Parties;
 /// <see cref="_itinerary"/> 用 List&lt;Settlement&gt;（vanilla SaveSystem 不直接支持 HashSet；容器声明
 /// 见 SovereignTownsTypeDefiner.DefineContainerDefinitions）。
 ///
-/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 28)，槽位 23 空置（原 _visitedThisTrip，
-/// 行程驱动改造后由 _itineraryIndex 取代）。
+/// 两种模式（<see cref="RecruiterMode"/>）共用本类，分支只在两处：
+///   - 志愿者匹配：调 <see cref="TroopTemplateMatcher.IsAcceptableVolunteer"/>，按 _mode 选 GarrisonRole / HonorGuardPrecise；
+///   - 回家路径：HonorGuardPrecise 模式 override OnArrivedHome 转入卫队池，GarrisonRole 走默认 DefaultMergeAndDisband。
+///
+/// SaveableField 槽位：基类占 [10, 20)；本类占 [20, 30)。
+/// 槽位 23 空置（原 _visitedThisTrip）。28/29 = 卫队精确模板支持。
 /// </summary>
 public sealed class StRecruiterPartyComponent : StPartyComponent
 {
@@ -39,9 +44,8 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     /// <summary>vanilla volunteer slot 上限放宽倍率（B7.20，硬编码 2.0）。</summary>
     private const float VolunteerMul = 2.0f;
-    /// <summary>玩家氏族单兵金币折扣（B7.20，硬编码 0.5）。</summary>
-    private const float CostDiscount = 0.5f;
-    private const int DefaultGoldPerRecruit = 10;
+    /// <summary>招募人头费：玩家氏族每兵收 5 denar；AI 免费。两模式（GarrisonRole / HonorGuardPrecise）共用此常量。</summary>
+    public const int RecruitChargePerHead = 5;
 
     public enum RecruiterPhase
     {
@@ -62,7 +66,13 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     [SaveableField(26)] private int _itineraryIndex;
     // 本趟招募人数目标（MCMF count 求和）。达到即返航；<=0 时仅靠行程耗尽返航。
     [SaveableField(27)] private int _tripCountTarget;
+    // 招募模式：GarrisonRole（默认，缺省值 0，老存档无字段时为该值）/ HonorGuardPrecise。
+    [SaveableField(28)] private RecruiterMode _mode = RecruiterMode.GarrisonRole;
+    // 卫队精确模板的 JSON 序列化（仅 HonorGuardPrecise 模式持有）。
+    // 用 JSON 而非 Dictionary<string,int>：vanilla SaveSystem 对字典容器声明繁琐，JSON 字符串零声明。
+    [SaveableField(29)] private string? _preciseTemplateJson;
     [CachedData] private TextObject? _cachedName;
+    [CachedData] private Dictionary<string, int>? _preciseTemplateCache;
 
     private List<Settlement> Itin
     {
@@ -89,6 +99,22 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     public Settlement? AssignedTarget => _assignedTarget;
     public RecruiterPhase Phase => _phase;
     public GenericTroopRole AssignedRole => _assignedRole;
+    public RecruiterMode Mode => _mode;
+    /// <summary>剩余可招人数 = _tripCountTarget − _recruitedThisTrip（钳到 ≥ 0）。_tripCountTarget ≤ 0 时恒 0。</summary>
+    public int TripCountRemaining => _tripCountTarget > 0 ? Math.Max(0, _tripCountTarget - _recruitedThisTrip) : 0;
+
+    /// <summary>HonorGuardPrecise 模式下的精确模板快照（troopId → desiredCount）。GarrisonRole 模式恒 null。
+    /// 模板由派发时一次性载入（CapitalLogisticsManager 派发 → SetMode），运行时只读不变。</summary>
+    public IReadOnlyDictionary<string, int>? PreciseTemplate
+    {
+        get
+        {
+            if (_mode != RecruiterMode.HonorGuardPrecise) return null;
+            if (_preciseTemplateCache != null) return _preciseTemplateCache;
+            _preciseTemplateCache = ParsePreciseTemplateJson(_preciseTemplateJson);
+            return _preciseTemplateCache;
+        }
+    }
 
     public override TextObject Name
     {
@@ -114,6 +140,85 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     public void SetAssignedTarget(Settlement? target) => _assignedTarget = target;
     public void SetAssignedRole(GenericTroopRole role) => _assignedRole = role;
     public void TransitionTo(RecruiterPhase phase) => _phase = phase;
+
+    /// <summary>派发时设定本队招募模式与（可选）卫队精确模板。
+    /// preciseTemplate 仅在 HonorGuardPrecise 模式生效；GarrisonRole 时忽略。</summary>
+    public void SetMode(RecruiterMode mode, IReadOnlyDictionary<string, int>? preciseTemplate)
+    {
+        _mode = mode;
+        if (mode == RecruiterMode.HonorGuardPrecise && preciseTemplate != null && preciseTemplate.Count > 0)
+        {
+            _preciseTemplateJson = SerializePreciseTemplate(preciseTemplate);
+            // 手动拷贝：net472 Dictionary ctor 不接受 IReadOnlyDictionary。
+            var copy = new Dictionary<string, int>(preciseTemplate.Count, StringComparer.Ordinal);
+            foreach (var kv in preciseTemplate)
+            {
+                if (!string.IsNullOrEmpty(kv.Key)) copy[kv.Key] = kv.Value;
+            }
+            _preciseTemplateCache = copy;
+        }
+        else
+        {
+            _preciseTemplateJson = null;
+            _preciseTemplateCache = null;
+        }
+    }
+
+    private static string SerializePreciseTemplate(IReadOnlyDictionary<string, int> template)
+    {
+        // 简单 JSON 序列化，避开 Newtonsoft 在私有字段上的反射要求。entries 顺序保留（IDictionary 遍历顺序）。
+        var sb = new System.Text.StringBuilder(128);
+        sb.Append('{');
+        bool first = true;
+        foreach (var kv in template)
+        {
+            if (string.IsNullOrEmpty(kv.Key)) continue;
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append('"').Append(EscapeJsonString(kv.Key)).Append("\":").Append(kv.Value);
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    private static string EscapeJsonString(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return s ?? string.Empty;
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s)
+        {
+            switch (ch)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (ch < 0x20) sb.Append("\\u").Append(((int)ch).ToString("x4"));
+                    else sb.Append(ch);
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static Dictionary<string, int>? ParsePreciseTemplateJson(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            // 用 Newtonsoft（CLAUDE.md #8：vanilla bundled），保持与项目其他 JSON 序列化一致。
+            var dict = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, int>>(json!);
+            if (dict == null || dict.Count == 0) return null;
+            return new Dictionary<string, int>(dict, StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"StRecruiterPartyComponent.ParsePreciseTemplateJson failed: {ex.Message}");
+            return null;
+        }
+    }
 
     /// <summary>派遣时设定 MCMF 决定的多站行程与本趟招募人数目标。</summary>
     public void SetItinerary(IReadOnlyList<Settlement>? villages, int tripCountTarget)
@@ -207,14 +312,106 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     protected override void OnHourlyTickCore(MobileParty self, Settlement capital)
     {
-        Logger.Debug($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip}/{_tripCountTarget} itin={_itineraryIndex}/{Itin.Count}");
+        Logger.Debug($"[DIAG] Recruiter.Core '{PartyNameFormatter.SafeName(self)}' mode={_mode} phase={_phase} assignedTarget='{_assignedTarget?.Name?.ToString() ?? "null"}' recruited={_recruitedThisTrip}/{_tripCountTarget} itin={_itineraryIndex}/{Itin.Count}");
         switch (_phase)
         {
             case RecruiterPhase.Dispatching: HandleDispatching(self); break;
             case RecruiterPhase.AtVillage:   HandleAtVillage(self); break;
             case RecruiterPhase.Travelling:  HandleTravelling(self); break;
-            case RecruiterPhase.Returning:   /* base.IsAtHome 接管 → OnArrivedHome → DefaultMergeAndDisband */ break;
+            case RecruiterPhase.Returning:   /* base.IsAtHome 接管 → OnArrivedHome → DefaultMergeAndDisband / HonorGuard 转池 */ break;
         }
+    }
+
+    /// <summary>
+    /// 抵达首府时的处理：
+    /// - GarrisonRole → 走 base.DefaultMergeAndDisband（兵员并入 Town.GarrisonParty）。
+    /// - HonorGuardPrecise → 把非英雄兵员转入 HonorGuard 池（受 HonorGuardCap 钳制），然后 disband。
+    ///   转不进池的兵（池满 / 池不存在）由基类 OnDestroyed 兜底尝试塞回 garrison。
+    /// </summary>
+    protected override void OnArrivedHome(MobileParty self)
+    {
+        if (_mode != RecruiterMode.HonorGuardPrecise)
+        {
+            base.OnArrivedHome(self);
+            return;
+        }
+
+        try
+        {
+            var capital = HomeSettlementOrNull;
+            if (capital == null)
+            {
+                Logger.Warn("StRecruiter(HonorGuard).OnArrivedHome: capital is null, falling back to DefaultMergeAndDisband");
+                DefaultMergeAndDisband(self);
+                return;
+            }
+
+            TransferHonorGuardRecruitsToPool(self, capital);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("StRecruiter(HonorGuard).OnArrivedHome failed", ex);
+        }
+        finally
+        {
+            // 任何路径下都走 DefaultMergeAndDisband 收尾：未转入池的剩余兵会进 garrison（兜底救人），
+            // 同时统一走 TryRefundOnDestroy 退款 + DisbandAndUntrack。
+            try { DefaultMergeAndDisband(self); }
+            catch (Exception ex) { Logger.Error("StRecruiter(HonorGuard).OnArrivedHome DefaultMergeAndDisband failed", ex); }
+        }
+    }
+
+    /// <summary>
+    /// 把本队的非英雄兵员转入 <paramref name="capital"/> 的 HonorGuard 池。
+    /// 受 HonorGuardCap 钳制；池不存在 / 已满 → 兵员留在 self.MemberRoster，由 DefaultMergeAndDisband 兜底进 garrison。
+    /// </summary>
+    private void TransferHonorGuardRecruitsToPool(MobileParty self, Settlement capital)
+    {
+        var bPool = HonorGuardManager.GetPoolStatic(capital);
+        if (bPool == null || !bPool.IsActive)
+        {
+            Logger.Warn($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': no active honor-guard pool for '{capital.StringId}', troops will fall through to garrison");
+            return;
+        }
+        var roster = self.MemberRoster;
+        if (roster == null) return;
+
+        int cap = ConfigurationManager.Current?.FiscalAutonomy?.HonorGuardCap ?? 0;
+        int currentPool = bPool.MemberRoster?.TotalManCount ?? 0;
+        int headroom = Math.Max(0, cap - currentPool);
+        if (headroom <= 0)
+        {
+            Logger.Warn($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': pool full ({currentPool}/{cap}), troops fall through to garrison");
+            return;
+        }
+
+        int transferred = 0;
+        for (int i = roster.Count - 1; i >= 0 && headroom > 0; i--)
+        {
+            var element = roster.GetElementCopyAtIndex(i);
+            if (element.Character == null || element.Character.IsHero) continue;
+
+            int available = element.Number;
+            int wounded   = element.WoundedNumber;
+            int healthy   = available - wounded;
+            int take      = Math.Min(healthy > 0 ? healthy : available, headroom);
+            if (take <= 0) continue;
+
+            try
+            {
+                int takeWounded = (healthy <= 0) ? take : Math.Max(0, Math.Min(wounded, take - healthy));
+                bPool.MemberRoster?.AddToCounts(element.Character, take, insertAtFront: false, woundedCount: takeWounded);
+                // RemoveTroop(troop, numberToRemove, troopSeed, xp) — no woundedCount param.
+                roster.RemoveTroop(element.Character, take, default, 0);
+                headroom    -= take;
+                transferred += take;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': transfer '{element.Character?.StringId}' failed: {ex.Message}");
+            }
+        }
+        Logger.Info($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': transferred {transferred} troops to honor-guard pool of '{capital.StringId}'");
     }
 
     /// <summary>
@@ -446,7 +643,12 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
     /// <summary>
     /// 抵达 village 的实际招募动作。返回实际招到的人数（用于冷却登记判定）。
-    /// 含 per-role 饱和检查 + vanilla VolunteerModel slot 扩展 + ModTreasury rollback。
+    /// 双模式分支：
+    /// <list type="bullet">
+    ///   <item><b>GarrisonRole</b>：评分排序 → per-role 饱和检查 → 扣款 + 加兵。</item>
+    ///   <item><b>HonorGuardPrecise</b>：按模板插入顺序遍历 deficit → IG 升级链匹配 → 扣款 + 加兵 + 递减 deficit。</item>
+    /// </list>
+    /// 共用：vanilla VolunteerModel slot 扩展、StRecruitContext、ModTreasury rollback、5 denar/兵 玩家收费。
     /// </summary>
     private int RecruitFromTargetVillage(MobileParty recruitingParty, Settlement village, Settlement home)
     {
@@ -461,176 +663,269 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
 
             var rule = ConfigurationManager.GetRuleFor(home.Town);
             int budgetRemaining = Math.Max(0, rule?.BudgetLimit ?? 5000);
-            int leaderGold = ownerHero.Gold;
 
-            // B7.20：硬编码 0.5 折扣（玩家 5 denar/兵）；AI 免费。
+            // 玩家氏族每兵 5 denar；AI 免费。两模式共用同一常量（合并后再无差异）。
             bool shouldChargeRecruit = CapitalRegistry.ShouldChargeClan(home.OwnerClan);
-            int costPerRecruit = shouldChargeRecruit ? Math.Max(1, (int)Math.Round(DefaultGoldPerRecruit * CostDiscount)) : 0;
+            int costPerRecruit = shouldChargeRecruit ? RecruitChargePerHead : 0;
 
-            int spent = 0;
-            int candidatesScanned = 0;
-            var scoredCandidates = new List<(CharacterObject Troop, CharacterObject[] Slots, int SlotIndex, float Score)>();
-            var garrisonRoster = home.Town?.GarrisonParty?.MemberRoster;
-            int targetTotal = Math.Max(1, rule?.TargetTotalCount ?? 1);
-
-            // B7.22 Fix per-role 饱和：预测「征兵队回家合并后」各 role 总人数。
-            var snapGarrison = GenericTroopMatcher.Snapshot(garrisonRoster);
-            var snapRecruiter = GenericTroopMatcher.Snapshot(recruitingParty.MemberRoster);
-            // 角色配额与 MCMF 图(MatchPolicy.DesiredCount)同口径:精确模板模式用模板角色分布、
-            // 通用模式用比例滑条。否则图按模板派本队来招某 role、本队却按通用比例判「已饱和」→ 0 招募。
-            int rTargetCav = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Cavalry, targetTotal) : 0;
-            int rTargetHa  = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.HorseArcher, targetTotal) : 0;
-            int rTargetInf = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Infantry, targetTotal) : 0;
-            int rTargetRng = rule != null ? MatchPolicy.DesiredCount(rule, GenericTroopRole.Ranged, targetTotal) : 0;
-            int rGainCav = 0, rGainHa = 0, rGainInf = 0, rGainRng = 0;
-
-            // 通用匹配文化过滤：home 即征兵队所属首府，解析一次玩家面板的文化策略（null = 不过滤）。
-            string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, home.Town);
-
-            foreach (var notable in village.Notables)
+            if (_mode == RecruiterMode.HonorGuardPrecise)
             {
-                if (notable == null) continue;
-                if (!notable.CanHaveRecruits) continue;
-
-                var volunteerTypes = notable.VolunteerTypes;
-                if (volunteerTypes == null || volunteerTypes.Length == 0) continue;
-
-                int maxIdx;
-                try
-                {
-                    // ST 自身招兵：进入 StRecruitContext 让 STVolunteerModel 放行 — 否则被管 AI clan
-                    // 派出的 RecruitingParty 调本方法时会被自己的 model 阻断 → 永远招不到。
-                    using (StRecruitContext.Enter())
-                    {
-                        maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"  RecruitFromTargetVillage: MaximumIndexHeroCanRecruitFromHero threw for notable '{notable.Name}'", ex);
-                    continue;
-                }
-                if (maxIdx < 0) continue;
-
-                // B7.14: vanilla slot 上限按 VolunteerMul 扩大，但不超 volunteerTypes 实际长度
-                int effectiveMaxIdx = Math.Min(
-                    volunteerTypes.Length - 1,
-                    Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
-
-                for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
-                {
-                    var troop = volunteerTypes[i];
-                    if (troop == null) continue;
-
-                    candidatesScanned++;
-                    if (rule != null && !TroopTemplateMatcher.MatchesRule(troop, rule)) continue;
-                    // MCMF 定向招募：只招可服务指定 role 的兵。精确模板模式下服务 role
-                    // 取可升级模板目标,与 solver 建图分桶保持一致。
-                    if (_assignedRole != GenericTroopRole.Unknown
-                        && !TroopTemplateMatcher.CanServeRole(troop, rule, _assignedRole)) continue;
-                    // 玩家面板的文化过滤策略（玩家文化 / 首府文化 / 不过滤）。
-                    // PR-5'(2026-05-24): UseGenericMatching removed; culture filter always applies.
-                    if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
-                    float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
-                    if (float.IsNegativeInfinity(score)) continue;
-                    scoredCandidates.Add((troop, volunteerTypes, i, score));
-                }
+                recruited = RecruitHonorGuardFromVillage(
+                    recruitingParty, village, home, volunteerModel, ownerHero,
+                    shouldChargeRecruit, costPerRecruit, ref budgetRemaining);
             }
-
-            scoredCandidates.Sort(static (a, b) => b.Score.CompareTo(a.Score));
-
-            foreach (var candidate in scoredCandidates)
+            else
             {
-                int cost = costPerRecruit;
-                if (budgetRemaining < cost) break;
-                if (candidate.Slots[candidate.SlotIndex] == null) continue;
-
-                // B7.22 Fix per-role 饱和检查
-                var roleOfCand = TroopTemplateMatcher.GetServiceRole(candidate.Troop, rule);
-                int projected, target;
-                switch (roleOfCand)
-                {
-                    case GenericTroopRole.Cavalry:     projected = snapGarrison.Cavalry     + snapRecruiter.Cavalry     + rGainCav; target = rTargetCav; break;
-                    case GenericTroopRole.HorseArcher: projected = snapGarrison.HorseArcher + snapRecruiter.HorseArcher + rGainHa;  target = rTargetHa;  break;
-                    case GenericTroopRole.Infantry:    projected = snapGarrison.Infantry    + snapRecruiter.Infantry    + rGainInf; target = rTargetInf; break;
-                    case GenericTroopRole.Ranged:      projected = snapGarrison.Ranged      + snapRecruiter.Ranged      + rGainRng; target = rTargetRng; break;
-                    default: continue;
-                }
-                if (projected >= target) continue;
-
-                if (shouldChargeRecruit && cost > 0 && !ModTreasury.CanAfford(home.OwnerClan, cost))
-                {
-                    Logger.Info($"  RecruitFromTargetVillage: 资金不足，停止招募（已招 {recruited} 人）");
-                    break;
-                }
-
-                bool added = false;
-                try
-                {
-                    recruitingParty.AddElementToMemberRoster(candidate.Troop, 1, false);
-                    added = true;
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"  RecruitFromTargetVillage: AddElementToMemberRoster threw for '{candidate.Troop.StringId}'", ex);
-                    continue;
-                }
-
-                // 扣费失败 → rollback 刚加入的兵，避免免费招募
-                if (shouldChargeRecruit && cost > 0)
-                {
-                    if (!ModTreasury.Charge(home.OwnerClan, ExpenseCategory.RecruiterWage, cost, $"recruit village={village.StringId} troop={candidate.Troop.StringId}"))
-                    {
-                        try
-                        {
-                            if (added)
-                            {
-                                recruitingParty.MemberRoster?.RemoveTroop(candidate.Troop, 1, default(UniqueTroopDescriptor), 0);
-                            }
-                        }
-                        catch (Exception rollbackEx)
-                        {
-                            Logger.Warn($"  RecruitFromTargetVillage: rollback failed after charge refusal for '{candidate.Troop.StringId}': {rollbackEx.Message}");
-                        }
-                        Logger.Info($"  RecruitFromTargetVillage: ModTreasury.Charge 拒绝，停止招募（已招 {recruited} 人）");
-                        break;
-                    }
-                }
-
-                candidate.Slots[candidate.SlotIndex] = null!;
-                try
-                {
-                    switch (roleOfCand)
-                    {
-                        case GenericTroopRole.Cavalry:     rGainCav++; break;
-                        case GenericTroopRole.HorseArcher: rGainHa++; break;
-                        case GenericTroopRole.Infantry:    rGainInf++; break;
-                        case GenericTroopRole.Ranged:      rGainRng++; break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warn($"  RecruitFromTargetVillage: role counter update failed for '{candidate.Troop.StringId}'", ex);
-                }
-
-                budgetRemaining -= cost;
-                leaderGold -= cost;
-                spent += cost;
-                recruited++;
+                recruited = RecruitGarrisonRoleFromVillage(
+                    recruitingParty, village, home, volunteerModel, ownerHero, rule,
+                    shouldChargeRecruit, costPerRecruit, ref budgetRemaining);
             }
-
-            DecisionAuditLogger.LogRule(
-                decisionType: "RecruitFromVillage",
-                inputSummary: $"home={home.StringId} village={village.StringId} notables={village.Notables.Count} candidates={candidatesScanned}",
-                decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
-                accepted: recruited > 0);
-
-            Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar）");
         }
         catch (Exception ex)
         {
             Logger.Error("RecruitFromTargetVillage failed", ex);
         }
         return recruited;
+    }
+
+    private int RecruitGarrisonRoleFromVillage(
+        MobileParty recruitingParty, Settlement village, Settlement home,
+        TaleWorlds.CampaignSystem.ComponentInterfaces.VolunteerModel volunteerModel, Hero ownerHero,
+        TownGarrisonRule? rule,
+        bool shouldChargeRecruit, int costPerRecruit, ref int budgetRemaining)
+    {
+        int recruited = 0;
+        int spent = 0;
+        int candidatesScanned = 0;
+        var scoredCandidates = new List<(CharacterObject Troop, CharacterObject[] Slots, int SlotIndex, float Score)>();
+        var garrisonRoster = home.Town?.GarrisonParty?.MemberRoster;
+        // 2026-05-29: per-role 配额删除。改成单一总量 gate —— 已有 garrison + 在飞征兵队人数到目标即停。
+        // targetTotal 仍用 PartySizeLimit 做粗保险（不查 manager 缓存避免本类依赖），真正 cap 在 MCMF 侧已收敛。
+        int partySizeLimit = home.Town?.GarrisonParty?.Party?.PartySizeLimit ?? 0;
+        int targetTotal = Math.Max(1, partySizeLimit);
+
+        int existingTotal =
+            (garrisonRoster?.TotalManCount ?? 0)
+            + (recruitingParty.MemberRoster?.TotalManCount ?? 0);
+
+        string? requiredCultureId = GenericTroopMatcher.ResolveRequiredCultureId(rule, home.Town);
+
+        foreach (var notable in village.Notables)
+        {
+            if (notable == null) continue;
+            if (!notable.CanHaveRecruits) continue;
+
+            var volunteerTypes = notable.VolunteerTypes;
+            if (volunteerTypes == null || volunteerTypes.Length == 0) continue;
+
+            int maxIdx = SafeMaxRecruitableIndex(volunteerModel, ownerHero, notable);
+            if (maxIdx < 0) continue;
+
+            int effectiveMaxIdx = Math.Min(
+                volunteerTypes.Length - 1,
+                Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
+
+            for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
+            {
+                var troop = volunteerTypes[i];
+                if (troop == null) continue;
+                candidatesScanned++;
+                if (!TroopTemplateMatcher.IsAcceptableVolunteer(
+                        troop, rule, _assignedRole, RecruiterMode.GarrisonRole, preciseTemplateDeficit: null))
+                    continue;
+                if (!GenericTroopMatcher.CultureFilterAllows(troop, requiredCultureId)) continue;
+                float score = TroopTemplateMatcher.ScoreCandidate(troop, rule, garrisonRoster, targetTotal);
+                if (float.IsNegativeInfinity(score)) continue;
+                scoredCandidates.Add((troop, volunteerTypes, i, score));
+            }
+        }
+
+        scoredCandidates.Sort(static (a, b) => b.Score.CompareTo(a.Score));
+
+        foreach (var candidate in scoredCandidates)
+        {
+            int cost = costPerRecruit;
+            if (budgetRemaining < cost) break;
+            if (candidate.Slots[candidate.SlotIndex] == null) continue;
+
+            // 2026-05-29: 单一总量 gate —— garrison + recruiter + 本趟新招 >= targetTotal 即停。role 不再卡。
+            if (existingTotal + recruited >= targetTotal) break;
+
+            if (!TryChargeAndAdd(home, recruitingParty, candidate.Troop, shouldChargeRecruit, cost, village)) break;
+
+            candidate.Slots[candidate.SlotIndex] = null!;
+            budgetRemaining -= cost;
+            spent += cost;
+            recruited++;
+        }
+
+        DecisionAuditLogger.LogRule(
+            decisionType: "RecruitFromVillage",
+            inputSummary: $"home={home.StringId} village={village.StringId} mode=GarrisonRole notables={village.Notables.Count} candidates={candidatesScanned}",
+            decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"mode\":\"GarrisonRole\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
+            accepted: recruited > 0);
+
+        Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar，mode=GarrisonRole）");
+        return recruited;
+    }
+
+    /// <summary>
+    /// HonorGuardPrecise 模式：按模板插入顺序遍历 deficit；志愿者命中模板（含可升级链）即招。
+    /// deficit = template[id] − pool[id] − recruitedThisTripBy(self) — 每招一个减一。
+    /// 模板每个 entry 招满后跳过；遍历到底无可招者返回。
+    /// </summary>
+    private int RecruitHonorGuardFromVillage(
+        MobileParty recruitingParty, Settlement village, Settlement home,
+        TaleWorlds.CampaignSystem.ComponentInterfaces.VolunteerModel volunteerModel, Hero ownerHero,
+        bool shouldChargeRecruit, int costPerRecruit, ref int budgetRemaining)
+    {
+        var template = PreciseTemplate;
+        if (template == null || template.Count == 0)
+        {
+            Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}' HonorGuardPrecise mode without template — skip");
+            return 0;
+        }
+
+        // 计算当前 deficit：template − HG 池现有 − 本队已招（含本趟和读档前的）。
+        var bPool = HonorGuardManager.GetPoolStatic(home);
+        var poolRoster = bPool?.MemberRoster;
+        var selfRoster = recruitingParty.MemberRoster;
+        var deficit = new Dictionary<string, int>(template.Count, StringComparer.Ordinal);
+        foreach (var kv in template)
+        {
+            if (string.IsNullOrEmpty(kv.Key) || kv.Value <= 0) continue;
+            int have = CountTroopInRoster(poolRoster, kv.Key) + CountTroopInRoster(selfRoster, kv.Key);
+            int need = Math.Max(0, kv.Value - have);
+            if (need > 0) deficit[kv.Key] = need;
+        }
+        if (deficit.Count == 0) return 0;
+
+        int recruited = 0;
+        int spent = 0;
+        int candidatesScanned = 0;
+
+        foreach (var notable in village.Notables)
+        {
+            if (deficit.Count == 0) break;
+            if (notable == null) continue;
+            if (!notable.CanHaveRecruits) continue;
+
+            var volunteerTypes = notable.VolunteerTypes;
+            if (volunteerTypes == null || volunteerTypes.Length == 0) continue;
+
+            int maxIdx = SafeMaxRecruitableIndex(volunteerModel, ownerHero, notable);
+            if (maxIdx < 0) continue;
+
+            int effectiveMaxIdx = Math.Min(
+                volunteerTypes.Length - 1,
+                Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
+
+            for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
+            {
+                var troop = volunteerTypes[i];
+                if (troop == null) continue;
+                candidatesScanned++;
+
+                // PickPreciseTemplateMatch 走 IG 升级链：返回第一个命中（troopId 相等或可升级到）的 deficit 槽位。
+                string? matchedKey = TroopTemplateMatcher.PickPreciseTemplateMatch(troop, deficit);
+                if (matchedKey == null) continue;
+
+                int cost = costPerRecruit;
+                if (budgetRemaining < cost) { Logger.Info($"  RecruitFromTargetVillage(HG): 资金不足，停止招募（已招 {recruited} 人）"); return recruited; }
+                if (!TryChargeAndAdd(home, recruitingParty, troop, shouldChargeRecruit, cost, village)) return recruited;
+
+                volunteerTypes[i] = null!;
+                deficit[matchedKey]--;
+                if (deficit[matchedKey] <= 0) deficit.Remove(matchedKey);
+                budgetRemaining -= cost;
+                spent += cost;
+                recruited++;
+                if (deficit.Count == 0) break;
+            }
+        }
+
+        DecisionAuditLogger.LogRule(
+            decisionType: "RecruitFromVillage",
+            inputSummary: $"home={home.StringId} village={village.StringId} mode=HonorGuardPrecise notables={village.Notables.Count} candidates={candidatesScanned}",
+            decisionJson: $"{{\"home\":\"{home.StringId}\",\"village\":\"{village.StringId}\",\"mode\":\"HonorGuardPrecise\",\"recruited\":{recruited},\"spent\":{spent},\"budgetRemaining\":{budgetRemaining}}}",
+            accepted: recruited > 0);
+
+        Logger.Info($"  Recruiter '{PartyNameFormatter.SafeName(recruitingParty)}': 在 '{village.Name}' 招募 {recruited} 名（扫描 {candidatesScanned} 名候选，花费 {spent} denar，mode=HonorGuardPrecise）");
+        return recruited;
+    }
+
+    private static int SafeMaxRecruitableIndex(
+        TaleWorlds.CampaignSystem.ComponentInterfaces.VolunteerModel volunteerModel,
+        Hero ownerHero, Hero notable)
+    {
+        try
+        {
+            using (StRecruitContext.Enter())
+            {
+                return volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"  SafeMaxRecruitableIndex threw for notable '{notable?.Name}': {ex.Message}");
+            return -1;
+        }
+    }
+
+    /// <summary>共用扣款 + 加兵 + 失败 rollback 路径。返回 true 表示已成功加入 roster。</summary>
+    private static bool TryChargeAndAdd(
+        Settlement home, MobileParty recruitingParty, CharacterObject troop,
+        bool shouldCharge, int cost, Settlement village)
+    {
+        if (shouldCharge && cost > 0 && !ModTreasury.CanAfford(home.OwnerClan, cost))
+        {
+            Logger.Info($"  RecruitFromTargetVillage: 资金不足，停止招募");
+            return false;
+        }
+        bool charged = false;
+        if (shouldCharge && cost > 0)
+        {
+            if (!ModTreasury.Charge(home.OwnerClan, ExpenseCategory.RecruiterWage, cost,
+                    $"recruit village={village.StringId} troop={troop.StringId}"))
+            {
+                Logger.Info($"  RecruitFromTargetVillage: ModTreasury.Charge 失败");
+                return false;
+            }
+            charged = true;
+        }
+        try
+        {
+            recruitingParty.AddElementToMemberRoster(troop, 1, false);
+        }
+        catch (Exception ex)
+        {
+            if (charged)
+            {
+                try
+                {
+                    ModTreasury.Refund(home.OwnerClan, ExpenseCategory.RecruiterWage, cost,
+                        $"rollback recruit add failed village={village.StringId} troop={troop.StringId}");
+                }
+                catch (Exception refundEx)
+                {
+                    Logger.Warn($"  TryChargeAndAdd refund failed after add failure for '{troop.StringId}': {refundEx.Message}");
+                }
+            }
+            Logger.Warn($"  TryChargeAndAdd: AddElementToMemberRoster threw for '{troop.StringId}' after charge; refunded={charged}: {ex.Message}");
+            return false;
+        }
+        return true;
+    }
+
+    private static int CountTroopInRoster(TroopRoster? roster, string troopId)
+    {
+        if (roster == null || string.IsNullOrEmpty(troopId)) return 0;
+        int n = 0;
+        for (int i = 0; i < roster.Count; i++)
+        {
+            var e = roster.GetElementCopyAtIndex(i);
+            if (e.Character?.StringId == troopId) n += e.Number;
+        }
+        return n;
     }
 }

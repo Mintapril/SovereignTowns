@@ -7,7 +7,7 @@ public sealed class FiscalAutonomyConfig
     // 调度器从 Clan.Gold（= clan.Leader.Gold）当前余额按比例计算每 tick 可用的驻军工资预算。
     // 注:vanilla 没有"氏族金库"独立账本 —— Clan.Gold 即 Leader.Gold,所以"预算"不是抽出
     // 一块封闭账户,只是约束求解器每 tick 不要让推荐驻军超过本比例对应的工资。
-    public float GarrisonWageBudgetRatio { get; set; } = 0.55f;
+    public float GarrisonWageBudgetRatio { get; set; } = 0.75f;
 
     // ── 后勤评估节奏 ──
     /// <summary>首府后勤评估间隔(小时)。默认 6h;读取时 clamp [1,24]。
@@ -17,7 +17,7 @@ public sealed class FiscalAutonomyConfig
     // ── 遣散超额 ──
     public float DisbandExcessThreshold  { get; set; } = 1.2f;
 
-    // PR-5'(2026-05-24): 以下字段已被 TargetFraction + BaseValuePerTier 单段公式取代，全部删除：
+    // PR-5'(2026-05-24): 以下字段已被 perCityCapacity + BaseValuePerTier 单段公式取代，全部删除：
     //   MinGarrisonFloor / AdequateBase / AdequateProsperityDivisor / AdequateThreatWeight
     //   / CoreTierCount / MaxGarrisonHardCap / ValueFloorBase / ValueCoreBase / SurplusEdgeCost
     //   / CoreDimRange / CoreDimMidpoint / TownAdequateVanillaAnchorRatio / DisbandUnaffordableExcess
@@ -49,10 +49,20 @@ public sealed class FiscalAutonomyConfig
     /// (见 audits/2026-05-22-p3-lookahead-design.md §6.5)。读取时 clamp [1,64]。</summary>
     public int HorizonTicks { get; set; } = 16;
 
-    /// <summary>SSP 求解分帧粒度:每完成此数量的增广就经 AsyncSimulator yield 一帧。读取时 clamp ≥ 1。
-    /// 越小每帧 CPU 越低(卡顿越轻),整次求解跨越的帧数越多、墙钟越长。默认 8 —— 实测典型求解
-    /// ~600 次增广、每次 ≈0.4ms,8/帧 ≈ 3ms/帧(远低于 64/帧的 ≈28ms)。仅影响分帧观感,不改求解结果。</summary>
-    public int SspYieldEvery { get; set; } = 8;
+    /// <summary>
+    /// 一次 SSP 求解的墙钟总预算(毫秒)。超过此预算后切换为同步排干模式 ——
+    /// 当前帧把剩下的所有增广跑完,不再 yield。保证求解必出结果(不丢弃),
+    /// 代价是该帧 CPU 飙升。会打 Warn 日志 "SSP solve over wall budget"。
+    /// 默认 500ms。读取时 clamp [50, 5000]。
+    /// </summary>
+    public int SolveBudgetWallMs { get; set; } = 500;
+
+    /// <summary>
+    /// 单帧花在 SSP 上的 CPU 上限(毫秒)。每次 SSP MoveNext 后检查累计时间,
+    /// 超过此值就 yield 一帧。决定分帧卡顿观感 —— 值越小卡顿越轻、求解墙钟越长。
+    /// 默认 2ms(60fps 下占帧时间 ~12%)。读取时 clamp [1, 16]。
+    /// </summary>
+    public int SolvePerFrameBudgetMs { get; set; } = 2;
 
     // ── 时间展开调度器 value 函数曲线 ──
     /// <summary>威胁等级 → value 乘子。Safe/Low 锚定和平期,Med/High/Crit 决定战时涨兵幅度。</summary>
@@ -66,9 +76,6 @@ public sealed class FiscalAutonomyConfig
     public float ProsperityNormalizer { get; set; } = 4000f;
     /// <summary>首府在 strategic 乘子中的加成系数(非首府为 1.0)。</summary>
     public float CapitalStrategicBonus { get; set; } = 1.3f;
-
-    /// <summary>ETA 估算用参考队伍速度(地图单位/天)。近似(tuning),与 vanilla 单队速度无关。</summary>
-    public float ReferenceSpeedPerDay { get; set; } = 5.0f;
 
     /// <summary>威胁预测器扫描半径(地图单位)—— 探测数天行程外正逼近的敌军,
     /// 须远大于 DispatchRiskScanRadius。初值 150,须 in-game 调。</summary>
@@ -128,9 +135,12 @@ public sealed class FiscalAutonomyConfig
 
     // ── PR-5' (2026-05-24) 大简化新字段 ──
 
-    /// <summary>每城驻军目标比例：targetHeads = vanilla PartySizeLimit × 此值。默认 0.7。
-    /// 替代旧 floor/adequate/hardCap 三段公式。</summary>
-    public float TargetFraction { get; set; } = 0.7f;
+    // 2026-05-28: TargetFraction 已删除。每城驻军目标(holding cap)改由 UnifiedGarrisonSolver
+    // 内部的 perCityCapacity 分配公式决定: min(PartySizeLimit_i, N × w_i / Σw),
+    //   N = (GarrisonWageBudgetRatio × Σ收入) / WagePerTroopAtMaxTier  // 预算可养兵数
+    //   w_i = PartySizeLimit_i × threat_i × strategic_i                 // 每城权重
+    // 此公式让"预算"真正约束 holding 容量(此前 GarrisonWageBudgetRatio 只入诊断日志)。
+    // 老存档 JSON 中残留的 TargetFraction key 会被 Newtonsoft 自动忽略。
 
     /// <summary>城镇 (Town, 非城堡) strategic 乘子额外加成。城堡 = 1.0。默认 1.3。
     /// 与 CapitalStrategicBonus 叠乘（首府且为城镇时 = 1.3 × CapitalStrategicBonus）。</summary>
@@ -150,6 +160,11 @@ public sealed class FiscalAutonomyConfig
     /// MCMF 在 origin → hg_bucket_sink 边上记入 strategic 通道 = 此值 × power(tier)；越大越愿意优先填卫队。
     /// 默认 2500 — 偏强意愿但仍弱于 holding edge 的累积 value，避免抽空首府常规驻军。</summary>
     public int HonorGuardValueBase { get; set; } = 2_500;
+
+    /// <summary>HG 边距离权重：HG edge gold = recruitCost + recOverhead + HgDistanceGoldPerTick × etaV。
+    /// 让 MCMF 在近村与远村都能供给同一模板 troopId 时偏好近村；
+    /// 设 0 = 完全无视距离；默认 100。范围 [0, 10000]。</summary>
+    public int HgDistanceGoldPerTick { get; set; } = 100;
 
     // ── 卫队招募模板 ──
     /// <summary>

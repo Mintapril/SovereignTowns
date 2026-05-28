@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using SovereignTowns.Algorithm;
 using SovereignTowns.Audit;
 using SovereignTowns.Common;
 using SovereignTowns.Configuration;
@@ -22,7 +21,7 @@ namespace SovereignTowns.SallyForth;
 ///
 /// 保留接口：
 ///   - <see cref="GetActiveCombatSallyParties"/>：供 StPatrolPartyComponent 评估支援
-///   - <see cref="NotifySallyEnded"/>：component 在到家/销毁时回调，重置冷却 + 持续可见计数
+///   - <see cref="NotifySallyEnded"/>：component 在到家/销毁时回调，重置冷却
 /// </summary>
 public sealed class SallyDispatcher
 {
@@ -46,9 +45,6 @@ public sealed class SallyDispatcher
     /// <summary>每城上次出击结束（合并/销毁）的时间戳；冷却用。</summary>
     private readonly Dictionary<Settlement, CampaignTime> _lastSallyEndedAt = new();
 
-    /// <summary>每城连续看到敌方威胁的 tick 计数；NotifySallyEnded 清零，保留供未来复用。</summary>
-    private readonly Dictionary<Settlement, int> _enemySustainedTicks = new();
-
     private readonly PartyLifecycleManager _lifecycle;
 
     public SallyDispatcher(PartyLifecycleManager lifecycle)
@@ -56,61 +52,67 @@ public sealed class SallyDispatcher
         _lifecycle = lifecycle ?? throw new ArgumentNullException(nameof(lifecycle));
     }
 
-    // ────────── MCMF 批量消费接口 ──────────
+    // ────────── 批量评估接口 ──────────
 
     /// <summary>
-    /// MCMF 调度器 (PR-4 S6) 的批量出击消费入口。每 CapitalLogisticsTickHours 由
-    /// <see cref="SovereignTowns.Managers.CapitalLogisticsManager"/> 调用一次，传入 solver
-    /// 决定的每城出击指令。内部复用 <see cref="TryCreateSallyParty"/> 执行逻辑；
-    /// 冷却 / 围城 / lifecycle cap 等 gate 在本方法内校验（细粒度 gate，MCMF 只提供容量意向）。
-    /// 注：跳过 _enemySustainedTicks 持续可见性检查 —— MCMF 威胁预测已在 solver 时域内汇总，
-    /// 无需此处再做小时粒度的重复校验。
+    /// 由 CapitalLogisticsManager 在 logistics tick 派完 MCMF 指令后调用一次。
+    /// 遍历 clan 的所有 fief,对每个 Town 独立评估是否要出击。
+    /// MCMF 不再决策 sally 头数(2026-05-28 重构,MCMF instruction.Count 从未被实际消费)。
     /// </summary>
-    public void ExecuteAll(IEnumerable<SallyInstruction> instructions)
+    public void EvaluateAllFiefs(Clan clan)
     {
-        if (instructions == null) return;
-        foreach (var instruction in instructions)
+        if (clan == null) return;
+        if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) return;
+        try
         {
-            try
+            foreach (var t in clan.Fiefs)
             {
-                var settlement = instruction?.Source;
-                if (settlement == null) continue;
-                if (!settlement.IsTown) continue;
-                if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) continue;
-                if (settlement.IsUnderSiege) continue;
-                if (!_lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindSallyForth)) continue;
-
-                // 冷却检查
-                if (_lastSallyEndedAt.TryGetValue(settlement, out var lastEnd))
-                {
-                    var hoursSinceLast = (CampaignTime.Now - lastEnd).ToHours;
-                    if (hoursSinceLast < SallyCooldownHours)
-                    {
-                        Logger.Debug($"SallyDispatcher.ExecuteAll '{PartyNameFormatter.SafeName(settlement)}': 冷却中 ({hoursSinceLast:F1}h < {SallyCooldownHours}h)，跳过");
-                        continue;
-                    }
-                }
-
-                var garrison = settlement.Town?.GarrisonParty;
-                var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
-                if (garrison == null) continue;
-
-                // 优先响应被劫掠的下辖村庄
-                var raidTarget = FindRaiderTargetingBoundVillage(settlement);
-                if (raidTarget != null)
-                {
-                    TryCreateSallyParty(settlement, garrison, garrisonCount, raidTarget);
-                    continue;
-                }
-
-                var target = FindBestEnemyTarget(settlement);
-                if (target == null) continue;
-                TryCreateSallyParty(settlement, garrison, garrisonCount, target);
+                if (t?.Settlement == null) continue;
+                EvaluateFief(t.Settlement);
             }
-            catch (Exception ex)
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"SallyDispatcher.EvaluateAllFiefs failed (clan={clan?.StringId})", ex);
+        }
+    }
+
+    private void EvaluateFief(Settlement settlement)
+    {
+        try
+        {
+            if (!settlement.IsTown) return;
+            if (settlement.IsUnderSiege) return;
+            if (!_lifecycle.CanCreateAnotherParty(settlement, PartyLifecycleManager.KindSallyForth)) return;
+
+            if (_lastSallyEndedAt.TryGetValue(settlement, out var lastEnd))
             {
-                Logger.Error($"SallyDispatcher.ExecuteAll failed for settlement '{instruction?.Source?.StringId}'", ex);
+                var hoursSinceLast = (CampaignTime.Now - lastEnd).ToHours;
+                if (hoursSinceLast < SallyCooldownHours)
+                {
+                    Logger.Debug($"SallyDispatcher.EvaluateFief '{PartyNameFormatter.SafeName(settlement)}': 冷却中 ({hoursSinceLast:F1}h < {SallyCooldownHours}h),跳过");
+                    return;
+                }
             }
+
+            var garrison = settlement.Town?.GarrisonParty;
+            var garrisonCount = garrison?.MemberRoster?.TotalManCount ?? 0;
+            if (garrison == null) return;
+
+            var raidTarget = FindRaiderTargetingBoundVillage(settlement);
+            if (raidTarget != null)
+            {
+                TryCreateSallyParty(settlement, garrison, garrisonCount, raidTarget);
+                return;
+            }
+
+            var target = FindBestEnemyTarget(settlement);
+            if (target == null) return;
+            TryCreateSallyParty(settlement, garrison, garrisonCount, target);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"SallyDispatcher.EvaluateFief failed for settlement '{settlement?.StringId}'", ex);
         }
     }
 
@@ -145,7 +147,7 @@ public sealed class SallyDispatcher
 
     /// <summary>
     /// 通知本 settlement 的 sally 周期已结束（StSallyPartyComponent 在到家 / 销毁时调用）。
-    /// 重置冷却时间戳 + 清持续可见计数。
+    /// 重置冷却时间戳。
     /// </summary>
     public void NotifySallyEnded(Settlement home)
     {
@@ -153,7 +155,6 @@ public sealed class SallyDispatcher
         try
         {
             _lastSallyEndedAt[home] = CampaignTime.Now;
-            _enemySustainedTicks.Remove(home);
         }
         catch { /* swallow */ }
     }

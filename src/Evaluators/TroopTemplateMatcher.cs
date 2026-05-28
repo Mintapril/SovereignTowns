@@ -1,17 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using SovereignTowns.Algorithm;
 using SovereignTowns.Configuration;
 using SovereignTowns.Templates;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Roster;
+using TaleWorlds.ObjectSystem;
 
 namespace SovereignTowns.Evaluators;
 
 /// <summary>
-/// Single entry point for troop matching. Generic mode uses only role sliders plus the tier band;
-/// exact mode uses the per-stringId template: a troop matches if it is, or can upgrade into,
-/// one of the concrete template target troops.
+/// Single entry point for troop matching. Uses role sliders plus the tier band;
+/// a troop matches if it satisfies the generic role rules for the active rule.
 /// </summary>
 public static class TroopTemplateMatcher
 {
@@ -57,10 +57,8 @@ public static class TroopTemplateMatcher
     }
 
     /// <summary>
-    /// Role a recruit should fill under the active rule. Generic mode uses the troop's
-    /// current battlefield role; exact-template mode uses the highest-tier template
-    /// target this troop can upgrade into. This keeps MCMF planning and execution on
-    /// the same role contract.
+    /// Role a recruit should fill under the active rule. Uses the troop's
+    /// current battlefield role via GenericTroopMatcher.
     /// </summary>
     public static GenericTroopRole GetServiceRole(CharacterObject? troop, TownGarrisonRule? rule)
     {
@@ -75,57 +73,69 @@ public static class TroopTemplateMatcher
         return GetServiceRole(troop, rule) == role;
     }
 
-    public static Dictionary<CharacterObject, int> GetExactTemplateDeficits(
+    /// <summary>
+    /// 招募志愿者单一匹配入口。两模式共用：
+    /// <list type="bullet">
+    ///   <item><b>GarrisonRole</b>：rule + assignedRole(可选) + 玩家面板文化过滤。匹配逻辑同既有
+    ///         <see cref="MatchesRule"/> + <see cref="CanServeRole"/>。</item>
+    ///   <item><b>HonorGuardPrecise</b>：志愿者 troopId 是模板中的（仍有 deficit），或可升级到模板某 troopId
+    ///         （IG 算法：递归走 <see cref="CharacterObject.UpgradeTargets"/>，目标命中 = 接受）。</item>
+    /// </list>
+    /// 调用方需传入"剩余 deficit"——本函数不修改其内容，仅按 deficit 大于 0 决定是否接受。
+    /// </summary>
+    public static bool IsAcceptableVolunteer(
+        CharacterObject? troop,
         TownGarrisonRule? rule,
-        TroopRoster? currentRoster,
-        int effectiveTarget)
+        GenericTroopRole assignedRole,
+        RecruiterMode mode,
+        IReadOnlyDictionary<string, int>? preciseTemplateDeficit)
     {
-        var deficits = TroopTemplateModeService.ResolveExactTemplate(rule, effectiveTarget);
-        if (deficits.Count == 0 || currentRoster is null) return deficits;
+        if (troop is null) return false;
+        if (rule != null && !BaseEligible(troop, rule)) return false;
 
-        var rosterElements = currentRoster.GetTroopRoster()
-            .Where(e => e.Character != null && e.Number > 0)
-            .OrderByDescending(e => e.Character.Tier)
-            .ToList();
-
-        // 目标按 tier 降序排序一次，避免在 outer foreach 内每元素重复分配一个排序列表。
-        // 内层判 deficits 当前是否还含该 target（外循环可能已 Remove），保持原 mutate 语义。
-        var sortedTargets = deficits.Keys.OrderByDescending(t => t.Tier).ToList();
-
-        foreach (var element in rosterElements)
+        switch (mode)
         {
-            var character = element.Character;
-            int remaining = element.Number;
-            if (character is null || remaining <= 0) continue;
+            case RecruiterMode.GarrisonRole:
+                if (rule != null && !MatchesGenericTemplate(troop, rule)) return false;
+                if (assignedRole != GenericTroopRole.Unknown
+                    && !CanServeRole(troop, rule, assignedRole)) return false;
+                return true;
 
-            foreach (var target in sortedTargets)
-            {
-                if (remaining <= 0) break;
-                if (!deficits.TryGetValue(target, out var need) || need <= 0) continue;
-                if (!CanUpgradeToTarget(character, target)) continue;
+            case RecruiterMode.HonorGuardPrecise:
+                if (preciseTemplateDeficit == null || preciseTemplateDeficit.Count == 0) return false;
+                foreach (var kv in preciseTemplateDeficit)
+                {
+                    if (kv.Value <= 0) continue;
+                    if (string.IsNullOrEmpty(kv.Key)) continue;
+                    var target = MBObjectManager.Instance?.GetObject<CharacterObject>(kv.Key);
+                    if (target == null) continue;
+                    if (CanUpgradeToTarget(troop, target)) return true;
+                }
+                return false;
 
-                int used = Math.Min(remaining, need);
-                remaining -= used;
-                int after = need - used;
-                if (after <= 0) deficits.Remove(target);
-                else deficits[target] = after;
-            }
+            default:
+                return false;
         }
-
-        return deficits;
     }
 
-    private static bool MatchesExactTemplate(CharacterObject? troop, TownGarrisonRule rule)
+    /// <summary>
+    /// HonorGuardPrecise 模式专用：志愿者命中模板的具体 troopId（升级链终点）。
+    /// 用于 deficit 递减——按模板插入顺序遍历，首个命中的 troopId 即被消耗。
+    /// 调用方应在调用前自行确认 <see cref="IsAcceptableVolunteer"/> 已返回 true。
+    /// </summary>
+    public static string? PickPreciseTemplateMatch(
+        CharacterObject? troop,
+        IReadOnlyDictionary<string, int>? preciseTemplateDeficit)
     {
-        if (!BaseEligible(troop, rule)) return false;
-
-        // 仅检查模板里有哪些 target stringId（不需要 effectiveTarget 计算具体人数）。
-        foreach (var target in TroopTemplateModeService.ResolveExactTemplateTargets(rule))
+        if (troop is null || preciseTemplateDeficit == null) return null;
+        foreach (var kv in preciseTemplateDeficit)
         {
-            if (CanUpgradeToTarget(troop, target)) return true;
+            if (kv.Value <= 0 || string.IsNullOrEmpty(kv.Key)) continue;
+            var target = MBObjectManager.Instance?.GetObject<CharacterObject>(kv.Key);
+            if (target == null) continue;
+            if (CanUpgradeToTarget(troop, target)) return kv.Key;
         }
-
-        return false;
+        return null;
     }
 
     private static bool MatchesGenericTemplate(CharacterObject? troop, TownGarrisonRule rule)
@@ -134,80 +144,14 @@ public static class TroopTemplateMatcher
         return GenericTroopMatcher.MatchesRule(troop, rule);
     }
 
-    private static float ScoreExactCandidate(
-        CharacterObject? troop,
-        TownGarrisonRule rule,
-        TroopRoster? currentRoster,
-        int effectiveTarget)
-    {
-        if (!BaseEligible(troop, rule) || troop is null) return float.NegativeInfinity;
-        if (effectiveTarget <= 0) effectiveTarget = Math.Max(1, rule.TargetTotalCount);
-
-        var deficits = GetExactTemplateDeficits(rule, currentRoster, effectiveTarget);
-        if (deficits.Count == 0) return float.NegativeInfinity;
-
-        float best = float.NegativeInfinity;
-        foreach (var kv in deficits)
-        {
-            var target = kv.Key;
-            if (!CanUpgradeToTarget(troop, target)) continue;
-
-            float score = kv.Value * 10f;
-            score += target.Tier * 2f;
-            score += troop == target ? 20f : Math.Max(0, troop.Tier) * 0.25f;
-            if (best < score) best = score;
-        }
-
-        return best;
-    }
-
     private static float ScoreGenericTemplateCandidate(
         CharacterObject? troop,
         TownGarrisonRule rule,
         TroopRoster? currentRoster)
     {
         if (!BaseEligible(troop, rule)) return float.NegativeInfinity;
-        return GenericTroopMatcher.ScoreCandidate(troop, rule, currentRoster, rule.TargetTotalCount);
-    }
-
-    private static float ScoreExactUpgradeTarget(
-        CharacterObject? source,
-        CharacterObject? directTarget,
-        TownGarrisonRule rule,
-        TroopRoster? currentRoster,
-        int effectiveTarget)
-    {
-        if (!BaseEligible(directTarget, rule) || directTarget is null) return float.NegativeInfinity;
-        if (effectiveTarget <= 0) effectiveTarget = Math.Max(1, rule.TargetTotalCount);
-
-        var template = TroopTemplateModeService.ResolveExactTemplate(rule, effectiveTarget);
-        if (template.Count == 0) return float.NegativeInfinity;
-
-        float best = float.NegativeInfinity;
-        foreach (var kv in template)
-        {
-            var finalTarget = kv.Key;
-            int desired = kv.Value;
-            if (desired <= 0) continue;
-            if (!CanUpgradeToTarget(directTarget, finalTarget)) continue;
-
-            int alreadyOnPathAfterDirectTarget = CountRosterOnPathAtOrAboveTier(
-                currentRoster,
-                finalTarget,
-                GenericTroopMatcher.GetTierBucket(directTarget));
-            if (alreadyOnPathAfterDirectTarget >= desired && directTarget != finalTarget)
-            {
-                continue;
-            }
-
-            int gap = Math.Max(0, desired - alreadyOnPathAfterDirectTarget);
-            float score = gap * 10f + finalTarget.Tier * 2f + directTarget.Tier;
-            if (directTarget == finalTarget) score += 30f;
-            if (source != null && CanUpgradeToTarget(source, finalTarget)) score += 5f;
-            if (best < score) best = score;
-        }
-
-        return best;
+        // 传 0 → ScoreCandidate 用中性 fallback（snapshot.Total+1），目标实际由 MCMF 决定。
+        return GenericTroopMatcher.ScoreCandidate(troop, rule, currentRoster, 0);
     }
 
     private static float ScoreGenericTemplateUpgradeTarget(
@@ -216,25 +160,7 @@ public static class TroopTemplateMatcher
         TroopRoster? currentRoster)
     {
         if (!BaseEligible(directTarget, rule)) return float.NegativeInfinity;
-        return GenericTroopMatcher.ScoreCandidate(directTarget, rule, currentRoster, rule.TargetTotalCount);
-    }
-
-    private static int CountRosterOnPathAtOrAboveTier(
-        TroopRoster? roster,
-        CharacterObject finalTarget,
-        int minTier)
-    {
-        if (roster is null) return 0;
-
-        int total = 0;
-        foreach (var element in roster.GetTroopRoster())
-        {
-            var character = element.Character;
-            if (character is null || element.Number <= 0) continue;
-            if (GenericTroopMatcher.GetTierBucket(character) < minTier) continue;
-            if (CanUpgradeToTarget(character, finalTarget)) total += element.Number;
-        }
-        return total;
+        return GenericTroopMatcher.ScoreCandidate(directTarget, rule, currentRoster, 0);
     }
 
     private static bool BaseEligible(CharacterObject? troop, TownGarrisonRule rule)

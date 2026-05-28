@@ -233,10 +233,16 @@ public sealed class PartyLifecycleManager
                                 int mc = PartyNameFormatter.SafeMemberCount(party);
                                 string kind = stc switch
                                 {
-                                    SovereignTowns.Parties.StRecruiterPartyComponent        => KindRecruiter,
+                                    // StRecruiterPartyComponent 按 Mode 选 cap 桶：HonorGuardPrecise 走独立 cap=1 桶，
+                                    // 否则走常规招募 cap 桶（按 Barracks 等级派生）。
+                                    SovereignTowns.Parties.StRecruiterPartyComponent rc
+                                        => rc.Mode == SovereignTowns.Algorithm.RecruiterMode.HonorGuardPrecise
+                                            ? KindHonorGuardRecruiter
+                                            : KindRecruiter,
                                     SovereignTowns.Parties.StTransferPartyComponent         => KindTransfer,
                                     SovereignTowns.Parties.StSallyPartyComponent            => KindSallyForth,
                                     SovereignTowns.Parties.StPatrolPartyComponent           => KindPatrol,
+                                    // 旧 inert stub：保持 cap 桶不变（KindHonorGuardRecruiter），允许 lifecycle 兜底接管。
                                     SovereignTowns.Parties.HonorGuardRecruiterPartyComponent => KindHonorGuardRecruiter,
                                     _ => null!,
                                 };
@@ -631,6 +637,8 @@ public sealed class PartyLifecycleManager
         if (kind == KindPatrol)
             return CapFrom(home, StBuilding.GuardHouse,
                 cfg?.PatrolBaseCap ?? 1, cfg?.PatrolCapPerGuardHouseLevel ?? 1);
+        // 卫队征兵队（KindHonorGuardRecruiter）：每首府同时至多 1 支（hard cap = 1）。
+        if (kind == KindHonorGuardRecruiter) return 1;
         // 未知 kind：保守上限 1，避免失控创建
         return 1;
     }

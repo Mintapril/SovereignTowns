@@ -317,6 +317,41 @@ public sealed class CapitalRegistry
             {
                 oldMgr.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);
             }
+
+            // P1-3: If the old clan (AI only) lost its last town, tear down its manager.
+            // Runs AFTER forwarding so the manager has a chance to update its state before removal.
+            // Uses the same teardown pattern as SyncFromConfig (toggle-off) and HandlePlayerClanSwap.
+            if (oldClan != null && oldClan != Clan.PlayerClan && !HasAnyTown(oldClan)
+                && _managers.TryGetValue(oldClan, out var staleMgr))
+            {
+                // Find a fallback settlement to absorb in-flight ST parties.
+                // The captured settlement just changed hands, so we scan for ANY remaining fief
+                // (capital first if still valid, then any remaining town/castle on a different clan
+                // — but since we confirmed no towns remain, try capital then any settlement;
+                // both will likely be null → disband path).
+                Settlement? fallback = GetCapitalForClan(oldClan);
+                if (fallback == null)
+                {
+                    try
+                    {
+                        foreach (var s in oldClan.Settlements)
+                        {
+                            if (s != null && (s.IsTown || s.IsCastle)) { fallback = s; break; }
+                        }
+                    }
+                    catch (Exception scanEx)
+                    {
+                        Logger.Warn($"OnSettlementOwnerChanged: clan '{oldClan.StringId}' settlement scan failed during last-town teardown", scanEx);
+                    }
+                }
+
+                Logger.Info($"CapitalRegistry: clan '{oldClan.StringId}' lost all towns — disbanding manager (fallback='{fallback?.Name?.ToString() ?? "<none>"}')");
+                try { _lifecycle?.MigrateAllOrDisband(oldClan, fallback); }
+                catch (Exception migEx) { Logger.Warn($"OnSettlementOwnerChanged: MigrateAllOrDisband for '{oldClan.StringId}' failed during last-town teardown", migEx); }
+
+                _managers.Remove(oldClan);
+            }
+
             if (newClan != null && newClan != oldClan && _managers.TryGetValue(newClan, out var newMgr))
             {
                 newMgr.OnSettlementOwnerChanged(settlement, openToClaim, newOwner, oldOwner, capturerHero, detail);

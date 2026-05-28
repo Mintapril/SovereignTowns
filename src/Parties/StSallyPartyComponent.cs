@@ -250,7 +250,7 @@ public sealed class StSallyPartyComponent : StPartyComponent
     }
 
     /// <summary>
-    /// 通知 SallyDispatcher 本 settlement 的 sally 周期已结束（清冷却 + 持续可见计数）。
+    /// 通知 SallyDispatcher 本 settlement 的 sally 周期已结束（清冷却）。
     /// 通过 SovereignTownsCampaignBehavior.SallyDispatcher 静态 accessor 拿到 dispatcher。
     /// </summary>
     private void NotifyDispatcherEnded()

@@ -30,7 +30,6 @@ namespace SovereignTowns.Recruitment;
 /// </summary>
 public sealed class RecruitmentDispatcher
 {
-    private const string PartyKind = PartyLifecycleManager.KindRecruiter;
     // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold 配置项。
 
     private static float EscortRatio
@@ -47,13 +46,25 @@ public sealed class RecruitmentDispatcher
 
     /// <summary>
     /// 由 CapitalLogisticsManager 请求派出一支定向征兵队。仅在 <paramref name="homeTown"/> 是该 clan
-    /// 当前首府时派遣。<paramref name="itinerary"/> 是 MCMF 选定的多站村庄行程（已按地理最近邻排序），
-    /// <paramref name="role"/> 是定向招募兵种，<paramref name="tripTarget"/> 是本趟招募人数目标。
+    /// 当前首府时派遣。
+    /// <list type="bullet">
+    ///   <item><paramref name="itinerary"/> — MCMF 选定的多站村庄行程（已按地理最近邻排序）。</item>
+    ///   <item><paramref name="role"/> — 定向招募兵种。</item>
+    ///   <item><paramref name="tripTarget"/> — 本趟招募人数目标。</item>
+    ///   <item><paramref name="mode"/> — GarrisonRole / HonorGuardPrecise。</item>
+    ///   <item><paramref name="preciseTemplate"/> — HonorGuardPrecise 模式下的模板快照；GarrisonRole 模式 ignore。</item>
+    /// </list>
+    /// cap 桶按 mode 选 KindRecruiter / KindHonorGuardRecruiter，PartyLifecycleManager 守门。
     /// </summary>
     public bool TryDispatchRecruiter(
         Town homeTown, IReadOnlyList<Settlement> itinerary,
-        GenericTroopRole role, int tripTarget, string reason)
+        GenericTroopRole role, int tripTarget,
+        RecruiterMode mode, IReadOnlyDictionary<string, int>? preciseTemplate,
+        string reason)
     {
+        string partyKind = mode == RecruiterMode.HonorGuardPrecise
+            ? PartyLifecycleManager.KindHonorGuardRecruiter
+            : PartyLifecycleManager.KindRecruiter;
         try
         {
             if (homeTown?.Settlement == null) return false;
@@ -108,7 +119,7 @@ public sealed class RecruitmentDispatcher
             if (FoodGuard.IsRecruitmentPausedForFood(homeTown, rule, "RecruitmentDispatcher"))
                 return false;
 
-            if (!_lifecycle.CanCreateAnotherParty(homeTown.Settlement, PartyKind))
+            if (!_lifecycle.CanCreateAnotherParty(homeTown.Settlement, partyKind))
             {
                 Logger.Info($"  RecruitmentDispatcher: '{homeTown.Name}' 已达征兵队上限，跳过");
                 return false;
@@ -181,13 +192,15 @@ public sealed class RecruitmentDispatcher
                 }
             }
 
-            _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, PartyKind);
+            _lifecycle.RegisterTrackedParty(party, homeTown.Settlement, partyKind);
 
-            // 出发首站 + 装载 MCMF 行程：后续状态机由 StRecruiterPartyComponent.OnHourlyTickCore 接管。
+            // 出发首站 + 装载 MCMF 行程 + 模式 + 精确模板（HG 模式）：
+            // 后续状态机由 StRecruiterPartyComponent.OnHourlyTickCore 接管。
             try
             {
                 if (party.PartyComponent is StRecruiterPartyComponent rp)
                 {
+                    rp.SetMode(mode, preciseTemplate);
                     rp.SetItinerary(itinerary, tripTarget);
                     rp.SetAssignedRole(role);
                     rp.SetAssignedTarget(firstStop);
@@ -199,11 +212,11 @@ public sealed class RecruitmentDispatcher
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchRecruiter",
-                inputSummary: $"home={homeTown.Settlement.StringId} role={role} tripTarget={tripTarget} stops={stops} first={firstStop.StringId} escort={escortActual}",
-                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"role\":\"{role}\",\"tripTarget\":{tripTarget},\"stops\":{stops},\"first\":\"{firstStop.StringId}\",\"escort\":{escortActual},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
+                inputSummary: $"home={homeTown.Settlement.StringId} role={role} mode={mode} tripTarget={tripTarget} stops={stops} first={firstStop.StringId} escort={escortActual}",
+                decisionJson: $"{{\"home\":\"{homeTown.Settlement.StringId}\",\"role\":\"{role}\",\"mode\":\"{mode}\",\"tripTarget\":{tripTarget},\"stops\":{stops},\"first\":\"{firstStop.StringId}\",\"escort\":{escortActual},\"reason\":\"{AuditHelpers.EscapeJson(reason)}\"}}",
                 accepted: true);
 
-            Logger.Info($"  RecruitmentDispatcher: 派出征兵队 '{homeTown.Name}' → role={role} 行程 {stops} 站，首站 '{firstStop.Name}' (escort={escortActual})");
+            Logger.Info($"  RecruitmentDispatcher: 派出征兵队 '{homeTown.Name}' → role={role} mode={mode} 行程 {stops} 站，首站 '{firstStop.Name}' (escort={escortActual})");
             return true;
         }
         catch (Exception ex)
