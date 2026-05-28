@@ -523,17 +523,17 @@ public abstract class StPartyComponent : CustomPartyComponent
 
     /// <summary>
     /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都"在 settlement.Town 内卖战利品入 PartyTradeGold"；
-    /// 只有 Patrol/Recruiter（多 settlement 移动）需要"食物 &lt;1 天买 3 天"补粮逻辑。
+    /// 只有 Patrol/Recruiter（多 settlement 移动）需要"食物 &lt;2 天买 5 天 + 缺钱时中途补血"补粮逻辑。
     /// Sally/Transfer 是单目的地短命任务，没有沿途补给机会，故 override ShouldReplenishFoodEnRoute=false 跳过补粮。
-    /// </summary>
-    /// <summary>
-    /// doc §20 #1 (T1)：经济维护——所有 ST 队伍都在 settlement.Town 内卖战利品入 PartyTradeGold；
-    /// Patrol/Recruiter 还会在食物 &lt;1 天时补 3 天粮。
     ///
     /// 2026-05-18 v3：调用时机改由子类在 arrival 上下文中显式触发（patrol arrival 分支 + recruiter
     /// HandleAtVillage 末尾）。<paramref name="overrideSettlement"/> 传 just-arrived 的 settlement，
     /// 绕开 hourly tick 入口时 CurrentSettlement 几乎永远是 null 的时机问题。
     /// 不传则按旧路径用 CurrentSettlement（保留给 sally/transfer 等仍走 base 流程的子类）。
+    ///
+    /// 2026-05-28：(#3) 钱袋低于 <see cref="MidTripRefillThreshold"/> 时从首府所有者中途注资 1000d，
+    /// 防止 HG 跨图招募半路弹尽粮绝。自然限速：仅 settlement 抵达时触发，氏族 leader 无钱则 no-op。
+    /// (#4) 阈值从 &lt;1 天宽至 &lt;2 天，单次买 3 天宽至 5 天——给下一站到达留出足够 buffer。
     /// </summary>
     protected void TryEconomicMaintenance(MobileParty self, Settlement? overrideSettlement = null)
     {
@@ -573,15 +573,56 @@ public abstract class StPartyComponent : CustomPartyComponent
         try
         {
             float daysLeft = PartyEconomyHelper.FoodDaysRemaining(self);
-            if (daysLeft < 1f && TeamFunds > 0)
+            if (daysLeft < FoodLowDaysThreshold)
             {
-                int spent = BuyFoodAtSettlement(self, atSettlement, 3f);
-                if (spent > 0)
-                    Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) → bought at '{atSettlement.Name}' for {spent}d (funds={TeamFunds})");
+                // (#3) 钱袋低于阈值 → 中途注资一次。镜像 TrySeedAndBuyInitialFood 的玩家/AI 分流：
+                //   玩家氏族走 ModTreasury（PauseSpendingWhenBroke 门控 + ledger + audit）；
+                //   AI 走 vanilla GiveGoldAction.ApplyForCharacterToParty（按 leader 可用余额取）。
+                if (TeamFunds < MidTripRefillThreshold)
+                {
+                    int before = TeamFunds;
+                    try
+                    {
+                        var refillClan = self.ActualClan ?? HomeSettlementOrNull?.OwnerClan;
+                        if (CapitalRegistry.ShouldChargeClan(refillClan))
+                        {
+                            string note = $"{GetType().Name}_midtrip_refill home={HomeSettlementOrNull?.StringId ?? "null"} daysLeft={daysLeft:F1}";
+                            if (ModTreasury.CanAfford(refillClan, MidTripRefillAmount)
+                             && ModTreasury.Charge(refillClan, GetExpenseCategoryForKind(), MidTripRefillAmount, note))
+                            {
+                                SetTeamFunds(TeamFunds + MidTripRefillAmount);
+                            }
+                        }
+                        else
+                        {
+                            InitTeamFundsFromHomeOwner(self, MidTripRefillAmount);
+                        }
+                    }
+                    catch (Exception refillEx) { Logger.Warn($"{GetType().Name}.TryEconomicMaintenance mid-trip refill threw: {refillEx.Message}"); }
+                    int gained = TeamFunds - before;
+                    if (gained > 0)
+                        Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' mid-trip refill +{gained}d (funds {before}→{TeamFunds}, daysLeft={daysLeft:F1})");
+                }
+                if (TeamFunds > 0)
+                {
+                    int spent = BuyFoodAtSettlement(self, atSettlement, FoodBuyDays);
+                    if (spent > 0)
+                        Logger.Info($"{GetType().Name}: '{PartyNameFormatter.SafeName(self)}' food low ({daysLeft:F1}d) → bought at '{atSettlement.Name}' for {spent}d (funds={TeamFunds})");
+                }
             }
         }
         catch (Exception ex) { Logger.Warn($"{GetType().Name}.TryEconomicMaintenance food top-up threw: {ex.Message}"); }
     }
+
+    // (#4) 触发阈值：低于 2 天即补；单次买 5 天。
+    private const float FoodLowDaysThreshold = 2f;
+    private const float FoodBuyDays = 5f;
+
+    // (#3) 中途补血参数：钱袋低于 500d 时从首府注资 1000d。
+    // 阈值远小于 DefaultSeedGold(2000) 以避免 dispatch 后立刻又触发；
+    // 注资额 = 半 seed，保证至少能买几次 5 天粮。
+    private const int MidTripRefillThreshold = 500;
+    private const int MidTripRefillAmount = 1000;
 
     /// <summary>
     /// 是否沿途自动补给（"食物 &lt;1 天买 3 天"）。
@@ -632,7 +673,7 @@ public abstract class StPartyComponent : CustomPartyComponent
     /// AI 氏族：RefundTeamFundsToOwner 用 vanilla GiveGoldAction.ApplyForPartyToCharacter 一步原子转账。
     /// PartyTradeGold=0 时双路径均 no-op。
     /// </summary>
-    private void TryRefundOnDestroy(MobileParty self)
+    protected void TryRefundOnDestroy(MobileParty self)
     {
         int balance = self?.PartyTradeGold ?? 0;
         if (balance <= 0) return;
