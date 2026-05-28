@@ -203,7 +203,8 @@ public static class GenericTroopMatcher
 
             var role = GetRole(troop);
             if (role == GenericTroopRole.Unknown) return false;
-            return RoleRatio(rule, role) > 0f;
+            // 2026-05-29: role-ratio gate 删除（rule 不再分 role 比例）。culture / banned / noble / hero 已过完即合格。
+            return true;
         }
         catch
         {
@@ -211,6 +212,10 @@ public static class GenericTroopMatcher
         }
     }
 
+    /// <summary>
+    /// 2026-05-29: 简化为"规则可接 → 优先列表加 100 分；否则 0 分"。
+    /// role gap / tier 权重全部删除（B-pool solver 自己用 cost 通道处理 tier 偏好）。
+    /// </summary>
     public static float ScoreCandidate(
         CharacterObject? troop,
         TownGarrisonRule? rule,
@@ -218,22 +223,7 @@ public static class GenericTroopMatcher
         int targetTotal)
     {
         if (!MatchesRule(troop, rule) || troop == null || rule == null) return float.NegativeInfinity;
-
-        var snapshot = Snapshot(currentRoster);
-        if (targetTotal <= 0) targetTotal = Math.Max(rule.TargetTotalCount, snapshot.Total + 1);
-
-        var role = GetRole(troop);
-
-        // B7.10: scoring now uses role gap only. Tier weighting was removed; MinTier/MaxTier
-        // already constrained the candidate pool in MatchesRule.
-        int roleTarget = (int)Math.Round(RoleRatio(rule, role) * targetTotal);
-        int roleDeficit = roleTarget - snapshot.CountOf(role);
-
-        float score = 0f;
-        if (roleDeficit > 0) score += roleDeficit * 2f;
-        score += RoleRatio(rule, role);
-        if (IsListed(troop, rule.PriorityTroopIds)) score += 100f;
-        return score;
+        return IsListed(troop, rule.PriorityTroopIds) ? 100f : 0f;
     }
 
     public static GenericCompositionSnapshot Snapshot(TroopRoster? roster)
@@ -272,20 +262,7 @@ public static class GenericTroopMatcher
         return new GenericCompositionSnapshot(total, cav, ha, inf, rng, t1, t2, t3, t4, t5, t6);
     }
 
-    public static float RoleRatio(TownGarrisonRule rule, GenericTroopRole role) => role switch
-    {
-        GenericTroopRole.Cavalry => rule.CavalryRatio,
-        GenericTroopRole.HorseArcher => rule.HorseArcherRatio,
-        GenericTroopRole.Infantry => rule.InfantryRatio,
-        GenericTroopRole.Ranged => rule.RangedRatio,
-        _ => 0f
-    };
-
-    public static int TargetCount(float ratio, int targetTotal)
-    {
-        if (ratio <= 0f || targetTotal <= 0) return 0;
-        return (int)Math.Round(ratio * targetTotal);
-    }
+    // 2026-05-29: RoleRatio / TargetCount 已删。rule 不再带 role 比例，相关解算从 solver / 评分中砍出。
 
     /// <summary>
     /// 把 <see cref="TownGarrisonRule.GenericCultureFilter"/> 策略解析成「必须匹配的文化 stringId」。

@@ -8,23 +8,18 @@ namespace SovereignTowns.Configuration;
 /// </summary>
 public sealed class TownGarrisonRule
 {
-    /// <summary>目标驻军总人数（不含贵族军官/英雄）。B7.20：默认 150。</summary>
-    public int TargetTotalCount { get; set; } = 150;
+    // 2026-05-28: TargetTotalCount 已删除。驻军目标人数完全由 MCMF 决定
+    // (UnifiedGarrisonSolver: perCityCapacity 公式,基于 GarrisonWageBudgetRatio × 收入 / 威胁 / 战略加权分配)，
+    // 玩家无需手设数字。
+    // 老存档 JSON 中的 TargetTotalCount key 会被 Newtonsoft 自动忽略并在下次保存时 drop。
 
-    /// <summary>骑兵兵种占比。Cavalry + HorseArcher + Infantry + Ranged 期望约等于 1.0。</summary>
-    public float CavalryRatio { get; set; } = 0.20f;
-
-    /// <summary>骑射手兵种占比。按 Bannerlord 默认 FormationClass.HorseArcher 归类。</summary>
-    public float HorseArcherRatio { get; set; } = 0.05f;
-
-    /// <summary>步兵（含盾兵 / 长矛 / 双手）兵种占比。</summary>
-    public float InfantryRatio { get; set; } = 0.50f;
-
-    /// <summary>远程兵种占比。包含默认编队为 Ranged 的弓手、弩手及其他远程兵。</summary>
-    public float RangedRatio { get; set; } = 0.25f;
+    // 2026-05-29: CavalryRatio / HorseArcherRatio / InfantryRatio / RangedRatio 已删除。
+    // 驻军组成不再按 role 划分目标 —— solver 只追总头数，role 分布由 vanilla 招募 / 升级链决定。
+    // 老存档 JSON 中残留这 4 个 key 会被 Newtonsoft 自动忽略并在下次保存时 drop。
+    // 仅保留三种文化限制（GenericCultureFilter）+ AllowedCultureIds + 优先/禁用列表 + AllowNoble/PrisonerConversion/AutoUpgrade。
 
     /// <summary>
-    /// 通用匹配模式下的文化过滤策略。仅作用于<b>玩家氏族</b>首府的招募 —— AI 氏族沿用
+    /// 通用文化过滤策略（通用匹配始终开启）。仅作用于<b>玩家氏族</b>首府的招募 —— AI 氏族沿用
     /// <see cref="AllowedCultureIds"/>（由 AiCulturePresets 写入），不受此字段影响。取值：
     /// <list type="bullet">
     ///   <item><c>"PlayerCulture"</c>（默认）：只招玩家氏族文化的兵种。</item>
@@ -33,14 +28,14 @@ public sealed class TownGarrisonRule
     /// </list>
     /// 用字符串而非 enum：规避 Newtonsoft / System.Text.Json 对 enum 序列化口径不一致的坑；
     /// 未知值由 <see cref="Evaluators.GenericTroopMatcher.ResolveRequiredCultureId"/> 按 PlayerCulture 兜底。
-    /// 仅在 <see cref="UseGenericMatching"/> 为 true 时生效。
+    /// 通用文化过滤：仅允许指定文化的兵种作为驻军候选。
     /// </summary>
     public string GenericCultureFilter { get; set; } = "PlayerCulture";
 
     /// <summary>显式允许的文化 stringId 列表（空 = 全部允许）。</summary>
     public List<string> AllowedCultureIds { get; set; } = new();
 
-    // PR-5'(2026-05-24)：MinTier / MaxTier 已删除。solver TierDefs 单段 cap = PartySizeLimit × TargetFraction，
+    // PR-5'(2026-05-24)：MinTier / MaxTier 已删除。solver TierDefs 单段 cap 由 perCityCapacity 公式决定，
     // tier 自由由 MCMF 选择（通用匹配 + 无硬 tier 约束）。
     // 已有 JSON 残留字段被 Newtonsoft 忽略并在下次保存时 drop。
 
@@ -65,11 +60,10 @@ public sealed class TownGarrisonRule
     /// </summary>
     public float MinimumDefenderRatio { get; set; } = 0.20f;
 
-    /// <summary>当 settlement 当前威胁评估达到 High/Critical 时，TargetTotalCount 的乘数。</summary>
-    public float WartimeMultiplier { get; set; } = 1.5f;
-
-    /// <summary>当 settlement 当前威胁评估低于 High 时，TargetTotalCount 的乘数。</summary>
-    public float PeacetimeMultiplier { get; set; } = 1.0f;
+    // 2026-05-28: WartimeMultiplier / PeacetimeMultiplier 已删除。它们是 TargetTotalCount
+    // 的乘数，TargetTotalCount 死后这俩也无用。威胁/战时强度由 FiscalAutonomyConfig.ThreatWeightX
+    // 系列（Safe/Low/Medium/High/Critical）驱动，作用在 MCMF holding edge value 通道。
+    // 老存档 JSON 中的 WartimeMultiplier / PeacetimeMultiplier key 会被 Newtonsoft 自动忽略。
 
     /// <summary>外派征兵队单次到村招募预算；自动升级预算也以此派生。</summary>
     public int BudgetLimit { get; set; } = 5000;
@@ -90,11 +84,6 @@ public sealed class TownGarrisonRule
     /// </summary>
     public TownGarrisonRule Clone() => new TownGarrisonRule
     {
-        TargetTotalCount = this.TargetTotalCount,
-        CavalryRatio = this.CavalryRatio,
-        HorseArcherRatio = this.HorseArcherRatio,
-        InfantryRatio = this.InfantryRatio,
-        RangedRatio = this.RangedRatio,
         GenericCultureFilter = this.GenericCultureFilter,
         AllowedCultureIds = new List<string>(this.AllowedCultureIds ?? new List<string>()),
         PriorityTroopIds = new List<string>(this.PriorityTroopIds ?? new List<string>()),
@@ -103,8 +92,6 @@ public sealed class TownGarrisonRule
         AllowPrisonerConversion = this.AllowPrisonerConversion,
         AllowAutoUpgrade = this.AllowAutoUpgrade,
         MinimumDefenderRatio = this.MinimumDefenderRatio,
-        WartimeMultiplier = this.WartimeMultiplier,
-        PeacetimeMultiplier = this.PeacetimeMultiplier,
         BudgetLimit = this.BudgetLimit,
         FoodSafetyThreshold = this.FoodSafetyThreshold,
     };

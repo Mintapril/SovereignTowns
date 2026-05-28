@@ -42,12 +42,6 @@ public static class ControlPanelSpecs
                 Advanced = false,
                 Specs = new List<SpecEntry>
                 {
-                    new SpecEntry { Root="GlobalDefaults", Key="TargetTotalCount",
-                        LabelZh="目标驻军总数（仅历史字段）", LabelEn="Target garrison size (legacy field)",
-                        HintZh="历史字段。当前驻军规模完全由调度器按防御价值与预算分配决定，此值仅作存档兼容保留，不再被任何代码消费。",
-                        HintEn="Legacy field. Garrison size is now decided entirely by the dispatcher from defensive value and budget; this knob is retained only for save-file compatibility and is no longer consumed.",
-                        Min=50, Max=500, Discrete=true, Step=1, Def=150, Advanced=true },
-
                     new SpecEntry { Root="GlobalDefaults", Key="MinimumDefenderRatio",
                         LabelZh="最少防守比例", LabelEn="Minimum defender ratio",
                         HintZh="仅约束「主动出击」：出击队不会让实际驻军跌破此比例。征兵队 / 跨城调拨 / 招募节奏均不受此限",
@@ -59,18 +53,6 @@ public static class ControlPanelSpecs
                         HintZh="外派征兵队单次到村招募预算；自动升级预算也按此派生",
                         HintEn="Per-trip village recruitment budget for a dispatched recruiter party; the auto-upgrade budget is derived from it too.",
                         Min=0, Max=50000, Discrete=true, Step=1, Def=5000 },
-
-                    new SpecEntry { Root="GlobalDefaults", Key="WartimeMultiplier",
-                        LabelZh="高威胁目标乘数", LabelEn="High-threat target multiplier",
-                        HintZh="城镇威胁评估达到 High/Critical 时的目标人数倍数",
-                        HintEn="Target headcount multiplier when the town threat assessment reaches High/Critical.",
-                        Min=0.5, Max=2.0, Discrete=false, Step=0.01, Def=1.5 },
-
-                    new SpecEntry { Root="GlobalDefaults", Key="PeacetimeMultiplier",
-                        LabelZh="常态目标乘数", LabelEn="Normal target multiplier",
-                        HintZh="城镇威胁评估低于 High 时的目标人数倍数",
-                        HintEn="Target headcount multiplier when the town threat assessment is below High.",
-                        Min=0.5, Max=2.0, Discrete=false, Step=0.01, Def=1.0 },
 
                     new SpecEntry { Root="GlobalDefaults", Key="FoodSafetyThreshold",
                         LabelZh="食物安全阈值", LabelEn="Food safety threshold",
@@ -202,8 +184,8 @@ public static class ControlPanelSpecs
             {
                 Key = "sally",
                 LabelZh = "主动出击", LabelEn = "Sally forth",
-                HintZh  = "敌军搜索、出击规模、冷却和持续可见判定。",
-                HintEn  = "Enemy search, sally size, cooldown and sustained-visibility checks.",
+                HintZh  = "敌军搜索、出击规模、冷却和威胁预测判定。",
+                HintEn  = "Enemy search, sally size, cooldown and threat-forecast checks.",
                 Advanced = false,
                 Specs = new List<SpecEntry>
                 {
@@ -218,12 +200,6 @@ public static class ControlPanelSpecs
                         HintZh="上次出击结束后的冷却时长（游戏内小时）",
                         HintEn="Cooldown after the previous sally ends (in-game hours).",
                         Min=0, Max=168, Discrete=false, Step=1, Def=24 },
-
-                    new SpecEntry { Root="Thresholds", Key="SallyMinSustainedTicks",
-                        LabelZh="主动出击：连续可见小时数", LabelEn="Sally: sustained-visibility hours",
-                        HintZh="敌方需在视野内连续存在 N 个游戏内小时才触发出击，避免一进检测圈就冲",
-                        HintEn="The enemy must stay continuously visible for N in-game hours before a sally triggers, so a sally is not launched the instant a target enters the detection ring.",
-                        Min=1, Max=48, Discrete=true, Step=1, Def=3 },
 
                     new SpecEntry { Root="Thresholds", Key="SallyExtractionRatio",
                         LabelZh="主动出击：驻军上限比例", LabelEn="Sally: garrison cap ratio",
@@ -379,8 +355,8 @@ public static class ControlPanelSpecs
             {
                 Key = "fiscal_autonomy",
                 LabelZh = "财政自治", LabelEn = "Fiscal autonomy",
-                HintZh  = "受管氏族的驻军工资预算、超额遣散与手动 / 自动驻军目标开关。预算 = 工资预算比例 × 受管领地税收；调度器（见「调度器」分组）按防御价值把预算分到各城/堡。开启「允许手动驻军目标」后回到玩家手设目标 + 调度器评估。",
-                HintEn  = "A managed clan's garrison wage budget, excess disbanding and the manual / auto target switch. Budget = wage-budget ratio × managed-holding tax income; the dispatcher (see the \"Scheduler\" group) allocates the budget across holdings by defensive value. Enabling \"Allow manual garrison targets\" returns to player-set targets plus dispatcher assessment.",
+                HintZh  = "受管氏族的驻军工资预算与超额遣散。预算 = 工资预算比例 × 受管领地税收；调度器（见「调度器」分组）按防御价值把预算分到各城/堡。驻军目标完全由调度器管理。",
+                HintEn  = "A managed clan's garrison wage budget and excess disbanding. Budget = wage-budget ratio × managed-holding tax income; the dispatcher (see the \"Scheduler\" group) allocates the budget across holdings by defensive value. Garrison targets are fully managed by the scheduler.",
                 Advanced = false,
                 Specs = new List<SpecEntry>
                 {
@@ -434,13 +410,7 @@ public static class ControlPanelSpecs
                         HintEn="When hostile healthy strength along the route reaches this value, no recruiter / transfer party is dispatched this tick.",
                         Min=0, Max=500, Discrete=false, Step=5, Def=60 },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="SspYieldEvery",
-                        LabelZh="求解分帧粒度（每帧增广数）", LabelEn="Solve frame-split granularity (augmentations/frame)",
-                        HintZh="调度器的 SSP 求解每隔多少次增广让出一帧。值越小每帧耗时越低、卡顿越轻，但整次求解跨更多帧。不影响求解结果，仅影响分帧观感。默认 8。",
-                        HintEn="How many SSP augmentations the solver runs before yielding a frame. Lower = less time per frame and smoother, but the whole solve spans more frames. Does not affect the solve result. Default 8.",
-                        Min=1, Max=64, Discrete=true, Step=1, Def=8 },
-
-                    // ════════ 段 2：求解图费用 / 派队成本（Advanced=true）════════
+// ════════ 段 2：求解图费用 / 派队成本（Advanced=true）════════
                     new SpecEntry { Root="Thresholds", Key="McmfRecruiterOverhead",
                         LabelZh="派队成本：征兵队固定开销", LabelEn="Party overhead: recruiter party fixed cost",
                         HintZh="求解图里「派出一支征兵队」的固定成本。值越大越倾向于把村庄供给塞进现有征兵队，少派新队。",
@@ -534,12 +504,6 @@ public static class ControlPanelSpecs
                         HintEn="Map radius within which the threat forecaster detects approaching enemies; should be far larger than the dispatch-risk scan radius. MCMF tunes per-tick threat by approaching-enemy ETA.",
                         Min=0, Max=500, Discrete=false, Step=10, Def=150, Advanced=true },
 
-                    new SpecEntry { Root="FiscalAutonomy", Key="ReferenceSpeedPerDay",
-                        LabelZh="参考队伍速度（地图单位/天）", LabelEn="Reference party speed (map units/day)",
-                        HintZh="ETA 估算用的参考队伍速度。近似值，与 vanilla 单队速度无关。",
-                        HintEn="Reference party speed used for ETA estimation. An approximation, unrelated to any vanilla party's actual speed.",
-                        Min=1, Max=20, Discrete=false, Step=0.5, Def=5.0, Advanced=true },
-
                     // ════════ 段 7：PR-1 EdgeCost 4 通道权重（Advanced=true）════════
                     new SpecEntry { Root="FiscalAutonomy", Key="TickHoldingValueK",
                         LabelZh="时间机会成本基线 K", LabelEn="Tick holding value K (time opportunity cost)",
@@ -591,11 +555,9 @@ public static class ControlPanelSpecs
                         Min=0, Max=5, Discrete=true, Step=1, Def=1, Advanced=true },
 
                     // ════════ 段 9：PR-5' (2026-05-24) 大简化新字段 ════════
-                    new SpecEntry { Root="FiscalAutonomy", Key="TargetFraction",
-                        LabelZh="驻军目标比例", LabelEn="Garrison target fraction",
-                        HintZh="每城驻军目标头数 = vanilla PartySizeLimit × 此比例。PR-5' 新字段，替代旧 floor/adequate/hardCap 三段公式。默认 0.7。",
-                        HintEn="Target garrison headcount per town = vanilla PartySizeLimit × this fraction. PR-5' replacement for the old floor/adequate/hardCap three-tier formula. Default 0.7.",
-                        Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.7, Advanced=true },
+                    // 2026-05-28: TargetFraction 滑条删除。每城 holding cap 改由 perCityCapacity 公式决定:
+                    //   预算充足时 = PartySizeLimit；预算紧时按 (PartySizeLimit × threat × strategic) 加权分配。
+                    //   玩家想调"激进度"应改 GarrisonWageBudgetRatio (上方有滑条)。
 
                     new SpecEntry { Root="FiscalAutonomy", Key="TownStrategicBonus",
                         LabelZh="城镇战略加成（非城堡）", LabelEn="Town strategic bonus (non-castle)",

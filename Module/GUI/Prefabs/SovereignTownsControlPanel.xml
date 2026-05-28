@@ -572,25 +572,7 @@
                                                                     Brush="SPOptions.Slider.Value.Text" Text="@CultureFilterHint"
                                                                     MarginBottom="8" />
 
-                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                   StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="2">
-                                                          <Children>
-                                                            <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                        Brush="SPOptions.OptionName.Text" Text="@RatioSectionLabel"
-                                                                        VerticalAlignment="Center" />
-                                                            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
-                                                                        Brush="SPOptions.Slider.Value.Text" Text="@RatioSumText"
-                                                                        VerticalAlignment="Center" />
-                                                          </Children>
-                                                        </ListPanel>
-                                                        <STCPSliderRow DataSource="{CavalryRow}" />
-                                                        <STCPSliderRow DataSource="{HorseArcherRow}" />
-                                                        <STCPSliderRow DataSource="{InfantryRow}" />
-                                                        <STCPSliderRow DataSource="{RangedRow}" />
-                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
-                                                                    Brush="SPOptions.Slider.Value.Text" Text="@RatioHintText"
-                                                                    MarginTop="2" MarginBottom="8" />
-
+                                                        <!-- 2026-05-29: 4 ratio sliders + Σ row deleted (role ratios removed from rule). -->
                                                         <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                     Brush="SPOptions.OptionName.Text" Text="@TierSectionLabel"
                                                                     MarginBottom="4" />

@@ -30,9 +30,7 @@ public static class ConfigurationManager
     private const string ConfigSubDir = "Configs";
     private const string ConfigFileName = "global.json";
 
-    // ratios sum 容忍区间（包含浮点累计误差与玩家手工填值）
-    private const float RatioSumMin = 0.9f;
-    private const float RatioSumMax = 1.1f;
+    // 2026-05-29: RatioSumMin/Max 删除（rule 不再带 role 比例）。
 
     private static readonly object _gate = new object();
     private static GlobalConfig _current = GlobalConfig.CreateDefault();
@@ -723,9 +721,9 @@ public static class ConfigurationManager
 
     private static bool ValidateFiscalAutonomy(FiscalAutonomyConfig f, out string reason)
     {
-        if (f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
+        if (!IsFiniteFloat(f.GarrisonWageBudgetRatio) || f.GarrisonWageBudgetRatio < 0.1f || f.GarrisonWageBudgetRatio > 1.0f)
         { reason = Tr($"FiscalAutonomy.GarrisonWageBudgetRatio 非法 ({f.GarrisonWageBudgetRatio})；范围 [0.1, 1.0]", $"FiscalAutonomy.GarrisonWageBudgetRatio invalid ({f.GarrisonWageBudgetRatio}); [0.1, 1.0]"); return false; }
-        if (f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
+        if (!IsFiniteFloat(f.DisbandExcessThreshold) || f.DisbandExcessThreshold < 1.0f || f.DisbandExcessThreshold > 3.0f)
         { reason = Tr($"FiscalAutonomy.DisbandExcessThreshold 非法 ({f.DisbandExcessThreshold})；范围 [1.0, 3.0]", $"FiscalAutonomy.DisbandExcessThreshold invalid ({f.DisbandExcessThreshold}); [1.0, 3.0]"); return false; }
 
         if (f.PatrolValue < 0 || f.PatrolValue > 5000)
@@ -736,10 +734,14 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.BypassOverflowPenalty 非法 ({f.BypassOverflowPenalty})；范围 [0, 10000]", $"FiscalAutonomy.BypassOverflowPenalty invalid ({f.BypassOverflowPenalty}); [0, 10000]"); return false; }
         if (f.HorizonTicks < 1 || f.HorizonTicks > 64)
         { reason = Tr($"FiscalAutonomy.HorizonTicks 非法 ({f.HorizonTicks})；范围 [1, 64]", $"FiscalAutonomy.HorizonTicks invalid ({f.HorizonTicks}); [1, 64]"); return false; }
-        if (f.SspYieldEvery < 1 || f.SspYieldEvery > 64)
-        { reason = Tr($"FiscalAutonomy.SspYieldEvery 非法 ({f.SspYieldEvery})；范围 [1, 64]", $"FiscalAutonomy.SspYieldEvery invalid ({f.SspYieldEvery}); [1, 64]"); return false; }
-        if (!IsFiniteFloat(f.ThreatForecastScanRadius) || f.ThreatForecastScanRadius < 0f || f.ThreatForecastScanRadius > 500f)
+if (!IsFiniteFloat(f.ThreatForecastScanRadius) || f.ThreatForecastScanRadius < 0f || f.ThreatForecastScanRadius > 500f)
         { reason = Tr($"FiscalAutonomy.ThreatForecastScanRadius 非法 ({f.ThreatForecastScanRadius})；范围 [0, 500]", $"FiscalAutonomy.ThreatForecastScanRadius invalid ({f.ThreatForecastScanRadius}); [0, 500]"); return false; }
+        if (f.CapitalLogisticsTickHours < 1 || f.CapitalLogisticsTickHours > 24)
+        { reason = Tr($"FiscalAutonomy.CapitalLogisticsTickHours 非法 ({f.CapitalLogisticsTickHours})；范围 [1, 24]", $"FiscalAutonomy.CapitalLogisticsTickHours invalid ({f.CapitalLogisticsTickHours}); [1, 24]"); return false; }
+        if (!IsFiniteFloat(f.DispatchRiskScanRadius) || f.DispatchRiskScanRadius < 0f || f.DispatchRiskScanRadius > 300f)
+        { reason = Tr($"FiscalAutonomy.DispatchRiskScanRadius 非法 ({f.DispatchRiskScanRadius})；范围 [0, 300]", $"FiscalAutonomy.DispatchRiskScanRadius invalid ({f.DispatchRiskScanRadius}); [0, 300]"); return false; }
+        if (!IsFiniteFloat(f.DispatchRiskVetoThreshold) || f.DispatchRiskVetoThreshold < 0f || f.DispatchRiskVetoThreshold > 500f)
+        { reason = Tr($"FiscalAutonomy.DispatchRiskVetoThreshold 非法 ({f.DispatchRiskVetoThreshold})；范围 [0, 500]", $"FiscalAutonomy.DispatchRiskVetoThreshold invalid ({f.DispatchRiskVetoThreshold}); [0, 500]"); return false; }
 
         // ── value 函数曲线 tunables ──
         foreach (var (name, val) in new (string, float)[]
@@ -758,9 +760,6 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.ProsperityNormalizer 非法 ({f.ProsperityNormalizer})；范围 [500, 20000]", $"FiscalAutonomy.ProsperityNormalizer invalid ({f.ProsperityNormalizer}); [500, 20000]"); return false; }
         if (!IsFiniteFloat(f.CapitalStrategicBonus) || f.CapitalStrategicBonus < 1f || f.CapitalStrategicBonus > 3f)
         { reason = Tr($"FiscalAutonomy.CapitalStrategicBonus 非法 ({f.CapitalStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.CapitalStrategicBonus invalid ({f.CapitalStrategicBonus}); [1, 3]"); return false; }
-        if (!IsFiniteFloat(f.ReferenceSpeedPerDay) || f.ReferenceSpeedPerDay < 1f || f.ReferenceSpeedPerDay > 20f)
-        { reason = Tr($"FiscalAutonomy.ReferenceSpeedPerDay 非法 ({f.ReferenceSpeedPerDay})；范围 [1, 20]", $"FiscalAutonomy.ReferenceSpeedPerDay invalid ({f.ReferenceSpeedPerDay}); [1, 20]"); return false; }
-
         // ── PR-3 (2026-05-24): EdgeCost 4 通道权重校验 ──
         // TickHoldingValueK 上限 33M = int.MaxValue / 64（HorizonTicks clamp 上限）。
         // 下限 1M 防止 K 太小让 strategic 通道把 cost 推到负无穷,SSP 找不到最短路。
@@ -773,6 +772,8 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.CostWeightRisk 非法 ({f.CostWeightRisk})；范围 [0, 10]", $"FiscalAutonomy.CostWeightRisk invalid ({f.CostWeightRisk}); [0, 10]"); return false; }
         if (f.CostWeightStrategic < 0 || f.CostWeightStrategic > 10)
         { reason = Tr($"FiscalAutonomy.CostWeightStrategic 非法 ({f.CostWeightStrategic})；范围 [0, 10]", $"FiscalAutonomy.CostWeightStrategic invalid ({f.CostWeightStrategic}); [0, 10]"); return false; }
+        if (f.DispatchRiskCostScale < 0 || f.DispatchRiskCostScale > 200)
+        { reason = Tr($"FiscalAutonomy.DispatchRiskCostScale 非法 ({f.DispatchRiskCostScale})；范围 [0, 200]", $"FiscalAutonomy.DispatchRiskCostScale invalid ({f.DispatchRiskCostScale}); [0, 200]"); return false; }
         // ── PR-4 (2026-05-24): S6 Sally 校验 ──
         if (f.SallyValueBase < 0 || f.SallyValueBase > 50_000)
         { reason = Tr($"FiscalAutonomy.SallyValueBase 非法 ({f.SallyValueBase})；范围 [0, 50000]", $"FiscalAutonomy.SallyValueBase invalid ({f.SallyValueBase}); [0, 50000]"); return false; }
@@ -783,8 +784,7 @@ public static class ConfigurationManager
         if (f.MaxSallyPartiesPerCity < 0 || f.MaxSallyPartiesPerCity > 5)
         { reason = Tr($"FiscalAutonomy.MaxSallyPartiesPerCity 非法 ({f.MaxSallyPartiesPerCity})；范围 [0, 5]", $"FiscalAutonomy.MaxSallyPartiesPerCity invalid ({f.MaxSallyPartiesPerCity}); [0, 5]"); return false; }
         // ── PR-5' (2026-05-24) 新字段校验 ──
-        if (!IsFiniteFloat(f.TargetFraction) || f.TargetFraction < 0.1f || f.TargetFraction > 1.0f)
-        { reason = Tr($"FiscalAutonomy.TargetFraction 非法 ({f.TargetFraction})；范围 [0.1, 1.0]", $"FiscalAutonomy.TargetFraction invalid ({f.TargetFraction}); [0.1, 1.0]"); return false; }
+        // 2026-05-28: TargetFraction 删除,其作用被 perCityCapacity 公式取代(见 FiscalAutonomyConfig 注释)。
         if (!IsFiniteFloat(f.TownStrategicBonus) || f.TownStrategicBonus < 1f || f.TownStrategicBonus > 3f)
         { reason = Tr($"FiscalAutonomy.TownStrategicBonus 非法 ({f.TownStrategicBonus})；范围 [1, 3]", $"FiscalAutonomy.TownStrategicBonus invalid ({f.TownStrategicBonus}); [1, 3]"); return false; }
         if (f.BaseValuePerTier < 0 || f.BaseValuePerTier > 10000)
@@ -794,6 +794,8 @@ public static class ConfigurationManager
         { reason = Tr($"FiscalAutonomy.HonorGuardCap 非法 ({f.HonorGuardCap})；范围 [0, 1000]（0 = 关闭卫队）", $"FiscalAutonomy.HonorGuardCap invalid ({f.HonorGuardCap}); [0, 1000] (0 = disable honor guard)"); return false; }
         if (f.HonorGuardValueBase < 0 || f.HonorGuardValueBase > 50_000)
         { reason = Tr($"FiscalAutonomy.HonorGuardValueBase 非法 ({f.HonorGuardValueBase})；范围 [0, 50000]", $"FiscalAutonomy.HonorGuardValueBase invalid ({f.HonorGuardValueBase}); [0, 50000]"); return false; }
+        if (f.HgDistanceGoldPerTick < 0 || f.HgDistanceGoldPerTick > 10000)
+        { reason = Tr($"FiscalAutonomy.HgDistanceGoldPerTick 非法 ({f.HgDistanceGoldPerTick})；范围 [0, 10000]", $"FiscalAutonomy.HgDistanceGoldPerTick invalid ({f.HgDistanceGoldPerTick}); [0, 10000]"); return false; }
         if (f.HonorGuardTemplate != null)
         {
             if (f.HonorGuardTemplate.Count > 50)
@@ -806,6 +808,27 @@ public static class ConfigurationManager
                 { reason = Tr($"FiscalAutonomy.HonorGuardTemplate['{kv.Key}'] 非法 ({kv.Value})；范围 [0, 100]", $"FiscalAutonomy.HonorGuardTemplate['{kv.Key}'] invalid ({kv.Value}); [0, 100]"); return false; }
             }
         }
+
+        // ── 跨字段不变量：K × T + 边际贡献不得溢出 int ──
+        // TickHoldingValueK × HorizonTicks 是最大单项；gold/risk 边际 ≤ ~200K；
+        // 给 int.MaxValue 留 100M 余量以覆盖所有 per-edge 加项。
+        long kTimesT = (long)f.TickHoldingValueK * f.HorizonTicks;
+        if (kTimesT > int.MaxValue - 100_000_000L)
+        { reason = Tr($"FiscalAutonomy 跨字段溢出: TickHoldingValueK({f.TickHoldingValueK}) × HorizonTicks({f.HorizonTicks}) = {kTimesT}，超出安全范围", $"FiscalAutonomy cross-field overflow: TickHoldingValueK({f.TickHoldingValueK}) × HorizonTicks({f.HorizonTicks}) = {kTimesT}, exceeds safe range"); return false; }
+
+        // strategic 通道峰值：覆盖 holding / patrol / sally / honor-guard 的一 tick 最坏公共边。
+        // 实际建图还会把负 public cost clamp 到 0；这里用于提前拦截明显失衡的配置。
+        double maxStrategicWeight = (double)f.CapitalStrategicBonus * f.TownStrategicBonus * 1.5d; // prosperity_factor max
+        const double maxPower = 2.56d;
+        double holdStrategic = f.BaseValuePerTier * f.ThreatWeightCritical * maxStrategicWeight * maxPower;
+        double sallyStrategic = f.SallyValueBase * f.CapitalSallyBonus * f.ThreatWeightCritical * maxStrategicWeight * maxPower;
+        double patrolStrategic = Math.Min(f.PatrolValue, Math.Max(0, f.TickHoldingValueK - 1)) * maxPower;
+        double honorGuardStrategic = f.HonorGuardValueBase * maxPower;
+        double maxStrategicPerTick = Math.Max(Math.Max(holdStrategic, sallyStrategic), Math.Max(patrolStrategic, honorGuardStrategic));
+        double weightedStrategic = f.CostWeightStrategic * maxStrategicPerTick;
+        if (weightedStrategic > f.TickHoldingValueK)
+        { reason = Tr($"FiscalAutonomy 跨字段失衡: weighted strategic 峰值({weightedStrategic:F0}) > TickHoldingValueK({f.TickHoldingValueK})，会被调度器钳到 0 cost", $"FiscalAutonomy cross-field imbalance: weighted strategic peak ({weightedStrategic:F0}) > TickHoldingValueK({f.TickHoldingValueK}); scheduler would clamp it to 0 cost"); return false; }
+
         reason = "";
         return true;
     }
@@ -879,8 +902,7 @@ public static class ConfigurationManager
         { reason = Tr($"Thresholds.SallyDetectionRadius 非法 ({t.SallyDetectionRadius})；范围 [10, 500]", $"Thresholds.SallyDetectionRadius invalid ({t.SallyDetectionRadius}); [10, 500]"); return false; }
         if (!IsNonNegativeFloat(t.SallyCooldownHours) || t.SallyCooldownHours > 168f)
         { reason = Tr($"Thresholds.SallyCooldownHours 非法 ({t.SallyCooldownHours})；范围 [0, 168]", $"Thresholds.SallyCooldownHours invalid ({t.SallyCooldownHours}); [0, 168]"); return false; }
-        if (t.SallyMinSustainedTicks < 1 || t.SallyMinSustainedTicks > 48)
-        { reason = Tr($"Thresholds.SallyMinSustainedTicks 非法 ({t.SallyMinSustainedTicks})；范围 [1, 48]", $"Thresholds.SallyMinSustainedTicks invalid ({t.SallyMinSustainedTicks}); [1, 48]"); return false; }
+        // 2026-05-28:P1-5 SallyMinSustainedTicks validation deleted — field removed.
         // 2026-05-24:AutoUpgrade* 三字段已删除,vanilla 接管升级,不再需要 mod 端 validation。
         // T1 重整 2026-05-18：seed gold 统一到 StPartyComponent.DefaultSeedGold，删除 RecruiterSeedGold/SallySeedGold 字段及其验证。
         if (t.RecruiterVillageCandidateCap < 4 || t.RecruiterVillageCandidateCap > 300)
@@ -905,16 +927,9 @@ public static class ConfigurationManager
 
     private static bool ValidateRule(TownGarrisonRule rule, string ctx, out string reason)
     {
-        if (rule.TargetTotalCount < 0)
-        {
-            reason = Tr($"{ctx}.TargetTotalCount 小于 0", $"{ctx}.TargetTotalCount < 0");
-            return false;
-        }
-        if (rule.TargetTotalCount > 100_000)
-        {
-            reason = Tr($"{ctx}.TargetTotalCount {rule.TargetTotalCount} 超过上限 100000", $"{ctx}.TargetTotalCount {rule.TargetTotalCount} exceeds upper bound 100000");
-            return false;
-        }
+        // 2026-05-28：TargetTotalCount / WartimeMultiplier / PeacetimeMultiplier 字段已删除，校验同步删除。
+        //   目标人数 → MCMF perCityCapacity 公式
+        //   战时强度 → FiscalAutonomyConfig.ThreatWeightX
         // PR-5'(2026-05-24)：ExactTroopTemplate / UseGenericMatching / MinTier / MaxTier 已删除。
         // 所有 settlement 使用通用匹配，tier 由 MCMF solver 自由选择。
         if (!IsRatio(rule.MinimumDefenderRatio))
@@ -932,21 +947,6 @@ public static class ConfigurationManager
             reason = Tr($"{ctx}.BudgetLimit {rule.BudgetLimit} 超过上限 10000000", $"{ctx}.BudgetLimit {rule.BudgetLimit} exceeds upper bound 10000000");
             return false;
         }
-        if (rule.WartimeMultiplier < 0f || rule.PeacetimeMultiplier < 0f)
-        {
-            reason = Tr($"{ctx}.WartimeMultiplier/PeacetimeMultiplier 必须 >= 0", $"{ctx}.WartimeMultiplier/PeacetimeMultiplier must be >= 0");
-            return false;
-        }
-        if (rule.WartimeMultiplier > 10f)
-        {
-            reason = Tr($"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} 超过上限 10", $"{ctx}.WartimeMultiplier {rule.WartimeMultiplier} exceeds upper bound 10");
-            return false;
-        }
-        if (rule.PeacetimeMultiplier > 10f)
-        {
-            reason = Tr($"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} 超过上限 10", $"{ctx}.PeacetimeMultiplier {rule.PeacetimeMultiplier} exceeds upper bound 10");
-            return false;
-        }
         if (!IsFiniteFloat(rule.FoodSafetyThreshold))
         {
             reason = Tr($"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须是有限数值（排 NaN/Infinity）", $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} must be a finite number (no NaN/Infinity)");
@@ -957,37 +957,13 @@ public static class ConfigurationManager
             reason = Tr($"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} 必须在 [-1000, 1000]", $"{ctx}.FoodSafetyThreshold {rule.FoodSafetyThreshold} must be in [-1000, 1000]");
             return false;
         }
-        if (!ValidateRatio(rule.CavalryRatio, $"{ctx}.CavalryRatio", out reason)
-            || !ValidateRatio(rule.HorseArcherRatio, $"{ctx}.HorseArcherRatio", out reason)
-            || !ValidateRatio(rule.InfantryRatio, $"{ctx}.InfantryRatio", out reason)
-            || !ValidateRatio(rule.RangedRatio, $"{ctx}.RangedRatio", out reason))
-        {
-            return false;
-        }
-
-        float troopSum = rule.CavalryRatio + rule.HorseArcherRatio + rule.InfantryRatio + rule.RangedRatio;
-        if (troopSum < RatioSumMin || troopSum > RatioSumMax)
-        {
-            reason = Tr($"{ctx} 兵种占比合计={troopSum:F3} 超出 [{RatioSumMin},{RatioSumMax}] 区间", $"{ctx} troop ratios sum={troopSum:F3} outside [{RatioSumMin},{RatioSumMax}]");
-            return false;
-        }
+        // 2026-05-29: ratio range + sum 校验删除。rule 不再带 role 比例。
 
         reason = "";
         return true;
     }
 
     // PR-5'(2026-05-24): ValidateBranchRule 已删除，BranchRule 整体移除。
-
-    private static bool ValidateRatio(float value, string field, out string reason)
-    {
-        if (float.IsNaN(value) || float.IsInfinity(value) || value < 0f || value > 1f)
-        {
-            reason = Tr($"{field} 非法 ({value})", $"{field} invalid ({value})");
-            return false;
-        }
-
-        reason = "";
-        return true;
-    }
+    // 2026-05-29: ValidateRatio 删除（rule 不再带 role 比例）。
 
 }

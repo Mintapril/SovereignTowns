@@ -6,16 +6,13 @@ namespace SovereignTowns.Ui.ControlPanel;
 
 /// <summary>
 /// Tab 2「兵种编制 / Troop composition」VM。
-/// 模式选择（通用比例 / 精确模板） + 文化过滤 chips + 4 比例联动滑条 + Tier 范围 chips。
+/// 2026-05-29 简化：role 比例滑条全删 (rule 不再带 role 比例)；保留文化过滤 chips + 模式开关 + tier 占位。
 /// </summary>
 public sealed class CompositionTabVM : ViewModel
 {
     private readonly GlobalConfig _config;
     private readonly Action _markDirty;
     private readonly Action _gotoTemplates;
-
-    // ── ratio keys (must match property names on TownGarrisonRule) ──
-    private static readonly string[] RatioKeys = { "CavalryRatio", "HorseArcherRatio", "InfantryRatio", "RangedRatio" };
 
     // ── static text ──
     [DataSourceProperty] public string Title { get; }
@@ -68,43 +65,7 @@ public sealed class CompositionTabVM : ViewModel
         private set { if (_showCultureReset != value) { _showCultureReset = value; OnPropertyChanged(nameof(ShowCultureReset)); } }
     }
 
-    // ── ratio sliders ──
-    [DataSourceProperty] public SliderRowVM CavalryRow { get; private set; }
-    [DataSourceProperty] public SliderRowVM HorseArcherRow { get; private set; }
-    [DataSourceProperty] public SliderRowVM InfantryRow { get; private set; }
-    [DataSourceProperty] public SliderRowVM RangedRow { get; private set; }
-
-    [DataSourceProperty] public string RatioSectionLabel { get; }
-    [DataSourceProperty] public string RatioHintText { get; }
-    [DataSourceProperty] public string RatioSumPrefix { get; }
-    [DataSourceProperty] public string RatioNormalizedSuffix { get; }
-    [DataSourceProperty] public string RatioResetLabel { get; }
-
-    private string _ratioSumText = "Σ = 1.00";
-    [DataSourceProperty]
-    public string RatioSumText
-    {
-        get => _ratioSumText;
-        private set { if (_ratioSumText != value) { _ratioSumText = value; OnPropertyChanged(nameof(RatioSumText)); } }
-    }
-
-    private bool _ratioSumOk = true;
-    [DataSourceProperty]
-    public bool RatioSumOk
-    {
-        get => _ratioSumOk;
-        private set { if (_ratioSumOk != value) { _ratioSumOk = value; OnPropertyChanged(nameof(RatioSumOk)); } }
-    }
-
-    private bool _showRatioReset;
-    [DataSourceProperty]
-    public bool ShowRatioReset
-    {
-        get => _showRatioReset;
-        private set { if (_showRatioReset != value) { _showRatioReset = value; OnPropertyChanged(nameof(ShowRatioReset)); } }
-    }
-
-    // ── tier range ──
+    // ── tier range (predigest, reserved) ──
     [DataSourceProperty] public MBBindingList<ChipVM> MinTierChips { get; } = new MBBindingList<ChipVM>();
     [DataSourceProperty] public MBBindingList<ChipVM> MaxTierChips { get; } = new MBBindingList<ChipVM>();
 
@@ -147,56 +108,41 @@ public sealed class CompositionTabVM : ViewModel
         // ── static labels ──
         Title = ControlPanelLoc.Tr("兵种编制", "Troop composition");
         Intro = ControlPanelLoc.Tr(
-            "先选一种招募模式 —— 决定 mod 如何挑选要招募的兵。",
-            "First choose a recruitment mode — it decides how the mod picks which troops to recruit.");
+            "当前招募仅按文化过滤；驻军总头数由调度器（财政自治）自动决定。",
+            "Recruitment is filtered by culture only; total garrison headcount is set automatically by the fiscal-autonomy dispatcher.");
 
         GenericModeLabel = ControlPanelLoc.Tr("通用比例匹配", "Generic ratio matching");
         GenericModeDesc  = ControlPanelLoc.Tr(
-            "按下方文化过滤、兵种比例和 Tier 范围招募，不读取具体兵种模板。省心，适合大多数玩家。",
-            "Recruit by the culture filter, troop ratios and tier range below, without reading a specific troop template. Low-effort, suits most players.");
-        ExactModeLabel   = ControlPanelLoc.Tr("精确兵员模板", "Exact troop template");
+            "按下方文化过滤招募，不读取具体兵种模板。省心，适合大多数玩家。",
+            "Recruit by the culture filter below, without reading a specific troop template. Low-effort, suits most players.");
+        ExactModeLabel   = ControlPanelLoc.Tr("精确兵员模板（预留）", "Exact troop template (reserved)");
         ExactModeDesc    = ControlPanelLoc.Tr(
-            "只招「兵员模板」标签页里勾选的具体兵种。精确控制驻军编成。",
-            "Recruit only the specific troops ticked on the \"Templates\" tab. Precise control of garrison composition.");
+            "后续版本会用于具体兵种模板；当前不会改变招募决策。",
+            "A later version will use this for concrete troop templates; it does not change recruitment decisions yet.");
 
-        ExactModeCardTitle  = ControlPanelLoc.Tr("当前为「精确兵员模板」模式", "Currently in \"Exact troop template\" mode");
+        ExactModeCardTitle  = ControlPanelLoc.Tr("「精确兵员模板」暂未启用", "\"Exact troop template\" is not active yet");
         ExactModeCardDesc1  = ControlPanelLoc.Tr(
-            "招募只读取「兵员模板」标签页里勾选的兵种。下方的兵种比例与 Tier 范围在此模式下",
-            "Recruitment reads only the troops ticked on the \"Templates\" tab. The troop ratios and tier range below ");
-        ExactModeCardNoEffect = ControlPanelLoc.Tr("不生效", "have no effect");
-        ExactModeCardDesc2  = ControlPanelLoc.Tr("（仅保留备用）。", " in this mode (kept only as a fallback).");
+            "模板入口会保留在界面中，方便后续接入；当前招募仅走文化过滤。",
+            "The template entry stays in the UI for future wiring; recruitment currently filters by culture only.");
+        ExactModeCardNoEffect = ControlPanelLoc.Tr("当前不生效", "not active yet");
+        ExactModeCardDesc2  = ControlPanelLoc.Tr("（预留给后续功能）。", " (reserved for a later feature).");
         GoToTemplatesLabel  = ControlPanelLoc.Tr("前往「兵员模板」标签页 →", "Go to the \"Templates\" tab →");
 
         CultureSectionLabel = ControlPanelLoc.Tr("文化过滤", "Culture filter");
         CultureResetLabel   = ControlPanelLoc.Tr("↺ 恢复默认（玩家文化）", "↺ Reset to default (player culture)");
 
-        RatioSectionLabel      = ControlPanelLoc.Tr("兵种比例", "Troop ratios");
-        RatioHintText          = ControlPanelLoc.Tr("拖动任一比例，其余项会按当前相对比例自动缩放使 Σ 保持 1.00。", "Drag any ratio and the others rescale proportionally so Σ stays at 1.00.");
-        RatioSumPrefix         = "Σ = ";
-        RatioNormalizedSuffix  = ControlPanelLoc.Tr("（自动归一化）", "(auto-normalized)");
-        RatioResetLabel        = ControlPanelLoc.Tr("↺ 恢复默认比例", "↺ Reset ratios");
-
-        TierSectionLabel = ControlPanelLoc.Tr("Tier 范围", "Tier range");
+        TierSectionLabel = ControlPanelLoc.Tr("Tier 范围（预留）", "Tier range (reserved)");
         MinTierLabel     = ControlPanelLoc.Tr("最低 Tier", "Min tier");
         MaxTierLabel     = ControlPanelLoc.Tr("最高 Tier", "Max tier");
-        TierHintPrefix   = ControlPanelLoc.Tr("仅作为可招募 tier 的硬边界。", "A hard boundary on recruitable tiers only.");
+        TierHintPrefix   = ControlPanelLoc.Tr("当前通用匹配不读取此设置，保留给后续精确模板。", "Generic matching does not read this setting yet; reserved for the later exact template.");
         TierResetLabel   = ControlPanelLoc.Tr("↺ 恢复默认 T2 – T5", "↺ Reset to default T2 – T5");
 
         // ── mode ──
-        // PR-5'(2026-05-24): UseGenericMatching removed; generic matching is always on.
         _isGenericMode = true;
 
         // ── culture chips ──
         BuildCultureChips();
         RefreshCultureState();
-
-        // ── ratio sliders ──
-        CavalryRow    = MakeRatioRow("骑兵",  "Cavalry",    "CavalryRatio");
-        HorseArcherRow = MakeRatioRow("骑射", "Horse Archer","HorseArcherRatio");
-        InfantryRow   = MakeRatioRow("步兵",  "Infantry",   "InfantryRatio");
-        RangedRow     = MakeRatioRow("远程",  "Ranged",     "RangedRatio");
-        RefreshRatioSum();
-        RefreshShowRatioReset();
 
         // ── tier chips ──
         BuildTierChips();
@@ -229,128 +175,14 @@ public sealed class CompositionTabVM : ViewModel
         RefreshCultureState();
     }
 
-    public void ExecuteResetRatios()
-    {
-        var d = _config.GlobalDefaults;
-        d.CavalryRatio    = 0.20f;
-        d.HorseArcherRatio = 0.05f;
-        d.InfantryRatio   = 0.50f;
-        d.RangedRatio     = 0.25f;
-        _markDirty();
-        CavalryRow.Refresh(); HorseArcherRow.Refresh(); InfantryRow.Refresh(); RangedRow.Refresh();
-        RefreshRatioSum();
-        RefreshShowRatioReset();
-    }
-
     public void ExecuteResetTier()
     {
         // PR-5'(2026-05-24): MinTier/MaxTier removed from TownGarrisonRule — no-op.
     }
 
     // ══════════════════════════════════════════════
-    //  AdjustRatio
-    // ══════════════════════════════════════════════
-
-    public void AdjustRatio(string key, double raw)
-    {
-        double v = System.Math.Max(0, System.Math.Min(1, double.IsNaN(raw) ? 0 : raw));
-        SetRatio(key, (float)v);
-
-        var others = System.Array.FindAll(RatioKeys, k => k != key);
-        double remaining = 1 - v;
-        double otherSum = 0;
-        foreach (var k in others) otherSum += GetRatio(k);
-
-        if (otherSum > 0.0001)
-        {
-            double f = remaining / otherSum;
-            foreach (var k in others)
-                SetRatio(k, (float)System.Math.Max(0, System.Math.Min(1, GetRatio(k) * f)));
-        }
-        else
-        {
-            double each = System.Math.Max(0, remaining / others.Length);
-            foreach (var k in others) SetRatio(k, (float)each);
-        }
-
-        // drift correction
-        double total = 0;
-        foreach (var k in RatioKeys) total += GetRatio(k);
-        double drift = 1 - total;
-        if (System.Math.Abs(drift) > 0.0001)
-        {
-            string biggest = others[0];
-            foreach (var k in others) if (GetRatio(k) > GetRatio(biggest)) biggest = k;
-            SetRatio(biggest, (float)System.Math.Max(0, System.Math.Min(1, GetRatio(biggest) + drift)));
-        }
-
-        _markDirty();
-        CavalryRow.Refresh(); HorseArcherRow.Refresh(); InfantryRow.Refresh(); RangedRow.Refresh();
-        RefreshRatioSum();
-        RefreshShowRatioReset();
-    }
-
-    // ══════════════════════════════════════════════
     //  Internal helpers
     // ══════════════════════════════════════════════
-
-    private SliderRowVM MakeRatioRow(string labelZh, string labelEn, string key)
-    {
-        var spec = new SpecEntry
-        {
-            Root = "GlobalDefaults", Key = key,
-            LabelZh = labelZh, LabelEn = labelEn,
-            HintZh = "", HintEn = "",
-            Min = 0, Max = 1, Step = 0.01,
-            Discrete = false, Def = null,
-            Advanced = false
-        };
-        return new SliderRowVM(
-            spec,
-            () => GetRatio(key),
-            v => AdjustRatio(key, v),
-            null /* AdjustRatio already calls markDirty */);
-    }
-
-    private float GetRatio(string key)
-    {
-        switch (key)
-        {
-            case "CavalryRatio":     return _config.GlobalDefaults.CavalryRatio;
-            case "HorseArcherRatio": return _config.GlobalDefaults.HorseArcherRatio;
-            case "InfantryRatio":    return _config.GlobalDefaults.InfantryRatio;
-            case "RangedRatio":      return _config.GlobalDefaults.RangedRatio;
-            default: return 0f;
-        }
-    }
-
-    private void SetRatio(string key, float value)
-    {
-        switch (key)
-        {
-            case "CavalryRatio":     _config.GlobalDefaults.CavalryRatio     = value; break;
-            case "HorseArcherRatio": _config.GlobalDefaults.HorseArcherRatio = value; break;
-            case "InfantryRatio":    _config.GlobalDefaults.InfantryRatio    = value; break;
-            case "RangedRatio":      _config.GlobalDefaults.RangedRatio      = value; break;
-        }
-    }
-
-    private void RefreshRatioSum()
-    {
-        var d = _config.GlobalDefaults;
-        double sum = d.CavalryRatio + d.HorseArcherRatio + d.InfantryRatio + d.RangedRatio;
-        RatioSumText = "Σ = " + sum.ToString("0.00");
-        RatioSumOk = sum >= 0.9 && sum <= 1.1;
-    }
-
-    private void RefreshShowRatioReset()
-    {
-        var d = _config.GlobalDefaults;
-        ShowRatioReset = System.Math.Abs(d.CavalryRatio - 0.20f) > 0.001f
-                      || System.Math.Abs(d.HorseArcherRatio - 0.05f) > 0.001f
-                      || System.Math.Abs(d.InfantryRatio - 0.50f) > 0.001f
-                      || System.Math.Abs(d.RangedRatio - 0.25f) > 0.001f;
-    }
 
     // ── culture ──
 
@@ -394,15 +226,15 @@ public sealed class CompositionTabVM : ViewModel
         MaxTierChips.Clear();
         for (int tier = 1; tier <= 6; tier++)
         {
-            MinTierChips.Add(new ChipVM(tier.ToString(), () => { }));
-            MaxTierChips.Add(new ChipVM(tier.ToString(), () => { }));
+            MinTierChips.Add(new ChipVM(tier.ToString(), () => { }) { IsDimmed = true });
+            MaxTierChips.Add(new ChipVM(tier.ToString(), () => { }) { IsDimmed = true });
         }
     }
 
     private void RefreshTierState()
     {
-        // PR-5'(2026-05-24): MinTier/MaxTier removed; tier range UI is hidden/inert.
-        TierRangeText = ControlPanelLoc.Tr("（PR-5' 已简化，不再可配置）", "(PR-5' simplified; not configurable)");
+        // PR-5'(2026-05-24): MinTier/MaxTier removed; kept as a visible reserved affordance.
+        TierRangeText = ControlPanelLoc.Tr("预留：当前不影响招募。", "Reserved: currently does not affect recruitment.");
         ShowTierReset = false;
     }
 }
