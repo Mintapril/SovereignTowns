@@ -22,7 +22,7 @@ namespace SovereignTowns.Models;
 /// </summary>
 public sealed class STPartySpeedModel : DefaultPartySpeedCalculatingModel
 {
-    private const float SpeedBonusFactor = 0.2f; // +20%
+    internal const float SpeedBonusFactor = 0.2f; // +20%
 
     public override ExplainedNumber CalculateFinalSpeed(MobileParty mobileParty, ExplainedNumber finalSpeed)
     {

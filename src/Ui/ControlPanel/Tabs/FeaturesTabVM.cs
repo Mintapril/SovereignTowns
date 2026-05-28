@@ -17,8 +17,8 @@ public sealed class FeaturesTabVM : ViewModel
             "总闸级开关，控制各子系统是否参与决策。所有改动在点上方「保存改动」前不会生效。",
             "Master switches controlling whether each subsystem takes part in decisions. No change takes effect until you click \"Save changes\" above.");
         Intro2 = ControlPanelLoc.Tr(
-            "提示：本面板运行在游戏外的浏览器中，调整配置需切出游戏。建议游戏使用「窗口」或「无边框窗口」模式，方便来回切换。",
-            "Tip: this panel runs in a browser outside the game, so adjusting config means alt-tabbing out. Running the game in \"Windowed\" or \"Borderless Window\" mode makes switching back and forth easier.");
+            "提示：本面板是游戏内的控制面板(Gauntlet UI)，可直接在地图界面操作。",
+            "Tip: this panel is an in-game control panel (Gauntlet UI), operated directly from the map screen.");
 
         var ef = config.EnabledFeatures;
 
@@ -43,8 +43,8 @@ public sealed class FeaturesTabVM : ViewModel
             () => ef.TroopTransfers, v => ef.TroopTransfers = v);
 
         Add("主动出击", "Sally forth",
-            "附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击",
-            "Attack out of the settlement when a hostile force is nearby and the garrison, cooldown and sustained-visibility conditions are met.",
+            "附近有敌对势力且满足驻军、冷却和威胁预测条件时出城攻击",
+            "Attack out of the settlement when a hostile force is nearby and the garrison, cooldown and threat-forecast conditions are met.",
             () => ef.SallyForth, v => ef.SallyForth = v);
 
         Add("抑制 vanilla 自动招募", "Suppress vanilla auto-recruitment",

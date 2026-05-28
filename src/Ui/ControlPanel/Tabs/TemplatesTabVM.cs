@@ -232,7 +232,7 @@ public sealed class TemplatesTabVM : ViewModel
         ModeBannerText = ControlPanelLoc.Tr(
             "卫队编制模式：设置每种兵员的计划数量，调度器按此补充卫队。",
             "Honor-guard composition mode: set the target count for each troop type; the scheduler fills the guard according to it.");
-        SwitchToExactLabel = ControlPanelLoc.Tr("改用精确模板模式", "Switch to exact template mode");
+        SwitchToExactLabel = ControlPanelLoc.Tr("精确模板入口（预留）", "Exact template entry (reserved)");
         ExactModeOkText = ControlPanelLoc.Tr(
             "✓ 卫队模板已设置。",
             "✓ Honor-guard template is configured.");

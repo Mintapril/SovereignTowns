@@ -31,7 +31,7 @@ public sealed class ActivityTabVM : ViewModel
     private readonly MBBindingList<FinanceRowVM> _clanRows = new MBBindingList<FinanceRowVM>();
     [DataSourceProperty] public MBBindingList<FinanceRowVM> ClanRows => _clanRows;
 
-    // 各领地状态表（4 列：领地 / 推荐·当前驻军 / 收入 / 净额）
+    // 各领地状态表（4 列：领地 / 目标·当前驻军 / 收入 / 净额）
     private readonly MBBindingList<FinanceRowVM> _holdingRows = new MBBindingList<FinanceRowVM>();
     [DataSourceProperty] public MBBindingList<FinanceRowVM> HoldingRows => _holdingRows;
 
@@ -122,7 +122,7 @@ public sealed class ActivityTabVM : ViewModel
             // 各领地状态表头 + 每城/堡行 + 合计行（4 列）。
             _holdingRows.Add(new FinanceRowVM(
                 ControlPanelLoc.Tr("领地", "Holding"),
-                ControlPanelLoc.Tr("推荐/当前驻军", "Rec/cur garrison"),
+                ControlPanelLoc.Tr("目标/当前驻军", "Target/cur garrison"),
                 ControlPanelLoc.Tr("收入", "Income"),
                 ControlPanelLoc.Tr("净额", "Net")));
 
@@ -133,10 +133,10 @@ public sealed class ActivityTabVM : ViewModel
                 string castleTag = s.IsCastle ? ControlPanelLoc.Tr(" 〔堡〕", " (castle)") : "";
                 _holdingRows.Add(new FinanceRowVM(
                     s.Name + castleTag,
-                    s.RecommendedGarrison + "/" + s.CurrentGarrison,
+                    s.TargetGarrison + "/" + s.CurrentGarrison,
                     s.Income + "d",
                     (s.Net >= 0 ? "+" : "") + s.Net + "d"));
-                totalRec += s.RecommendedGarrison;
+                totalRec += s.TargetGarrison;
                 totalCur += s.CurrentGarrison;
             }
 

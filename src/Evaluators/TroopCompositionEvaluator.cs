@@ -116,7 +116,7 @@ public static class TroopCompositionEvaluator
     {
         if (character is null) return TroopType.Infantry;
         if (character.IsHero) return TroopType.Hero;
-        if (character.Tier >= 5) return TroopType.Noble;
+        if (TroopClassifier.IsNoble(character)) return TroopType.Noble;
         return GenericTroopMatcher.GetRole(character) switch
         {
             GenericTroopRole.HorseArcher => TroopType.HorseArcher,
@@ -151,7 +151,7 @@ public static class TroopCompositionEvaluator
                 int n = element.Number;
                 if (n <= 0) continue;
 
-                if (!ch.IsHero && ch.Tier >= 5)
+                if (!ch.IsHero && TroopClassifier.IsNoble(ch))
                     nobles += n;
 
                 switch (GenericTroopMatcher.GetRole(ch))

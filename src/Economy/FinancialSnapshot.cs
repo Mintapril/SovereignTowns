@@ -26,7 +26,7 @@ internal static class FinancialSnapshot
         public long GarrisonWage { get; set; }
         public long Net { get; set; }
         public int CurrentGarrison { get; set; }
-        public int RecommendedGarrison { get; set; }
+        public int TargetGarrison { get; set; }
     }
 
     /// <summary>单个受管氏族的财政视图。</summary>

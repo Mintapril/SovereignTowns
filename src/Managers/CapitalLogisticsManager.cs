@@ -36,9 +36,13 @@ public sealed class CapitalLogisticsManager
     /// <summary>每 clan 在飞的派发求解协程任务 —— 重入防护(自愈式:已完成 / 取消即可覆盖,绝不长期占位)。</summary>
     private readonly Dictionary<Clan, AsyncSimulator.SimulatedTask> _mergedDispatchTask = new();
 
-    /// <summary>每 clan 最近一次调度器 solver 完成的每城驻军目标。控制面板「推荐驻军」读此缓存;
-    /// 求解跨帧 → 首个求解完成前缓存为空(返回 0)。</summary>
+    /// <summary>每 clan 最近一次调度器 solver 完成的每城驻军实际 flow(= MCMF Target,
+    /// 受当前 supply / 初始 garrison 影响)。仅在指令派发 / 诊断日志使用,不显示给玩家。</summary>
     private readonly Dictionary<Clan, Dictionary<Settlement, int>> _lastMergedTargets = new();
+
+    /// <summary>每 clan 最近一次调度器算出的每城 capacity(= 预算+威胁+战略约束下算法判断应养的兵数,
+    /// 独立于实际 garrison)。控制面板「目标驻军」读此缓存; 求解跨帧 → 首个求解完成前 fallback hardCap。</summary>
+    private readonly Dictionary<Clan, Dictionary<Settlement, int>> _lastMergedCapacity = new();
 
     public CapitalLogisticsManager(
         CapitalRegistry capitalRegistry,
@@ -137,27 +141,12 @@ public sealed class CapitalLogisticsManager
 
             var fa = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
             IHorizonForecast forecast = new ThreatForecast(fa.ThreatForecastScanRadius, fa.CapitalLogisticsTickHours);
-            int patrolHeadroom = features?.AutoPatrol == true
-                ? _patrolDispatcher.PatrolHeadroomHeads(capitalSettlement)
-                : 0;
-
-            // Sally headrooms:每城 = SallyTeamSize × MaxSallyPartiesPerCity(物理容量上限)。
-            // 由 SallyDispatcher 在 ExecuteAll 内部做冷却 / 围城等细粒度 gate 校验,此处只计算容量。
-            var sallyHeadrooms = new Dictionary<Settlement, int>();
-            int sallyCapPerCity = Math.Max(0, fa.SallyTeamSize * fa.MaxSallyPartiesPerCity);
-            if (sallyCapPerCity > 0 && features?.SallyForth == true)
-            {
-                foreach (var t in clan.Fiefs)
-                {
-                    if (t?.Settlement == null) continue;
-                    sallyHeadrooms[t.Settlement] = sallyCapPerCity;
-                }
-            }
 
             // 分帧求解:StartCoroutine 入 _pendingTasks,下一帧 AsyncSimulator.Update 起建图。
+            var solveStartedAt = TaleWorlds.CampaignSystem.CampaignTime.Now;
             var task = AsyncSimulator.StartCoroutine(
                 UnifiedGarrisonSolver.SolveCoroutine(
-                    manager, capitalSettlement, forecast, patrolHeadroom,
+                    manager, capitalSettlement, forecast,
                     unified =>
                     {
                         try
@@ -174,17 +163,61 @@ public sealed class CapitalLogisticsManager
                                 Logger.Debug($"UNIFIED-DISPATCH result discarded — capital changed during solve clan={clanId}");
                                 return;
                             }
+                            // PR-6 (2026-05-28): 跨 tick 警告。求解开始到完成之间游戏内 >1 tick → 旧快照决策。
+                            // 仅警告,不丢弃 —— 下游 dispatcher 的 D1/siege/cap 二次校验兜底。
+                            try
+                            {
+                                var elapsedHours = (TaleWorlds.CampaignSystem.CampaignTime.Now - solveStartedAt).ToHours;
+                                int tickHours = ConfigurationManager.Current?.FiscalAutonomy?.CapitalLogisticsTickHours ?? 6;
+                                if (elapsedHours > tickHours)
+                                {
+                                    Logger.Warn(
+                                        $"UNIFIED-DISPATCH solve crossed tick boundary " +
+                                        $"(elapsed={elapsedHours:F1}h > tick={tickHours}h) — snapshot stale, applying anyway " +
+                                        $"clan={clanId}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error($"UNIFIED-DISPATCH stale check failed (clan={clanId})", ex);
+                            }
                             Logger.Info("UNIFIED-DISPATCH " + unified.DiffLine(clanId));
                             StashMergedTargets(clan, unified);
                             ExecuteMergedInstructions(manager, unified);
-                            _sallyDispatcher.ExecuteAll(unified.Instructions.OfType<SallyInstruction>());
+                            // Post-decode patrol(2026-05-28 重构):
+                            // MCMF 不再管 patrol。这里按"current garrison - target"算 surplus,capped by 容量。
+                            if (features?.AutoPatrol == true)
+                            {
+                                try
+                                {
+                                    int patrolHeadroom = _patrolDispatcher.PatrolHeadroomHeads(capitalSettlement);
+                                    if (patrolHeadroom > 0)
+                                    {
+                                        int currentGarrison = capitalSettlement.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? 0;
+                                        int target = unified.Target.TryGetValue(capitalSettlement, out var tg) ? tg : 0;
+                                        int surplus = Math.Max(0, currentGarrison - target);
+                                        int patrolHeads = Math.Min(surplus, patrolHeadroom);
+                                        if (patrolHeads > 0)
+                                        {
+                                            var capitalTownForPatrol = manager.GetCapital();
+                                            if (capitalTownForPatrol != null)
+                                                _patrolDispatcher.TryDispatchPatrol(capitalTownForPatrol, patrolHeads);
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Logger.Error($"CapitalLogisticsManager post-decode patrol failed (clan={clanId})", ex);
+                                }
+                            }
+                            if (features?.SallyForth == true)
+                                _sallyDispatcher.EvaluateAllFiefs(clan);
                         }
                         catch (Exception ex)
                         {
                             Logger.Error($"CapitalLogisticsManager.RunUnifiedDispatch callback failed (clan={clanId})", ex);
                         }
-                    },
-                    sallyHeadrooms));
+                    }));
             _mergedDispatchTask[clan] = task;
         }
         catch (Exception ex)
@@ -193,11 +226,15 @@ public sealed class CapitalLogisticsManager
         }
     }
 
-    /// <summary>缓存调度器 solver 的每城驻军目标,供控制面板「推荐驻军」读取
-    /// (<see cref="ResolveRecommendedGarrison"/>)。</summary>
+    /// <summary>缓存 MCMF flow (_lastMergedTargets) + 算法判断 capacity (_lastMergedCapacity)。
+    /// 后者供控制面板「目标驻军」读取(<see cref="ResolveTargetGarrison"/>)。</summary>
     private void StashMergedTargets(Clan clan, UnifiedSolverResult unified)
     {
         if (clan == null || unified == null) return;
+        var capMap = new Dictionary<Settlement, int>(unified.Capacity.Count);
+        foreach (var kv in unified.Capacity)
+            if (kv.Key != null) capMap[kv.Key] = Math.Max(0, kv.Value);
+        _lastMergedCapacity[clan] = capMap;
         var map = new Dictionary<Settlement, int>();
         foreach (var kv in unified.Target)
             if (kv.Key != null) map[kv.Key] = Math.Max(0, kv.Value);
@@ -255,16 +292,25 @@ public sealed class CapitalLogisticsManager
                     continue;
                 }
 
+                // [GARRISON-DIAG] before/after head count，与 solver 的 disband-plan 对照。
+                int headsBefore = settlement.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? -1;
                 int disbanded = DisbandFromGarrison(settlement, count);
+                int headsAfter = settlement.Town?.GarrisonParty?.MemberRoster?.TotalManCount ?? -1;
                 if (disbanded > 0)
                 {
                     Logger.Info(
-                        $"MERGED-DISPATCH disband settlement='{settlement.StringId}' planned={count} disbanded={disbanded}");
+                        $"MERGED-DISPATCH disband settlement='{settlement.StringId}' planned={count} disbanded={disbanded} heads={headsBefore}→{headsAfter}");
                     DecisionAuditLogger.LogRule(
                         decisionType: "DisbandExcessGarrison",
-                        inputSummary: $"settlement={settlement.StringId} clan={clan?.StringId} planned={count} disbanded={disbanded} source=merged",
-                        decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan?.StringId}\",\"planned\":{count},\"disbanded\":{disbanded},\"source\":\"merged\"}}",
+                        inputSummary: $"settlement={settlement.StringId} clan={clan?.StringId} planned={count} disbanded={disbanded} headsBefore={headsBefore} headsAfter={headsAfter} source=merged",
+                        decisionJson: $"{{\"settlement\":\"{settlement.StringId}\",\"clan\":\"{clan?.StringId}\",\"planned\":{count},\"disbanded\":{disbanded},\"headsBefore\":{headsBefore},\"headsAfter\":{headsAfter},\"source\":\"merged\"}}",
                         accepted: true);
+                }
+                else if (count > 0)
+                {
+                    // [GARRISON-DIAG] planned > 0 但实抽 0 —— roster 为空或 LowestTierFirst 跳过英雄。罕见但值得记。
+                    Logger.Info(
+                        $"[GARRISON-DIAG] disband no-op settlement='{settlement.StringId}' planned={count} disbanded=0 heads={headsBefore} (roster empty or hero-only?)");
                 }
             }
             catch (Exception ex)
@@ -309,7 +355,6 @@ public sealed class CapitalLogisticsManager
         {
             var inPlaceInstructions = new List<InPlaceRecruitInstruction>();
             var recruiterInstructions = new List<RecruiterPartyInstruction>();
-            var honorGuardInstructions = new List<HonorGuardRecruiterInstruction>();
 
             foreach (var instruction in instructions)
             {
@@ -329,11 +374,6 @@ public sealed class CapitalLogisticsManager
                     recruiterInstructions.Add(recruiter);
                     continue;
                 }
-                if (instruction is HonorGuardRecruiterInstruction hg)
-                {
-                    honorGuardInstructions.Add(hg);
-                    continue;
-                }
 
                 bool ok = ExecuteMcmfInstruction(manager, instruction, auditSource);
                 if (ok) accepted++;
@@ -351,38 +391,22 @@ public sealed class CapitalLogisticsManager
                 else skipped++;
             }
 
-            // 按 role 分组：MCMF 为每个 (村, role) 出一条指令；同 role 的多个目标村打包成一支
-            // 征兵队的多站行程（按距首府最近邻排序）。每 role 一支队，count 按该 role 精确求和。
-            // 征兵队上限由 PartyLifecycleManager 控制，多 role 时未派出的留待下个 daily tick。
-            foreach (var group in recruiterInstructions.GroupBy(x => new { x.Town, x.ReturnSettlement, x.Role }))
+            // 按 (Town, Return, Role, Mode) 分组：同组的多个目标村打包成一支征兵队的多站行程。
+            // GarrisonRole 与 HonorGuardPrecise 走同一调度路径——执行端按 Mode 分支匹配 / 回家。
+            // 行程按距首府最近邻排序；count 按该组精确求和（多 role 时每 role 一支队）。
+            // 队伍 cap 由 PartyLifecycleManager 按 (KindRecruiter / KindHonorGuardRecruiter) 分桶约束。
+            foreach (var group in recruiterInstructions.GroupBy(x => new { x.Town, x.ReturnSettlement, x.Role, x.Mode }))
             {
                 var first = group.First();
                 int count = group.Sum(x => x.Count);
                 var itinerary = OrderItineraryNearestNeighbor(
                     first.ReturnSettlement, group.Select(x => x.TargetVillage));
+                // HG 模板从首条取（同 group 内所有指令的 PreciseTemplate 相同——皆出自同一 cfg 模板快照）。
                 bool ok = ExecuteRecruiterDispatch(
-                    manager, first.Town, first.ReturnSettlement, first.Role, itinerary, count);
+                    manager, first.Town, first.ReturnSettlement, first.Role, itinerary, count,
+                    first.Mode, first.PreciseTemplate);
                 if (ok) accepted++;
                 else skipped++;
-            }
-
-            // 卫队征兵队：lifecycle cap=1 per home，MCMF 可能出多条；只接 Count 最大的那条（首发即满）。
-            // 其余跳过 → 下个 logistics tick 重 solve、按更新后的 deficit 重新决策。
-            if (honorGuardInstructions.Count > 0)
-            {
-                HonorGuardRecruiterInstruction? best = null;
-                foreach (var hg in honorGuardInstructions)
-                {
-                    if (best == null || hg.Count > best.Count) best = hg;
-                }
-                int restSkip = honorGuardInstructions.Count - 1;
-                if (best != null)
-                {
-                    bool ok = ExecuteHonorGuardDispatch(manager, best);
-                    if (ok) accepted++;
-                    else skipped++;
-                }
-                if (restSkip > 0) skipped += restSkip;
             }
         }
         catch (Exception ex)
@@ -404,19 +428,11 @@ public sealed class CapitalLogisticsManager
 
                 case RecruiterPartyInstruction x:
                     return ExecuteRecruiterDispatch(
-                        manager, x.Town, x.ReturnSettlement, x.Role, new[] { x.TargetVillage }, x.Count);
+                        manager, x.Town, x.ReturnSettlement, x.Role, new[] { x.TargetVillage }, x.Count,
+                        x.Mode, x.PreciseTemplate);
 
                 case TransferPartyInstruction x:
                     return ExecuteTransferDispatch(manager, x, auditSource);
-
-                case PatrolInstruction x:
-                    return ExecutePatrolDispatch(manager, x);
-
-                case PrisonerConvertInstruction x:
-                    Logger.Debug(
-                        $"CapitalLogistics MCMF: prisoner instruction skipped pending instruction-scoped prisoner conversion " +
-                        $"settlement={x.Settlement?.StringId} role={x.Role} count={x.Count}");
-                    return false;
 
                 default:
                     Logger.Warn($"CapitalLogistics MCMF: unknown instruction '{instruction.GetType().Name}'");
@@ -451,11 +467,12 @@ public sealed class CapitalLogisticsManager
         }
         else
         {
-            // PR-5'(2026-05-24): BranchRule removed. Derive targetPower from cfg.TargetFraction × hardCap.
+            // 2026-05-28: targetPower 是给 BranchInPlaceRecruiter 的粗略 power 信号(用于"还需多少兵"
+            // 估算),不需要精确到 capacity 级别。用 hardCap 作 upper bound 即可 —— recruiter 内部
+            // 会按实际驻军/candidates 自动钳制,不会过招。
             var _cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
             int _hardCap = GarrisonAllocationSolver.HardCapFor(settlement.Town, _cfg);
-            int _targetHeads = (int)Math.Round(_hardCap * _cfg.TargetFraction);
-            int _targetPower = _targetHeads * 2; // rough power proxy: avg tier-3 troop ≈ 2 power units
+            int _targetPower = _hardCap * 2; // rough power proxy: avg tier-3 troop ≈ 2 power units
             int recruited = BranchInPlaceRecruiter.RecruitFromBranchNotables(
                 settlement,
                 _targetPower,
@@ -502,154 +519,10 @@ public sealed class CapitalLogisticsManager
         }
     }
 
-    /// <summary>
-    /// 派一支卫队招募队（HonorGuardRecruiterPartyComponent）。从 instruction.CandidateTroopIds 与
-    /// instruction.TargetVillage 的 notable.VolunteerTypes 交集中挑 deficit 最大的 troopId。
-    /// lifecycle cap=1 per home 已由 PartyLifecycleManager 守护：派之前再次确认。
-    /// 与 RecruiterDispatch 同走 D1 路径风险否决。
-    /// </summary>
-    private bool ExecuteHonorGuardDispatch(CapitalManager manager, HonorGuardRecruiterInstruction instruction)
-    {
-        try
-        {
-            var capital = manager.GetCapital();
-            var capitalSettlement = capital?.Settlement;
-            if (capital == null || capitalSettlement == null || instruction.Capital != capitalSettlement)
-            {
-                Logger.Warn($"HonorGuard dispatch: capital mismatch (instruction.Capital={instruction.Capital?.StringId})");
-                return false;
-            }
-
-            var village = instruction.TargetVillage;
-            if (village == null || !village.IsVillage)
-            {
-                Logger.Warn($"HonorGuard dispatch: invalid target village '{village?.StringId}'");
-                return false;
-            }
-
-            // lifecycle cap=1 守护
-            var lifecycle = SovereignTowns.Campaign.SovereignTownsCampaignBehavior.Instance?.Lifecycle;
-            if (lifecycle == null)
-            {
-                Logger.Warn("HonorGuard dispatch: lifecycle not available");
-                return false;
-            }
-            if (!lifecycle.CanCreateAnotherParty(capitalSettlement,
-                    SovereignTowns.Lifecycle.PartyLifecycleManager.KindHonorGuardRecruiter))
-            {
-                Logger.Debug($"HonorGuard dispatch skipped: '{capitalSettlement.StringId}' already has an in-flight honor-guard recruiter");
-                return false;
-            }
-
-            // D1 风险否决
-            var riskCfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            if (riskCfg.DispatchRiskEnabled)
-            {
-                float risk = RouteRiskScore(capitalSettlement, new[] { village });
-                if (risk >= riskCfg.DispatchRiskVetoThreshold)
-                {
-                    Logger.Info(
-                        $"DISPATCH-RISK HonorGuard skipped: route risk {risk:F0} ≥ threshold " +
-                        $"{riskCfg.DispatchRiskVetoThreshold:F0} home='{capitalSettlement.StringId}' village='{village.StringId}'");
-                    return false;
-                }
-            }
-
-            // 从 candidateTroopIds ∩ village.VolunteerTypes 中挑 deficit 最大的 troopId。
-            var template = ConfigurationManager.Current?.FiscalAutonomy?.HonorGuardTemplate;
-            var pool = SovereignTowns.Capital.HonorGuardManager.GetPoolStatic(capitalSettlement);
-            string? bestTroopId = null;
-            int bestDeficit = 0;
-            foreach (var id in instruction.CandidateTroopIds)
-            {
-                if (!VillageOffersTroop(village, id)) continue;
-                int target = (template != null && template.TryGetValue(id, out var t)) ? t : 0;
-                int inPool = CountTroopInPoolRoster(pool, id);
-                int deficit = target - inPool;
-                if (deficit > bestDeficit) { bestDeficit = deficit; bestTroopId = id; }
-            }
-            if (bestTroopId == null)
-            {
-                Logger.Debug($"HonorGuard dispatch: village '{village.StringId}' offers none of the template's candidate troops; skipping");
-                return false;
-            }
-
-            int sendCount = Math.Max(1, Math.Min(instruction.Count, bestDeficit));
-
-            var party = SovereignTowns.Parties.HonorGuardRecruiterPartyComponent.Create(
-                capitalSettlement, village, bestTroopId, sendCount);
-            if (party == null) return false;
-
-            if (party.PartyComponent is SovereignTowns.Parties.HonorGuardRecruiterPartyComponent hgrc)
-            {
-                if (!SovereignTowns.Parties.StPartyComponent.TrySeedAndBuyInitialFood(
-                        hgrc, party, capitalSettlement,
-                        SovereignTowns.Economy.ExpenseCategory.RecruiterSeed,
-                        capitalSettlement.OwnerClan,
-                        $"honor_guard_recruiter home={capitalSettlement.StringId} troop={bestTroopId}"))
-                {
-                    SovereignTowns.Lifecycle.PartyMergeService.Instance?.DestroyAndUntrack(
-                        party, "HonorGuard seed failed", deferIfInMapEvent: false);
-                    return false;
-                }
-            }
-
-            lifecycle.RegisterTrackedParty(
-                party, capitalSettlement,
-                SovereignTowns.Lifecycle.PartyLifecycleManager.KindHonorGuardRecruiter);
-
-            try { party.SetMoveGoToSettlement(village, TaleWorlds.CampaignSystem.Party.MobileParty.NavigationType.Default, false); }
-            catch (Exception ex) { Logger.Error($"HonorGuard dispatch: SetMoveGoToSettlement failed for '{party.StringId}'", ex); }
-
-            Logger.Info($"HonorGuard dispatched '{party.StringId}' to '{village.Name}' troop='{bestTroopId}' count={sendCount}");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("ExecuteHonorGuardDispatch failed", ex);
-            return false;
-        }
-    }
-
-    private static bool VillageOffersTroop(Settlement village, string troopId)
-    {
-        if (village?.Notables == null || string.IsNullOrEmpty(troopId)) return false;
-        try
-        {
-            foreach (var notable in village.Notables)
-            {
-                if (notable?.CanHaveRecruits != true) continue;
-                var vt = notable.VolunteerTypes;
-                if (vt == null) continue;
-                foreach (var co in vt)
-                {
-                    if (co?.StringId == troopId) return true;
-                }
-            }
-            return false;
-        }
-        catch { return false; }
-    }
-
-    private static int CountTroopInPoolRoster(TaleWorlds.CampaignSystem.Party.MobileParty? pool, string troopId)
-    {
-        if (pool?.MemberRoster == null || string.IsNullOrEmpty(troopId)) return 0;
-        try
-        {
-            int n = 0;
-            for (int i = 0; i < pool.MemberRoster.Count; i++)
-            {
-                var e = pool.MemberRoster.GetElementCopyAtIndex(i);
-                if (e.Character?.StringId == troopId) n += e.Number;
-            }
-            return n;
-        }
-        catch { return 0; }
-    }
-
     private bool ExecuteRecruiterDispatch(
         CapitalManager manager, Town town, Settlement returnSettlement,
-        GenericTroopRole role, IReadOnlyList<Settlement> itinerary, int tripTarget)
+        GenericTroopRole role, IReadOnlyList<Settlement> itinerary, int tripTarget,
+        RecruiterMode mode, IReadOnlyDictionary<string, int>? preciseTemplate)
     {
         var capital = manager.GetCapital();
         if (capital == null || town != capital || returnSettlement != capital.Settlement)
@@ -662,22 +535,24 @@ public sealed class CapitalLogisticsManager
         if (itinerary == null || itinerary.Count == 0) return false;
 
         // D1:路途有敌军 → 本 tick 不派(soft skip,下 tick 重评)。出击队不经此路径。
+        // 2026-05-29: HonorGuardPrecise 模式绕过 risk veto——HG 长程招募的设计意图就是跨敌区招兵
+        // （solver 端 EnumerateRecruitmentVillagesForHG 已经放开 faction filter）。执行端不应再 risk-veto 卡掉。
         var riskCfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-        if (riskCfg.DispatchRiskEnabled)
+        if (riskCfg.DispatchRiskEnabled && mode != RecruiterMode.HonorGuardPrecise)
         {
             float risk = RouteRiskScore(returnSettlement, itinerary);
             if (risk >= riskCfg.DispatchRiskVetoThreshold)
             {
                 Logger.Info(
                     $"DISPATCH-RISK recruiter skipped: route risk {risk:F0} ≥ threshold " +
-                    $"{riskCfg.DispatchRiskVetoThreshold:F0} home='{returnSettlement?.StringId}' stops={itinerary.Count}");
+                    $"{riskCfg.DispatchRiskVetoThreshold:F0} home='{returnSettlement?.StringId}' stops={itinerary.Count} mode={mode}");
                 return false;
             }
         }
 
         string reason =
-            $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={role} stops={itinerary.Count} count={tripTarget}";
-        return _recruitmentDispatcher.TryDispatchRecruiter(town, itinerary, role, tripTarget, reason);
+            $"mcmf recruiter clan={manager.OwnerClan?.StringId} role={role} mode={mode} stops={itinerary.Count} count={tripTarget}";
+        return _recruitmentDispatcher.TryDispatchRecruiter(town, itinerary, role, tripTarget, mode, preciseTemplate, reason);
     }
 
     /// <summary>
@@ -812,21 +687,6 @@ public sealed class CapitalLogisticsManager
         return ok;
     }
 
-    /// <summary>
-    /// 派发调度器 solver 的巡逻指令。巡逻容量已由 PatrolDispatcher.PatrolHeadroomHeads
-    /// 在建图前约束。
-    /// </summary>
-    private bool ExecutePatrolDispatch(CapitalManager manager, PatrolInstruction instruction)
-    {
-        var capital = manager.GetCapital();
-        if (capital == null)
-        {
-            Logger.Warn($"CapitalLogistics MERGED: patrol instruction skipped — clan={manager.OwnerClan?.StringId} has no capital");
-            return false;
-        }
-        return _patrolDispatcher.TryDispatchPatrol(capital, instruction.Count);
-    }
-
     // ── Task 6: 手动模式评估 stash ──────────────────────────────────────────
 
     /// <summary>
@@ -917,9 +777,9 @@ public sealed class CapitalLogisticsManager
                     if (gp != null && gp.IsActive) wage = Math.Max(0, gp.TotalWage);
                     // 防御性上界 10000，应付存档里偶发异常 roster。
                     int current = Math.Min(gp?.MemberRoster?.TotalManCount ?? 0, 10000);
-                    // 推荐驻军取调度器 solver 最近一次完成的目标(玩家 value* 调参在此体现);
-                    // 缓存未就绪(首个求解未完成)→ 返回 0。
-                    int recommended = ResolveRecommendedGarrison(clan, s);
+                    // 目标驻军 = PartySizeLimit × TargetFraction(由 cfg.TargetFraction 调激进度);
+                    // 实际驻军受预算 / 供给 / 路径约束逼近此目标。缓存未就绪 → 返回 0。
+                    int target = ResolveTargetGarrison(clan, s);
 
                     cf.Settlements.Add(new Economy.FinancialSnapshot.SettlementPnl
                     {
@@ -930,7 +790,7 @@ public sealed class CapitalLogisticsManager
                         GarrisonWage = wage,
                         Net = income - wage,
                         CurrentGarrison = current,
-                        RecommendedGarrison = recommended,
+                        TargetGarrison = target,
                     });
                     cf.TotalIncome += income;
                     cf.TotalGarrisonWage += wage;
@@ -950,26 +810,36 @@ public sealed class CapitalLogisticsManager
     }
 
     /// <summary>
-    /// 控制面板「推荐驻军」取值:调度器**愿望值** = `AdequateFor(town)` 公式驱动目标。
-    /// = clamp(AdequateBase + Prosperity/Divisor + Threat×Weight, floor, hardCap)。
-    /// 修正(2026-05-24):此前返回 `_lastMergedTargets[clan][s]` 是 MCMF 解出的实际守军
-    /// (受供给/路径/预算约束的结果),抽空驻军后会显示 0,跟 UI 文案"推荐"语义错位。
-    /// MCMF 求解结果改由 <see cref="UnifiedSolverResult.Target"/> 在指令派发 / 诊断日志使用。
+    /// 控制面板「目标驻军」取值 = 调度器算法在【预算+威胁+战略】约束下判断该城应有的驻军。
+    /// 公式见 <see cref="UnifiedGarrisonSolver"/> SolveCoroutine 的 perCityCapacity 块。
+    ///
+    /// 性质:
+    ///   - 预算充足 → = PartySizeLimit(vanilla 上限)
+    ///   - 预算紧 → 按 (PartySizeLimit × threat × strategic) 加权分(高威胁/首府/富城多)
+    ///   - 不依赖当前 garrison 实际人数(玩家抽兵不会让此值变)
+    ///
+    /// MCMF 实际派兵结果(flow,可能瞬时低于 capacity)由 <see cref="UnifiedSolverResult.Target"/>
+    /// 在指令派发 / 诊断日志使用,不显示给玩家。
+    ///
+    /// 缓存未就绪(首个求解未完成)→ fallback 为 hardCap = PartySizeLimit。
     /// </summary>
-    private int ResolveRecommendedGarrison(Clan clan, Settlement s)
+    private int ResolveTargetGarrison(Clan clan, Settlement s)
     {
         try
         {
             var t = s?.Town;
             if (t == null) return 0;
+            if (clan != null && _lastMergedCapacity.TryGetValue(clan, out var map)
+                && s != null && map.TryGetValue(s, out var cap))
+            {
+                return cap;
+            }
             var cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            int hardCap = GarrisonAllocationSolver.HardCapFor(t, cfg);
-            // PR-5'(2026-05-24): AdequateFor removed; single-segment cap = hardCap × TargetFraction.
-            return (int)Math.Round(hardCap * cfg.TargetFraction);
+            return GarrisonAllocationSolver.HardCapFor(t, cfg);
         }
         catch (Exception ex)
         {
-            Logger.Error($"ResolveRecommendedGarrison failed for s={s?.StringId}", ex);
+            Logger.Error($"ResolveTargetGarrison failed for s={s?.StringId}", ex);
             return 0;
         }
     }

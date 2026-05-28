@@ -81,7 +81,7 @@ public sealed class EnabledFeatures
     /// <summary>跨城镇/城堡调拨兵力。关闭后非首府 settlement 只能依赖已有驻军。</summary>
     public bool TroopTransfers { get; set; } = true;
 
-    /// <summary>附近有敌对势力且满足驻军、冷却和持续可见条件时出城攻击。默认关闭以保稳。</summary>
+    /// <summary>附近有敌对势力且满足驻军、冷却和威胁预测条件时出城攻击。默认关闭以保稳。</summary>
     public bool SallyForth { get; set; } = false;
 
     // T2 (doc §20 #2)：3 个战利品集中处理 toggle（AutoRecruitMatchingPrisoners / AutoSellNonMatchingPrisoners / AutoSellLoot）
@@ -255,8 +255,7 @@ public sealed class PartyThresholds
     /// <summary>R2：Sally 出击结束后的冷却小时数。原硬编码 24f。范围 [0, 168]。</summary>
     public float SallyCooldownHours { get; set; } = 24f;
 
-    /// <summary>R2：敌方需连续可见 N 个 hourly tick 才触发 Sally。原硬编码 3。范围 [1, 48]。</summary>
-    public int SallyMinSustainedTicks { get; set; } = 3;
+    // 2026-05-28:P1-5 SallyMinSustainedTicks deleted — MCMF threat prediction replaces the old visibility gating.
 
     // 2026-05-24:R4 AutoUpgrade* 三字段已删除。升级触发权移交 vanilla PartyUpgraderCampaignBehavior
     // (MCMF 控制流量,vanilla 加权随机执行)。原 TroopUpgradeService 路径下线。
