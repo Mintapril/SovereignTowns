@@ -183,7 +183,8 @@ public sealed class RecruitmentDispatcher
                     stc, party, homeTown.Settlement,
                     ExpenseCategory.RecruiterSeed,
                     homeTown.OwnerClan,
-                    $"recruiter_seed home={homeTown.Settlement.StringId}"))
+                    $"recruiter_seed home={homeTown.Settlement.StringId}",
+                    firstStop))
                 {
                     if (escortRoster != null && escortActual > 0 && homeTown.GarrisonParty?.MemberRoster != null)
                         TroopTransferHelper.TransferBackToGarrison(escortRoster, homeTown.GarrisonParty.MemberRoster);

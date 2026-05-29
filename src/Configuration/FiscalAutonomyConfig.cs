@@ -151,10 +151,12 @@ public sealed class FiscalAutonomyConfig
     public int BaseValuePerTier { get; set; } = 800;
 
     // ── 卫队（Honor Guard）容量上限 ──
-    /// <summary>卫队驻军容量上限（头数）。
-    /// 0 = 关闭卫队功能（不创建 party）；&gt; 0 = 卫队最多可持有此数量驻军。
-    /// MCMF 调度器在向卫队注入兵员时受此上限约束。默认 0（功能关闭）。</summary>
-    public int HonorGuardCap { get; set; } = 0;
+    /// <summary>卫队驻军容量上限（头数）。2026-05-29：卫队改为**恒开启、容量固定 300**，
+    /// 不再是控制面板可调项（用户决定）。getter 恒返回 300，setter 忽略写入 —— 因此磁盘 /
+    /// 旧存档 global.json 中残留的任何 HonorGuardCap 值（含 0）都不会再关闭卫队。
+    /// 卫队 party 本就由 <see cref="SovereignTowns.Capital.HonorGuardManager"/> 无条件创建；
+    /// 此值仅作为 MCMF 向卫队注入兵员时的硬上限。</summary>
+    public int HonorGuardCap { get => 300; set { /* 固定 300，忽略任何写入 */ } }
 
     /// <summary>卫队招募 edge 的战略价值基常数。与 PatrolValue（200）/ SallyValueBase（5000）同量级。
     /// MCMF 在 origin → hg_bucket_sink 边上记入 strategic 通道 = 此值 × power(tier)；越大越愿意优先填卫队。

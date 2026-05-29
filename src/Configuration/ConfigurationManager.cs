@@ -882,14 +882,6 @@ if (!IsFiniteFloat(f.ThreatForecastScanRadius) || f.ThreatForecastScanRadius < 0
         { reason = Tr($"Thresholds.PatrolMinDispatchSize 非法 ({t.PatrolMinDispatchSize})；必须 >= 0", $"Thresholds.PatrolMinDispatchSize invalid ({t.PatrolMinDispatchSize}); must be >= 0"); return false; }
         if (t.PatrolMinDispatchSize > 500)
         { reason = Tr($"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} 超过上限 500", $"Thresholds.PatrolMinDispatchSize {t.PatrolMinDispatchSize} exceeds upper bound 500"); return false; }
-        if (!IsNonNegativeFloat(t.FoodReplenishMinDays))
-        { reason = Tr($"Thresholds.FoodReplenishMinDays 非法 ({t.FoodReplenishMinDays})", $"Thresholds.FoodReplenishMinDays invalid ({t.FoodReplenishMinDays})"); return false; }
-        if (t.FoodReplenishMinDays > 365f)
-        { reason = Tr($"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} 超过上限 365", $"Thresholds.FoodReplenishMinDays {t.FoodReplenishMinDays} exceeds upper bound 365"); return false; }
-        if (!IsNonNegativeFloat(t.FoodReplenishTopUpDays))
-        { reason = Tr($"Thresholds.FoodReplenishTopUpDays 非法 ({t.FoodReplenishTopUpDays})", $"Thresholds.FoodReplenishTopUpDays invalid ({t.FoodReplenishTopUpDays})"); return false; }
-        if (t.FoodReplenishTopUpDays > 365f)
-        { reason = Tr($"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} 超过上限 365", $"Thresholds.FoodReplenishTopUpDays {t.FoodReplenishTopUpDays} exceeds upper bound 365"); return false; }
 
         // DeepSeek audit 2026-05-18 新增字段校验
         if (!IsNonNegativeFloat(t.IdleHoursBeforeForceReturn) || t.IdleHoursBeforeForceReturn < 1f || t.IdleHoursBeforeForceReturn > 720f)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using SovereignTowns.Common;
 using SovereignTowns.Parties;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
@@ -25,6 +26,10 @@ public sealed class HonorGuardManager
 
     /// <summary>首府 → 卫队 party 映射（运行时缓存，非持久化）。</summary>
     private readonly Dictionary<Settlement, MobileParty> _pools = new Dictionary<Settlement, MobileParty>();
+
+    /// <summary>卫队食物缓冲天数：每日把库存补足到这么多天用量，确保 <c>PartyBase.IsStarving</c> 恒为 false
+    /// → vanilla 对驻扎要塞的卫队按 +5（基础）+10（In Settlement）/日自动痊愈伤兵（见 <see cref="OnDailyTick"/>）。</summary>
+    private const float HonorGuardFoodBufferDays = 5f;
 
     public HonorGuardManager(CapitalRegistry capitalRegistry)
     {
@@ -59,6 +64,35 @@ public sealed class HonorGuardManager
         catch (Exception ex)
         {
             Logger.Error("HonorGuardManager.Initialize failed", ex);
+        }
+    }
+
+    /// <summary>
+    /// 每日维护（由 <see cref="SovereignTowns.Campaign.SovereignTownsCampaignBehavior.OnDailyTick"/> 调用）：
+    /// 给每座首府的卫队**免费**补足食物。卫队是常驻首府的「驻军等价」独立 MobileParty，刻意不继承
+    /// <c>GarrisonPartyComponent</c>（规避军饷 / vanilla AI），因此失去了 vanilla 驻军「由 settlement 免费供养、
+    /// 永不饿死」的待遇。若不喂食，<c>PartyBase.IsStarving</c> 为真 → <c>DefaultPartyHealingModel</c> 对非驻军
+    /// 返回负 healing → <c>PartyHealCampaignBehavior</c> 把健康兵逐日转成伤兵且永不痊愈（2026-05-30 反编译实证）。
+    /// 喂饱后卫队驻扎要塞 → vanilla 自动按 +5+10/日痊愈，无需本 mod 手动 heal。
+    /// </summary>
+    public void OnDailyTick()
+    {
+        try
+        {
+            foreach (var kv in _pools)
+            {
+                var party = kv.Value;
+                if (party == null || !party.IsActive) continue;
+                try { PartyEconomyHelper.TopUpFoodFree(party, HonorGuardFoodBufferDays); }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"HonorGuardManager.OnDailyTick: feed failed for '{party.StringId}': {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("HonorGuardManager.OnDailyTick failed", ex);
         }
     }
 

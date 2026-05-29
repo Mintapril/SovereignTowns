@@ -209,8 +209,8 @@ public sealed class TemplatesTabVM : ViewModel
         // ── 静态文案 ──
         Title = ControlPanelLoc.Tr("卫队编制", "Honor guard composition");
         Intro = ControlPanelLoc.Tr(
-            "指定卫队每个兵种的计划数量（整数，0-100，最多 50 种）。MCMF 调度器按模板补充卫队。",
-            "Set the target headcount for each troop type in the honor guard (integer, 0-100, up to 50 types). The MCMF scheduler fills the guard according to this template.");
+            "指定卫队每个兵种的计划数量（整数，0-100，最多 50 种）。系统会按此模板自动补充卫队。",
+            "Set the target headcount for each troop type in the honor guard (integer, 0-100, up to 50 types). The system fills the honor guard from this template.");
         CatalogSectionLabel = ControlPanelLoc.Tr("兵种名录", "Troop catalog");
         CatalogHint = ControlPanelLoc.Tr("点 ＋ 加入名单", "Click + to add to the list");
         SearchPlaceholder = ControlPanelLoc.Tr(

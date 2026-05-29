@@ -124,7 +124,8 @@ public sealed class TransferDispatcher
                     stc, party, source,
                     ExpenseCategory.TransferSeed,
                     source.OwnerClan,
-                    $"transfer_seed src={source.StringId} dst={destination.StringId}"))
+                    $"transfer_seed src={source.StringId} dst={destination.StringId}",
+                    destination))
                 {
                     TroopTransferHelper.TransferBackToGarrison(party.MemberRoster, sourceRoster);
                     PartyMergeService.Instance.DestroyAndUntrack(party, "TransferDispatcher seed failed rollback", deferIfInMapEvent: false);

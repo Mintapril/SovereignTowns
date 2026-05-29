@@ -29,6 +29,10 @@ public sealed class StSallyPartyComponent : StPartyComponent
 {
     public const string StringIdPrefix = "st_sally_";
     private const float MaxSallyHours = 12f;
+    /// <summary>追击中"到目标距离连续不缩短"达到此小时数 → 判定追不上，提前回家（远早于 MaxSallyHours backstop）。</summary>
+    private const int NoProgressHoursBeforeAbort = 3;
+    /// <summary>每小时到目标距离至少缩短这么多（地图单位）才算"在追上"；否则计一次无进展。</summary>
+    private const float DistanceProgressEpsilon = 0.3f;
 
     public enum SallyPhase { Engaging, Returning }
 
@@ -38,6 +42,9 @@ public sealed class StSallyPartyComponent : StPartyComponent
     [CachedData] private TextObject? _cachedName;
     [CachedData] private bool _forceReturnLogged;
     [CachedData] private bool _targetLostLogged;
+    // 追击进度（transient：不持久化，读档中途会重置追击窗口，可接受）。
+    [CachedData] private float _lastTargetDistance;
+    [CachedData] private int _noProgressHours;
 
     public MobileParty? TargetParty { get => _targetParty; set => _targetParty = value; }
     public CampaignTime DepartureTime => _departureTime;
@@ -184,6 +191,31 @@ public sealed class StSallyPartyComponent : StPartyComponent
                 {
                     // 目标恢复 → 清状态，下次丢失时重新 log
                     _targetLostLogged = false;
+
+                    // 2026-05-30：追击进度检测。出击队按聚团 2× 抽兵 → vanilla AI 让较弱目标（劫匪常见）逃跑；
+                    // 逃跑的小队有先手、追不上 → 干耗到 MaxSallyHours 才回，长时间削弱驻军。
+                    // 若到目标距离连续 NoProgressHoursBeforeAbort 小时不再明显缩短，判定追不上，提前回家。
+                    try
+                    {
+                        float dist = (self.GetPosition2D - target.GetPosition2D).Length;
+                        if (_lastTargetDistance > 0f && dist >= _lastTargetDistance - DistanceProgressEpsilon)
+                        {
+                            _noProgressHours++;
+                            if (_noProgressHours >= NoProgressHoursBeforeAbort)
+                            {
+                                Logger.Info($"StSallyParty: '{PartyNameFormatter.SafeName(self)}' {NoProgressHoursBeforeAbort}h 内未拉近与 '{PartyNameFormatter.SafeName(target)}' 的距离（{dist:F1} 单位），追不上，提前回家");
+                                TransitionToReturning(self);
+                                return;
+                            }
+                        }
+                        else
+                        {
+                            _noProgressHours = 0;   // 在拉近（或首次记录）→ 重置无进展计数
+                        }
+                        _lastTargetDistance = dist;
+                    }
+                    catch (Exception distEx) { Logger.Warn($"StSallyParty progress-check failed: {distEx.Message}"); }
+
                     // Issue #3：每小时重申追击 + 再次锁定。SetMoveEngageParty 通常是 sticky，
                     // 但 vanilla AI 在地图事件 / 路径阻断时可能切换 behavior，这里再保险一次。
                     try

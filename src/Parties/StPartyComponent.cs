@@ -130,13 +130,13 @@ public abstract class StPartyComponent : CustomPartyComponent
     protected abstract ExpenseCategory GetExpenseCategoryForKind();
 
     /// <summary>
-    /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 PartyTradeGold + 出发地买 3 天粮"。
-    /// 玩家氏族：走 ModTreasury（受 PauseSpendingWhenBroke 门控，写 ledger + audit），扣款成功 SetTeamFunds(DefaultSeedGold)；
-    ///           扣款失败返 false，调用方应回滚兵 + 销毁 party。
-    /// AI 氏族：从 home.OwnerClan.Leader.Gold 扣（vanilla 路径，按可用余额取；Clan.Gold ≡ Leader.Gold，
-    ///         vanilla 没有 per-fief Hero 持有人）。InitTeamFundsFromHomeOwner 内部不会失败（最低 0 资金继续）；
-    ///         返 true。
-    /// 创建后立即在 origin 用资金 BuyFoodAtSettlement(3 天)。
+    /// doc §20 #1 (T1)：统一 Dispatcher 端的"扣 seed gold + 注入 PartyTradeGold + 出发地备粮"。
+    /// 2026-05-29：备粮量改为"够走到第一站"——有 <paramref name="firstLegTarget"/> 时按
+    /// 「到第一站寻路行程天数 + 余量」购买（兜底 3 天，封顶 30 天），并把种子金提到足以覆盖这些粮草，
+    /// 防止远征队（尤其卫队跨图）半路饿死。无 firstLegTarget（巡逻首站后选 / sally 追敌）沿用 3 天。
+    /// 玩家氏族：走 ModTreasury（受 PauseSpendingWhenBroke 门控 + ledger + audit），扣款失败返 false，调用方回滚兵+销毁。
+    /// AI 氏族：从 home.OwnerClan.Leader.Gold 按可用余额取（InitTeamFundsFromHomeOwner 不失败）。
+    /// origin 食物缺货（BuyFood=0）→ 取消派遣（非作弊基调）。
     /// </summary>
     public static bool TrySeedAndBuyInitialFood(
         StPartyComponent component,
@@ -144,33 +144,58 @@ public abstract class StPartyComponent : CustomPartyComponent
         Settlement origin,
         ExpenseCategory expenseCategory,
         Clan? chargeFromClan,
-        string noteContext)
+        string noteContext,
+        Settlement? firstLegTarget = null)
     {
         if (component == null || party == null || origin == null)
         {
             Logger.Warn($"TrySeedAndBuyInitialFood: null arg (component={(component == null ? "null" : "ok")} party={(party == null ? "null" : "ok")} origin={(origin == null ? "null" : "ok")})");
             return false;
         }
+
+        // 备粮天数：有第一站目标 → 按"到第一站行程天数 + 余量"备粮（兜底 3 天，封顶 30 天）；
+        // 无目标（巡逻首站尚未选 / sally 追敌）→ 沿用 3 天。
+        float seedDays = InitialSeedFoodDays;
+        if (firstLegTarget != null)
+        {
+            float travelDays = PartyEconomyHelper.EstimateTravelDays(party, origin, firstLegTarget);
+            if (travelDays > 0f)
+                seedDays = Math.Min(MaxSeedFoodDays,
+                                    Math.Max(InitialSeedFoodDays, (float)Math.Ceiling(travelDays) + SeedFoodBufferDays));
+        }
+
+        // 种子金至少要覆盖这些天数的粮草，否则远征队（尤其卫队跨图）买不够粮半路饿死。
+        int seedGold = DefaultSeedGold;
+        try
+        {
+            int units = PartyEconomyHelper.EstimateFoodForDays(party, seedDays);
+            int unitPrice = Math.Max(1, PartyEconomyHelper.GetCheapestFood()?.Value ?? 15);
+            int estFoodCost = (int)(units * unitPrice * SeedFoodPriceMargin);
+            seedGold = Math.Max(DefaultSeedGold, estFoodCost + SeedFoodReserveGold);
+        }
+        catch { seedGold = DefaultSeedGold; }
+
         bool shouldCharge = CapitalRegistry.ShouldChargeClan(chargeFromClan);
         if (shouldCharge)
         {
-            if (!ModTreasury.CanAfford(chargeFromClan, DefaultSeedGold))
+            if (!ModTreasury.CanAfford(chargeFromClan, seedGold))
             {
-                Logger.Info($"TrySeedAndBuyInitialFood: 资金不足 (need {DefaultSeedGold}) — {noteContext}");
+                Logger.Info($"TrySeedAndBuyInitialFood: 资金不足 (need {seedGold} for {seedDays:F0}d food) — {noteContext}");
                 return false;
             }
-            if (!ModTreasury.Charge(chargeFromClan, expenseCategory, DefaultSeedGold, noteContext))
+            if (!ModTreasury.Charge(chargeFromClan, expenseCategory, seedGold, noteContext))
             {
                 Logger.Info($"TrySeedAndBuyInitialFood: ModTreasury.Charge 拒绝 — {noteContext}");
                 return false;
             }
-            component.SetTeamFunds(DefaultSeedGold);
+            component.SetTeamFunds(seedGold);
         }
         else
         {
-            component.InitTeamFundsFromHomeOwner(party, DefaultSeedGold);
+            component.InitTeamFundsFromHomeOwner(party, seedGold);
         }
-        int spent = component.BuyFoodAtSettlement(party, origin, 3f);
+        int spent = component.BuyFoodAtSettlement(party, origin, seedDays);
+        Logger.Info($"{component.GetType().Name}: '{PartyNameFormatter.SafeName(party)}' seed @ '{origin.Name?.ToString() ?? origin.StringId}' → firstLeg='{firstLegTarget?.Name?.ToString() ?? "<none>"}' seedDays={seedDays:F0} seedGold={seedGold} foodSpent={spent}d");
         if (spent == 0)
         {
             // 非作弊基调：origin 食物缺货 → 取消派遣。
@@ -183,6 +208,13 @@ public abstract class StPartyComponent : CustomPartyComponent
         catch (Exception horseEx) { Logger.Warn($"TrySeedAndBuyInitialFood: BuyHorses failed — {horseEx.Message}"); }
         return true;
     }
+
+    // 备粮参数（2026-05-29：出发前按"到第一站行程"备粮，替代旧的固定 3 天）。
+    private const float InitialSeedFoodDays = 3f;    // 无第一站目标时的兜底天数（旧行为）
+    private const float SeedFoodBufferDays  = 1f;    // 到站留 1 天余量
+    private const float MaxSeedFoodDays     = 30f;   // 封顶：防极端距离一次买爆资金/库存
+    private const float SeedFoodPriceMargin = 1.3f;  // 估价余量（市场价波动 + 多种食物混买）
+    private const int   SeedFoodReserveGold = 500;   // 种子金额外预留（路上卖买 / 中途周转）
 
     // ── 通用调度（Template Method 模式）──
 
@@ -237,8 +269,8 @@ public abstract class StPartyComponent : CustomPartyComponent
             OnHourlyTickCore(self, capital!);
 
             // B17.4 A6：tick 末尾通用维护 — 俘虏 cap。失败不影响 core 已完成的工作。
-            // B5 食物补给已 deferred（out-of-scope）— IG 实现是凭空塞，与项目"非作弊基调"冲突；
-            // vanilla 没有合适的 settlement-级 ItemRoster API 做"经济闭环"扣减。
+            // 食物补给不在 hourly tick 做（CurrentSettlement 多为 null）：改由出发前 TrySeedAndBuyInitialFood
+            // 按"到第一站行程"备粮 + 抵达定居点时 TryEconomicMaintenance 经济闭环买粮（市场购买、双侧扣金币）。
             try { TryEnforcePrisonerCap(self); }
             catch (Exception capEx) { Logger.Warn($"{GetType().Name}.TryEnforcePrisonerCap failed: {capEx.Message}"); }
         }
@@ -782,12 +814,12 @@ public abstract class StPartyComponent : CustomPartyComponent
         }
     }
 
-    // B17.4 B5（食物补给）已 deferred — 留空。下面解释：
-    // - IG GivePartyFood（PartyManager.cs:329）是凭空塞食物（party.ItemRoster.AddToCounts(item, N)，无源头扣减），
-    //   IG 论坛投诉过"无限粮草作弊"。
-    // - "从 home town ItemRoster 扣减"做不到：vanilla Town.Owner 是 Hero（无 ItemRoster），settlement 级也没有公开的市场粮食操作 API。
-    // - 项目 CLAUDE.md "非作弊基调" + B5 是 Tier B（非关键），现阶段直接放弃；
-    //   ST idle 检测（PartyLifecycleManager.IdleHoursBeforeDisband=36）会兜底"完全卡死饿死的队伍"。
+    // 食物补给（原 B17.4 B5）：已实装为"经济闭环市场买粮"，非凭空塞。
+    // - 拒绝 IG GivePartyFood 式凭空塞（ItemRoster.AddToCounts 无源头扣减 = 作弊）。
+    // - 实际路径：PartyEconomyHelper.BuyFoodFromSettlement 从 town.Owner / village.Party 的 ItemRoster 买最便宜食物，
+    //   GiveGoldAction 双侧扣减（party.PartyTradeGold ↔ settlement.Gold），与 vanilla caravan 等价闭环。
+    // - 触发：出发前 TrySeedAndBuyInitialFood（按到第一站行程备粮）+ 抵达定居点 TryEconomicMaintenance（剩粮<2天→买5天）。
+    // - 仍无"低粮主动绕路买粮"：队伍只在既定路线经过的定居点顺路买；ST idle 检测兜底完全卡死的队伍。
 
     // ── 构造函数：透传 vanilla CustomPartyComponent 既有 protected 形参 ──
     protected StPartyComponent(

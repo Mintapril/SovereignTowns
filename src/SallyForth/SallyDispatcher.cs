@@ -42,6 +42,14 @@ public sealed class SallyDispatcher
     private static int SallyCreateMinPartyCount
         => ConfigurationManager.Current?.Thresholds?.SallyCreateMinPartyCount ?? 30;
 
+    // 2026-05-30：聚团敌军 / 必败战斗防护。
+    /// <summary>可投送兵力 / 接战时会被卷入的敌军总兵力 的最低比值；低于此值放弃出击（别把驻军送进必败战斗）。</summary>
+    private const float SallyMinWinRatio = 1.25f;
+    /// <summary>vanilla <c>EncounterModel.GetEncounterJoiningRadius</c> 取不到时的兜底 join 半径（地图单位，v1.3.15=3f）。</summary>
+    private const float ClusterJoinRadiusFallback = 3f;
+    /// <summary>join 半径放大系数：追击期间敌军会聚拢，保守高估更安全。</summary>
+    private const float ClusterRadiusSlack = 1.5f;
+
     /// <summary>每城上次出击结束（合并/销毁）的时间戳；冷却用。</summary>
     private readonly Dictionary<Settlement, CampaignTime> _lastSallyEndedAt = new();
 
@@ -258,6 +266,54 @@ public sealed class SallyDispatcher
         }
     }
 
+    /// <summary>估算"出击队接战时会被 vanilla 卷入同一 MapEvent 的敌方总兵力（健康兵）"。
+    /// vanilla <c>DefaultEncounterModel.GetEncounterJoiningRadius=3f</c>：战斗发起点该半径内、可加入战斗的
+    /// 敌方 party（散兵/劫匪/领主队）都会作为援军加入（<c>FindNonAttachedNpcPartiesWhoWillJoinPlayerEncounter</c>
+    /// 反编译实证，join 条件含 <c>MapEvent==null &amp;&amp; CurrentSettlement==null</c>）。多股小劫匪聚团时，只按单只
+    /// 目标 2× 抽兵会被淹没，故按目标位置 + join 半径汇总所有交战方兵力。取 max(聚团合计, 单只目标)，半径留余量。</summary>
+    private static int EstimateEngagedEnemyStrength(MobileParty target, IFaction? ownFaction)
+    {
+        if (target == null || ownFaction == null) return 0;
+        float radius;
+        try { radius = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.EncounterModel?.GetEncounterJoiningRadius ?? ClusterJoinRadiusFallback; }
+        catch { radius = ClusterJoinRadiusFallback; }
+        radius = Math.Max(radius, ClusterJoinRadiusFallback) * ClusterRadiusSlack;
+
+        int total = 0;
+        try
+        {
+            var search = MobileParty.StartFindingLocatablesAroundPosition(target.GetPosition2D, radius);
+            for (var c = MobileParty.FindNextLocatable(ref search); c != null; c = MobileParty.FindNextLocatable(ref search))
+            {
+                if (c == null || !c.IsActive) continue;
+                if (c == MobileParty.MainParty) continue;
+                // 已在战斗 / 在城内 → 不会加入新战斗（镜像 vanilla join 条件），不计入。
+                if (c.MapEvent != null || c.CurrentSettlement != null) continue;
+                var f = c.MapFaction;
+                if (f == null || !f.IsAtWarWith(ownFaction)) continue;
+                total += HealthyManCount(c);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"SallyDispatcher.EstimateEngagedEnemyStrength failed: {ex.Message}");
+            return HealthyManCount(target);
+        }
+        return Math.Max(total, HealthyManCount(target));
+    }
+
+    /// <summary>队伍健康兵力 = TotalManCount − TotalWounded（镜像 <see cref="FindBestEnemyTarget"/> 口径）。</summary>
+    private static int HealthyManCount(MobileParty party)
+    {
+        try
+        {
+            var roster = party?.MemberRoster;
+            if (roster == null) return 0;
+            return Math.Max(0, roster.TotalManCount - roster.TotalWounded);
+        }
+        catch { return 0; }
+    }
+
     // ────────── 内部辅助：创建出击队 ──────────
 
     private void TryCreateSallyParty(Settlement settlement, MobileParty garrison, int garrisonCount, MobileParty target)
@@ -270,13 +326,24 @@ public sealed class SallyDispatcher
             int minDef = GarrisonThresholdMath.CountFromRatio(garrisonCount, minimumDefenderRatio, minimumWhenPositive: 0);
             int extractable = Math.Max(0, garrisonCount - minDef);
             int byGarrisonRatio = GarrisonThresholdMath.CountFromRatio(garrisonCount, SallyExtractionRatio, minimumWhenPositive: 0);
-            int targetMen = Math.Max(0, target.MemberRoster?.TotalManCount ?? 0);
-            int byTarget = Math.Max(0, (int)Math.Ceiling(targetMen * SallyTargetPartySizeMultiplier));
+
+            // 2026-05-30：按"接战时会被 vanilla 卷入同一 MapEvent 的敌方总兵力"估算，而非单只目标。
+            // 多股小队聚团（劫匪常见）时，vanilla 会把 join 半径内的同阵营 party 一起拉进战斗，
+            // 只按单只目标抽兵会被淹没。详见 EstimateEngagedEnemyStrength。
+            int clusterMen = EstimateEngagedEnemyStrength(target, settlement.MapFaction);
+            int byTarget = Math.Max(0, (int)Math.Ceiling(clusterMen * SallyTargetPartySizeMultiplier));
             int sallySize = Math.Min(byTarget, Math.Min(extractable, byGarrisonRatio));
             int createMin = SallyCreateMinPartyCount;
             if (sallySize < createMin)
             {
-                Logger.Debug($"SallyDispatcher: '{settlement.Name}' sallySize={sallySize} < {createMin} (target={targetMen}×{SallyTargetPartySizeMultiplier:F2}->{byTarget}, garrison={garrisonCount}, cap={SallyExtractionRatio:P0}->{byGarrisonRatio}, minDef={minimumDefenderRatio:P0}->{minDef}), 抽兵过少");
+                Logger.Debug($"SallyDispatcher: '{settlement.Name}' sallySize={sallySize} < {createMin} (cluster={clusterMen}×{SallyTargetPartySizeMultiplier:F2}->{byTarget}, garrison={garrisonCount}, cap={SallyExtractionRatio:P0}->{byGarrisonRatio}, minDef={minimumDefenderRatio:P0}->{minDef}), 抽兵过少");
+                return;
+            }
+            // 必败防护：可投送兵力打不过聚团敌军时放弃出击（HighestTierFirst 精锐 + ≥1.25× 才出门）。
+            int minWin = (int)Math.Ceiling(clusterMen * SallyMinWinRatio);
+            if (sallySize < minWin)
+            {
+                Logger.Info($"SallyDispatcher: '{settlement.Name}' 放弃出击 — 可投送 {sallySize} < 需 {minWin}（敌军聚团 {clusterMen}×{SallyMinWinRatio:F2}，garrison={garrisonCount} extractable={extractable}）");
                 return;
             }
 
@@ -341,8 +408,8 @@ public sealed class SallyDispatcher
 
             DecisionAuditLogger.LogRule(
                 decisionType: "create_sally_party",
-                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} moved={moved} target={target.StringId} targetMen={targetMen}",
-                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{sallyParty.StringId}\",\"target\":\"{target.StringId}\",\"moved\":{moved},\"targetMen\":{targetMen},\"targetMultiplier\":{SallyTargetPartySizeMultiplier:F2},\"garrisonCapRatio\":{SallyExtractionRatio:F2},\"radius\":{DetectionRadius}}}",
+                inputSummary: $"home={settlement.StringId} garrison={garrisonCount} moved={moved} target={target.StringId} clusterMen={clusterMen}",
+                decisionJson: $"{{\"home\":\"{settlement.StringId}\",\"party\":\"{sallyParty.StringId}\",\"target\":\"{target.StringId}\",\"moved\":{moved},\"clusterMen\":{clusterMen},\"targetMultiplier\":{SallyTargetPartySizeMultiplier:F2},\"garrisonCapRatio\":{SallyExtractionRatio:F2},\"radius\":{DetectionRadius}}}",
                 accepted: true);
             Logger.Info($"SallyDispatcher: created sally '{PartyNameFormatter.SafeName(sallyParty)}' for '{settlement.Name}' (moved={moved} troops, target='{PartyNameFormatter.SafeName(target)}')");
         }

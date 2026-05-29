@@ -50,14 +50,14 @@ public static class ControlPanelSpecs
 
                     new SpecEntry { Root="GlobalDefaults", Key="BudgetLimit",
                         LabelZh="招募预算基准", LabelEn="Recruitment budget baseline",
-                        HintZh="外派征兵队单次到村招募预算；自动升级预算也按此派生",
-                        HintEn="Per-trip village recruitment budget for a dispatched recruiter party; the auto-upgrade budget is derived from it too.",
+                        HintZh="外派征兵队单次到村招募预算",
+                        HintEn="Per-trip village recruitment budget for a dispatched recruiter party.",
                         Min=0, Max=50000, Discrete=true, Step=1, Def=5000 },
 
                     new SpecEntry { Root="GlobalDefaults", Key="FoodSafetyThreshold",
                         LabelZh="食物安全阈值", LabelEn="Food safety threshold",
-                        HintZh="Town.FoodChange 低于此值暂停招募",
-                        HintEn="Pause recruitment when Town.FoodChange drops below this value.",
+                        HintZh="城镇每日食物结余低于此值时暂停招募（避免把城养饿）",
+                        HintEn="Pause recruitment when the town's daily food surplus drops below this value (avoid starving the town).",
                         Min=-50, Max=50, Discrete=false, Step=0.5, Def=-2.0 },
                 },
             },
@@ -250,9 +250,9 @@ public static class ControlPanelSpecs
                         Min=0, Max=500, Discrete=true, Step=1, Def=30 },
 
                     new SpecEntry { Root="Thresholds", Key="StuckTeleportHours",
-                        LabelZh="通用：卡死瞬移阈值（真实小时）", LabelEn="General: stuck-teleport threshold (real hours)",
-                        HintZh="首次检测到卡死起累计真实小时，超过此值后把队伍瞬移到首府城门；0 关闭",
-                        HintEn="Real hours accumulated since a stuck state was first detected; past this value the party is teleported to the capital gate; 0 = off.",
+                        LabelZh="巡逻队：卡死瞬移阈值（游戏内小时）", LabelEn="Patrol: stuck-teleport threshold (in-game hours)",
+                        HintZh="巡逻队首次检测到卡死起累计游戏内小时，超过此值后把它瞬移到首府城门；0 关闭",
+                        HintEn="In-game hours accumulated since a patrol party was first detected stuck; past this value it is teleported to the capital gate; 0 = off.",
                         Min=0, Max=168, Discrete=false, Step=1, Def=24, Advanced=true },
 
                     new SpecEntry { Root="Thresholds", Key="PatrolMaxLifetimeHours",
@@ -364,7 +364,7 @@ public static class ControlPanelSpecs
                         LabelZh="驻军工资预算比例（仅和平期）", LabelEn="Garrison wage budget ratio (peacetime only)",
                         HintZh="和平期驻军工资预算 = 此比例 × 受管领地可持续收入（税+关税），比例越高养兵越多。注意：战时此旋钮不生效——交战且金库有余额时，预算自动取「全额充足驻军工资」，恒保证养满每城充足驻军。",
                         HintEn="Peacetime garrison wage budget = this fraction × managed-holding sustainable income (tax + tariffs); higher sustains more troops. Note: this knob does NOT apply in war — while at war with a non-empty treasury the budget auto-jumps to the full adequate-garrison wage, always funding every town's adequate garrison.",
-                        Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.55 },
+                        Min=0.1, Max=1.0, Discrete=false, Step=0.05, Def=0.75 },
 
                     new SpecEntry { Root="FiscalAutonomy", Key="DisbandExcessThreshold",
                         LabelZh="超额遣散阈值", LabelEn="Disband-excess threshold",
@@ -571,12 +571,8 @@ public static class ControlPanelSpecs
                         HintEn="Holding-edge per-troop value base constant. Single-segment formula: value = this × threat × strategic × power(tier). Default 800.",
                         Min=0, Max=10000, Discrete=true, Step=50, Def=800, Advanced=true },
 
-                    // ════════ 段 10：卫队容量上限 ════════
-                    new SpecEntry { Root="FiscalAutonomy", Key="HonorGuardCap",
-                        LabelZh="卫队容量上限", LabelEn="Honor guard cap",
-                        HintZh="卫队（首府私属精锐 party）可持有的最大驻军头数。0 = 关闭卫队（不创建 party）；> 0 = MCMF 调度器注入兵员时的硬上限。",
-                        HintEn="Maximum garrison headcount the honor-guard party may hold. 0 = disable honor guard (no party created); > 0 = hard cap when the MCMF scheduler fills it.",
-                        Min=0, Max=1000, Discrete=true, Step=10, Def=0, Advanced=true },
+                    // 2026-05-29：卫队容量上限滑条已删除 —— 卫队恒开启、容量固定 300
+                    //（见 FiscalAutonomyConfig.HonorGuardCap 的 getter）。玩家无需在面板配置。
                 },
             },
         };

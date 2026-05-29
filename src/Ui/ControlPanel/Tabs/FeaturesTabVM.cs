@@ -17,8 +17,8 @@ public sealed class FeaturesTabVM : ViewModel
             "总闸级开关，控制各子系统是否参与决策。所有改动在点上方「保存改动」前不会生效。",
             "Master switches controlling whether each subsystem takes part in decisions. No change takes effect until you click \"Save changes\" above.");
         Intro2 = ControlPanelLoc.Tr(
-            "提示：本面板是游戏内的控制面板(Gauntlet UI)，可直接在地图界面操作。",
-            "Tip: this panel is an in-game control panel (Gauntlet UI), operated directly from the map screen.");
+            "提示：本面板是游戏内控制面板，可直接在大地图界面操作。",
+            "Tip: this is an in-game control panel, operated directly from the map screen.");
 
         var ef = config.EnabledFeatures;
 
@@ -47,8 +47,8 @@ public sealed class FeaturesTabVM : ViewModel
             "Attack out of the settlement when a hostile force is nearby and the garrison, cooldown and threat-forecast conditions are met.",
             () => ef.SallyForth, v => ef.SallyForth = v);
 
-        Add("抑制 vanilla 自动招募", "Suppress vanilla auto-recruitment",
-            "自动招募开启时，关闭受管城镇/城堡的 vanilla 自动驻军生长，让本 Mod 的征兵队成为主要兵源",
+        Add("抑制原版自动招募", "Suppress vanilla auto-recruitment",
+            "自动招募开启时，关闭受管城镇/城堡的原版自动驻军生长，让本 Mod 的征兵队成为主要兵源",
             "While auto-recruitment is on, disable vanilla garrison auto-growth in managed towns/castles so this mod's recruiter parties become the main troop source.",
             () => ef.SuppressVanillaGarrisonRecruitment, v => ef.SuppressVanillaGarrisonRecruitment = v);
 
@@ -62,9 +62,14 @@ public sealed class FeaturesTabVM : ViewModel
             "A daily in-game popup showing today's recruited / transferred / patrol / sally / prisoner counts.",
             () => ef.ShowDailySummary, v => ef.ShowDailySummary = v);
 
+        Add("大地图追踪本Mod部队", "Track mod parties on map",
+            "开启后把本 Mod 的活动部队（征兵 / 调拨 / 巡逻 / 出击）显示为大地图标记，和\"追踪商队\"一样。部队解散后标记自动消失。修改即时生效（最迟下一游戏小时）。",
+            "Shows this mod's active parties (recruiter / transfer / patrol / sally) as campaign-map markers, like tracking a caravan. Markers vanish when a party disbands. Takes effect within one game hour.",
+            () => ef.TrackPartiesOnMap, v => ef.TrackPartiesOnMap = v);
+
         Add("详细诊断日志", "Verbose diagnostic logging",
-            "开启后 Logger 等级降到 Debug：落盘所有 [DIAG] 行（hourly tick 状态、状态机迁移、食物维护跳过原因、scheduler 决策等）。日志文件会很大，调试用后请关闭。修改即时生效，无需重启。",
-            "Lowers the logger to Debug level and writes every [DIAG] line (hourly tick state, state-machine transitions, food-maintenance skip reasons, scheduler decisions, etc.). The log file gets large — turn this off after debugging. Takes effect immediately, no restart needed.",
+            "开启后写入详细调试日志（逐小时状态、决策过程、各种跳过原因等），文件会很大，仅排查问题时开启。修改即时生效，无需重启。",
+            "Writes a verbose debug log (per-hour state, decision details, skip reasons, etc.). The file gets large — only enable it while troubleshooting. Takes effect immediately, no restart needed.",
             () => ef.VerboseLogging, v => ef.VerboseLogging = v);
     }
 }

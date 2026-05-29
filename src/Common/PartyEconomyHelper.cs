@@ -89,6 +89,96 @@ public static class PartyEconomyHelper
         }
     }
 
+    /// <summary>把 party 的食物库存「免费」补足到 <paramref name="targetDays"/> 天用量 —— 专给卫队这类
+    /// 「常驻首府、驻军等价」的独立 MobileParty 用。
+    ///
+    /// 背景（2026-05-30 ilspycmd 反编译实证 v1.3.15）：
+    ///   vanilla 驻军（<c>GarrisonPartyComponent</c>）由 settlement 食物模型免费供养、永不靠自带 ItemRoster；
+    ///   卫队刻意**不**继承 GarrisonPartyComponent（规避军饷 / vanilla AI），因此 vanilla 不会喂它。
+    ///   一旦 <c>PartyBase.IsStarving</c>（= <c>_remainingFoodPercentage &lt; 0</c>）为真，
+    ///   <c>DefaultPartyHealingModel.GetDailyHealingForRegulars</c> 对非驻军返回 <c>-0.25×TotalRegulars</c>（负值），
+    ///   <c>PartyHealCampaignBehavior.OnQuarterDailyPartyTick → ReduceHpMemberRegulars</c> 会把健康兵
+    ///   逐日转成伤兵且永不痊愈 —— 即「卫队全员受伤且不恢复」的根因。
+    ///   喂饱后卫队驻扎要塞（首府）→ vanilla 每日 <c>+5（基础）+10（In Settlement）</c> 自动痊愈，无需手动 heal。
+    ///
+    /// 为何「免费」而非走 <see cref="BuyFoodFromSettlement"/>：围城时市场买不到食物，但被围的卫队恰恰最需要
+    /// 痊愈；驻军等价物理应像 vanilla 驻军一样被无条件供养。仅补差额，不会无限堆叠，也不动金币 / 市场库存。
+    /// 返回实际补充的食物单位数。</summary>
+    public static int TopUpFoodFree(MobileParty? party, float targetDays)
+    {
+        try
+        {
+            var roster = party?.ItemRoster;
+            if (roster == null || targetDays <= 0f) return 0;
+            // 空队不需供养（无人可饿 / 可伤）。
+            if ((party!.MemberRoster?.TotalManCount ?? 0) <= 0) return 0;
+
+            int target = EstimateFoodForDays(party, targetDays);
+            if (target <= 0) return 0;
+
+            // 统计现有食物单位（已喂过的就不重复堆叠）。
+            int have = 0;
+            for (int i = 0; i < roster.Count; i++)
+            {
+                var item = roster.GetItemAtIndex(i);
+                if (item == null || !item.IsFood) continue;
+                int amount = roster.GetElementCopyAtIndex(i).Amount;
+                if (amount > 0) have += amount;
+            }
+
+            int deficit = target - have;
+            if (deficit <= 0) return 0;
+
+            var food = GetCheapestFood();
+            if (food == null) return 0;
+
+            roster.AddToCounts(new EquipmentElement(food), deficit);
+            try { roster.UpdateVersion(); } catch { }
+            Logger.Debug($"PartyEconomyHelper.TopUpFoodFree '{PartyNameFormatter.SafeName(party)}': +{deficit} '{food.StringId}' (have={have} target={target}@{targetDays:F0}d)");
+            return deficit;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn("PartyEconomyHelper.TopUpFoodFree failed", ex);
+            return 0;
+        }
+    }
+
+    /// <summary>估算 party 从 from 走到 to 需要的游戏天数：寻路距离(units) ÷ 速度(units/游戏小时) ÷ 24。
+    /// 口径与 BaseSettlementVisitScheduler.ComputeEtaHours / UnifiedGarrisonSolver.EtaTicks 一致。
+    /// 不可达 / 异常 / from==to → 返回 0（调用方用兜底天数）。</summary>
+    public static float EstimateTravelDays(MobileParty? party, Settlement? from, Settlement? to)
+    {
+        try
+        {
+            if (party == null || from == null || to == null || from == to) return 0f;
+            float dist;
+            var model = TaleWorlds.CampaignSystem.Campaign.Current?.Models?.MapDistanceModel;
+            if (model != null)
+            {
+                float d = model.GetDistance(from, to, false, false,
+                    MobileParty.NavigationType.Default, out _);
+                dist = (d > 0f && d < TaleWorlds.CampaignSystem.ComponentInterfaces.MapDistanceModel.PossibleMaximumMapBoundary)
+                    ? d
+                    : (from.GetPosition2D - to.GetPosition2D).Length;
+            }
+            else
+            {
+                dist = (from.GetPosition2D - to.GetPosition2D).Length;
+            }
+            if (dist <= 0f || float.IsNaN(dist) || float.IsInfinity(dist)) return 0f;
+            float speed = Math.Max(party.Speed, 0.1f);   // units / 游戏小时
+            float daysOut = dist / speed / 24f;
+            if (float.IsNaN(daysOut) || float.IsInfinity(daysOut) || daysOut < 0f) return 0f;
+            return daysOut;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyEconomyHelper.EstimateTravelDays failed: {ex.Message}");
+            return 0f;
+        }
+    }
+
     /// <summary>从 settlement 库存购买 days 天食物。预算 = <c>party.PartyTradeGold</c>。
     /// 物品手动 AddToCounts 两侧；金币用 <see cref="GiveGoldAction.ApplyForPartyToSettlement"/>
     /// 让 vanilla 同时更新 party.PartyTradeGold ↔ settlement.Gold（双侧闭环）。

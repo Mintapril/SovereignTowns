@@ -13,6 +13,7 @@
     <string id="ST_RecruiterPartyName" text="Recruiter — {SETTLEMENT}" />
     <string id="ST_SallyPartyName" text="Sally — {SETTLEMENT}" />
     <string id="ST_TransferPartyName" text="Transfer — {SOURCE} → {DESTINATION}" />
+    <string id="ST_HonorGuardPartyName" text="Honor Guard — {SETTLEMENT}" />
 
     <!-- GameModel modifier descriptions (shown in the party tooltip breakdown). -->
     <string id="ST_PartySpeedBonus" text="Sovereign Towns town-funded party speed bonus" />
@@ -21,6 +22,7 @@
     <string id="ST_PartySizeLimit_Transfer" text="Sovereign Towns transfer party size limit" />
     <string id="ST_PartySizeLimit_Sally" text="Sovereign Towns sally party size limit" />
     <string id="ST_PartySizeLimit_Patrol" text="Sovereign Towns patrol party size limit" />
+    <string id="ST_PartySizeLimit_HonorGuard" text="Sovereign Towns honor guard size limit" />
     <string id="ST_ClanFinanceSettlement" text="Sovereign Towns treasury settlement" />
 
     <!-- Town/castle game-menu options. -->
@@ -44,7 +46,7 @@
 
     <!-- Configuration / module-management messages. -->
     <string id="ST_Msg_Config_VersionMismatch" text="[Sovereign Towns] global.json version mismatch (file v{FILE_VERSION}, expected v{EXPECTED_VERSION}) — reset to defaults; please reconfigure via the in-game control panel." />
-    <string id="ST_Msg_AiOptIn" text="[Sovereign Towns] AI clans that own a capital are now managed by Sovereign Towns for capital / garrison / recruitment / transfer / sally / prisoner / patrol. Their lords can no longer recruit volunteers via vanilla; ST mod channels (capital in-place / recruiter parties / prisoner recruitment) are the only troop source. Recruitment is restricted to same-culture troops." />
+    <string id="ST_Msg_AiOptIn" text="[Sovereign Towns] Now managing the garrisons of AI clans that own a capital (recruitment / transfer / sally / prisoner / patrol). Their lords no longer recruit via the base game — only this mod's recruiters supply troops, and only same-culture troops." />
     <string id="ST_Msg_IncompatibleMods" text="Sovereign Towns: incompatible modules detected ({MODS}). The mod is inactive. Disable the conflicting modules in the launcher and restart." />
 
     <!-- Battle / disband / destroyed reports (shown in the bottom-left feed). -->

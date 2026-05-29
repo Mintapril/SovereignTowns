@@ -463,8 +463,8 @@
                                                                 Brush="SPOptions.Slider.Value.Text" Text="@Intro"
                                                                 MarginTop="6" MarginBottom="10" />
 
-                                                    <!-- 模式选择卡 -->
-                                                    <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                    <!-- 模式选择卡（2026-05-29 隐藏：通用/精确模式切换为预留死控件） -->
+                                                    <ListPanel IsVisible="false" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                StackLayout.LayoutMethod="HorizontalLeftToRight" MarginBottom="10">
                                                       <Children>
                                                         <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteSetGenericMode"
@@ -573,10 +573,10 @@
                                                                     MarginBottom="8" />
 
                                                         <!-- 2026-05-29: 4 ratio sliders + Σ row deleted (role ratios removed from rule). -->
-                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        <TextWidget IsVisible="false" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                     Brush="SPOptions.OptionName.Text" Text="@TierSectionLabel"
                                                                     MarginBottom="4" />
-                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        <ListPanel IsVisible="false" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                    StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center">
                                                           <Children>
                                                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
@@ -591,7 +591,7 @@
                                                             </ListPanel>
                                                           </Children>
                                                         </ListPanel>
-                                                        <ListPanel WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        <ListPanel IsVisible="false" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                    StackLayout.LayoutMethod="HorizontalLeftToRight" VerticalAlignment="Center">
                                                           <Children>
                                                             <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
@@ -606,7 +606,7 @@
                                                             </ListPanel>
                                                           </Children>
                                                         </ListPanel>
-                                                        <TextWidget WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
+                                                        <TextWidget IsVisible="false" WidthSizePolicy="StretchToParent" HeightSizePolicy="CoverChildren"
                                                                     Brush="SPOptions.Slider.Value.Text" Text="@TierRangeText" MarginTop="4" />
                                                       </Children>
                                                     </ListPanel>

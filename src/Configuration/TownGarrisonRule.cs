@@ -51,9 +51,6 @@ public sealed class TownGarrisonRule
     /// <summary>允许将俘虏转化为驻军（受游戏内忠诚度规则约束）。</summary>
     public bool AllowPrisonerConversion { get; set; } = true;
 
-    /// <summary>允许自动升级低级兵种为高级兵种。</summary>
-    public bool AllowAutoUpgrade { get; set; } = true;
-
     /// <summary>
     /// 主动出击后必须留在城内的实际驻军比例（不含民兵）。
     /// 仅约束 SallyForth 抽兵，不参与招募、调拨或驻军目标计算。
@@ -65,7 +62,7 @@ public sealed class TownGarrisonRule
     // 系列（Safe/Low/Medium/High/Critical）驱动，作用在 MCMF holding edge value 通道。
     // 老存档 JSON 中的 WartimeMultiplier / PeacetimeMultiplier key 会被 Newtonsoft 自动忽略。
 
-    /// <summary>外派征兵队单次到村招募预算；自动升级预算也以此派生。</summary>
+    /// <summary>外派征兵队单次到村招募预算。</summary>
     public int BudgetLimit { get; set; } = 5000;
 
     /// <summary>当 Town.FoodChange 低于此阈值时暂停招募，避免饿城。</summary>
@@ -90,7 +87,6 @@ public sealed class TownGarrisonRule
         BannedTroopIds = new List<string>(this.BannedTroopIds ?? new List<string>()),
         AllowNobleTroops = this.AllowNobleTroops,
         AllowPrisonerConversion = this.AllowPrisonerConversion,
-        AllowAutoUpgrade = this.AllowAutoUpgrade,
         MinimumDefenderRatio = this.MinimumDefenderRatio,
         BudgetLimit = this.BudgetLimit,
         FoodSafetyThreshold = this.FoodSafetyThreshold,

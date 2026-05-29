@@ -296,8 +296,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             try { mobileParty.Ai?.SetDoNotMakeNewDecisions(true); } catch { /* swallow */ }
 
             component.SnapshotInitialMembers(mobileParty);
-            // T1.7：食物由 RecruitmentDispatcher 在创建后通过 BuyFoodAtSettlement(_teamFunds) 真实购买，
-            // 不再凭空塞 3 天食物。
+            // 食物由 RecruitmentDispatcher 出发时经 TrySeedAndBuyInitialFood 按"到第一站行程"备粮（真实市场购买），不凭空塞。
             Logger.Info($"StRecruiterPartyComponent: created '{stringId}' for '{settlement.StringId}'");
             return mobileParty;
         }
@@ -385,11 +384,34 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
             return;
         }
 
+        // 2026-05-29 fix: 只把"模板兵"(troopId 命中 / 可升级到模板某 troopId)转入卫队池。
+        // 派遣时从 garrison 抽的低 tier 护卫(escort)与任何非模板兵都不进池 —— 留在 roster，
+        // 由 OnArrivedHome 的 finally → DefaultMergeAndDisband 并回 garrison。
+        // 此前无过滤 → 护卫(异文化低 tier 杂兵)被一并倒进卫队池 =「卫队大量非模板兵」，
+        // 且每次派遣把护卫永久搬进池 → garrison 持续净流失(实际驻军远低于目标)。两症状同源。
+        var template = PreciseTemplate;
+        if (template == null || template.Count == 0)
+        {
+            Logger.Warn($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': deposit-time template empty, skipping pool transfer (all troops fall through to garrison)");
+            return;
+        }
+
         int transferred = 0;
+        int skippedNonTemplate = 0;
         for (int i = roster.Count - 1; i >= 0 && headroom > 0; i--)
         {
             var element = roster.GetElementCopyAtIndex(i);
             if (element.Character == null || element.Character.IsHero) continue;
+
+            // 模板成员判定：升级链命中（与招募端 RecruitHonorGuardFromVillage 的 PickPreciseTemplateMatch 同口径）。
+            // 非模板（护卫/异文化）→ 跳过，留在 roster 由 DefaultMergeAndDisband 并回 garrison。
+            if (!TroopTemplateMatcher.IsAcceptableVolunteer(
+                    element.Character, rule: null, assignedRole: GenericTroopRole.Unknown,
+                    RecruiterMode.HonorGuardPrecise, template))
+            {
+                skippedNonTemplate += element.Number;
+                continue;
+            }
 
             int available = element.Number;
             int wounded   = element.WoundedNumber;
@@ -411,7 +433,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 Logger.Warn($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': transfer '{element.Character?.StringId}' failed: {ex.Message}");
             }
         }
-        Logger.Info($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': transferred {transferred} troops to honor-guard pool of '{capital.StringId}'");
+        Logger.Info($"StRecruiter(HonorGuard) '{PartyNameFormatter.SafeName(self)}': transferred {transferred} template troops to honor-guard pool of '{capital.StringId}' (skipped {skippedNonTemplate} non-template/escort → garrison)");
     }
 
     /// <summary>
@@ -557,7 +579,12 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         if (targetSettlement != home && targetSettlement.IsVillage)
         {
             bool invalid = !IsRecruitmentTargetStillValid(targetSettlement, home);
-            bool risky = !invalid && RiskAssessmentService.Assess(targetSettlement).Level >= RiskLevel.High;
+            // 2026-05-30 Q2：卫队（HonorGuardPrecise）设计就是跨敌区招募（已绕过出发期 DispatchRisk 否决，见 #16）。
+            // 若"逐站高风险跳过"对 HG 也生效，它穿越战时地图时会把每一站都跳光 → recruited=0、卫队永远填不上。
+            // 故 HG 不再按风险跳站（仍跳 invalid：被围 / 被劫 / 与本国交战的村 —— 那些 vanilla 本就招不了）。
+            bool isHonorGuard = _mode == RecruiterMode.HonorGuardPrecise;
+            bool risky = !invalid && !isHonorGuard
+                         && RiskAssessmentService.Assess(targetSettlement).Level >= RiskLevel.High;
             if (invalid || risky)
             {
                 Logger.Warn($"  Recruiter '{PartyNameFormatter.SafeName(self)}': 目标 '{targetSettlement.Name}' {(invalid ? "已失效" : "风险高")}，跳到下一站");

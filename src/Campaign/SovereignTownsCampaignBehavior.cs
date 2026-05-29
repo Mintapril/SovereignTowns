@@ -362,6 +362,10 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
                 // feature off — 仍然清零,免得后续打开时一次性涌出累计值
                 SovereignTowns.Audit.DailyActivityCounters.ResetAll();
             }
+
+            // 2026-05-30：卫队每日「免费」供养。卫队是常驻首府的独立 MobileParty，不继承 GarrisonPartyComponent，
+            // 故 vanilla 不像驻军那样自动喂它；不喂 → IsStarving → healing 模型返回负值 → 健康兵逐日转伤兵且永不痊愈。
+            _honorGuardManager?.OnDailyTick();
         }
         catch (Exception ex)
         {

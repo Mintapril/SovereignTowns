@@ -62,6 +62,17 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
                     new TextObject("{=ST_PartySizeLimit_Patrol}Sovereign Towns patrol party size limit"));
             }
 
+            // 2026-05-30：卫队 size 上限 — 与巡逻队同因（leader=null 走 vanilla 会拿到 ~20 的极低上限，
+            // 玩家在「管理卫队」队伍界面看到的"容量 20"正是这个）。卫队总量由 HonorGuardCap 统一管控，
+            // 故 size 上限取 max(当前兵员, HonorGuardCap)，确保界面与 MCMF 注入上限一致。
+            if (comp is HonorGuardPartyComponent)
+            {
+                return new ExplainedNumber(
+                    ComputeHonorGuardLimit(mp),
+                    includeDescriptions,
+                    new TextObject("{=ST_PartySizeLimit_HonorGuard}Sovereign Towns honor guard size limit"));
+            }
+
             return base.GetPartyMemberSizeLimit(party!, includeDescriptions);
         }
         catch (Exception ex)
@@ -110,6 +121,15 @@ public sealed class STPartySizeLimitModel : DefaultPartySizeLimitModel
             (ConfigurationManager.Current?.Thresholds?.PatrolTroopBatchRatio ?? 0.10f) * 2f,
             minimumWhenPositive: 30);
         return Math.Max(1, Math.Max(currentMembers, byRatio));
+    }
+
+    /// <summary>卫队兵员上限 = max(当前兵员, HonorGuardCap)。HonorGuardCap 恒为 300（见 FiscalAutonomyConfig），
+    /// 与 MCMF 向卫队池注入兵员时的 globalRoom 上限同源，避免界面显示与实际可注入量打架。</summary>
+    private static int ComputeHonorGuardLimit(MobileParty? party)
+    {
+        int currentMembers = party?.MemberRoster?.TotalManCount ?? 0;
+        int cap = ConfigurationManager.Current?.FiscalAutonomy?.HonorGuardCap ?? 300;
+        return Math.Max(1, Math.Max(currentMembers, cap));
     }
 
     private static int ComputeSallyLimit(MobileParty? party, StSallyPartyComponent sally)

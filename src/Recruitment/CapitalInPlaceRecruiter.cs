@@ -129,8 +129,20 @@ public static class CapitalInPlaceRecruiter
                 if (maxIdx < 0) continue;
                 notablesEligible++;
 
-                int upper = Math.Min(volunteerTypes.Length - 1, maxIdx);
-                for (int i = 0; i <= upper; i++)
+                // 2026-05-29 fix: 与 village 招募队同口径放宽 slot 上限（VolunteerMul=2.0）。
+                // 此前 in-place 只扫 [0, maxIdx]；village 队（StRecruiterPartyComponent）扫 [0, effectiveMaxIdx]（约 2×）。
+                // owner 与本城 notable 关系一般 → maxIdx 偏小；志愿兵若落在更高 slot，in-place 会整段漏扫 → 候选扫描=0。
+                const float VolunteerMul = 2.0f;  // 镜像 StRecruiterPartyComponent.VolunteerMul
+                int effectiveMaxIdx = Math.Min(
+                    volunteerTypes.Length - 1,
+                    Math.Max(maxIdx, (int)Math.Round((maxIdx + 1) * VolunteerMul) - 1));
+
+                // [GARRISON-DIAG] 每 notable slot 占用 —— 定位"候选扫描=0"是 slot 全空，还是被 maxIdx 卡窄。
+                int nonNullSlots = 0;
+                for (int s = 0; s < volunteerTypes.Length; s++) if (volunteerTypes[s] != null) nonNullSlots++;
+                Logger.Info($"  [GARRISON-DIAG] CapitalInPlace notable '{notable.Name}' maxIdx={maxIdx} effMaxIdx={effectiveMaxIdx} slotsFilled={nonNullSlots}/{volunteerTypes.Length}");
+
+                for (int i = 0; i < volunteerTypes.Length && i <= effectiveMaxIdx; i++)
                 {
                     var troop = volunteerTypes[i];
                     if (troop == null) continue;

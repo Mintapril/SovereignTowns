@@ -120,6 +120,13 @@ public sealed class EnabledFeatures
     /// 配置变更后由 <see cref="ConfigurationManager"/> 在主线程立即调用 Logger.SetMinLevel 热生效。
     /// </summary>
     public bool VerboseLogging { get; set; } = false;
+
+    /// <summary>
+    /// 2026-05-29：在大地图上把本 Mod 的活动部队（征兵 / 调拨 / 巡逻 / 出击）注册进 vanilla
+    /// <c>VisualTrackerManager</c>，显示与"追踪商队 / 任务部队"相同的地图标记。部队解散/销毁时标记自动移除。
+    /// 由 <see cref="SovereignTowns.Lifecycle.PartyLifecycleManager"/> 在 hourly tick 同步开关状态。默认 false。
+    /// </summary>
+    public bool TrackPartiesOnMap { get; set; } = false;
 }
 
 /// <summary>
@@ -234,12 +241,6 @@ public sealed class PartyThresholds
     /// 默认 720h = 30 天。范围 [0, 720]，但 &lt;24 不实用（短于一次完整巡回）。
     /// </summary>
     public float PatrolMaxLifetimeHours { get; set; } = 720f;
-
-    /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
-    public float FoodReplenishMinDays { get; set; } = 2f;
-
-    /// <summary>B5：(deferred) 食物补给已 deferred — 保留字段留作未来 hook。</summary>
-    public float FoodReplenishTopUpDays { get; set; } = 5f;
 
     // ── DeepSeek audit 2026-05-18 新增（R1/R2/R3/R4/H7-H10） ─────────────
 

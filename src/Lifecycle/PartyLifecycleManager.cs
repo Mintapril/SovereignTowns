@@ -32,6 +32,9 @@ public sealed class PartyLifecycleManager
     // ────────── 空闲检测阈值（小时） ──────────
     public const int IdleHoursBeforeForceReturn = 24;
     public const int IdleHoursBeforeDisband     = 36;
+    // 2026-05-29: 物理移动判"有进展"的阈值（地图坐标 LengthSquared）。每小时 tick 间移动 >0.1 单位即算在赶路；
+    // 真正卡死（寻路死锁 / 原地不动）的队 delta≈0，仍会累计 idle 被抓。0.01 = (0.1)^2。
+    private const float IdleMoveProgressEpsilonSq = 0.01f;
 
     // ────────── kind 常量（推荐使用者使用） ──────────
     public const string KindRecruiter    = "recruiter";
@@ -138,6 +141,7 @@ public sealed class PartyLifecycleManager
             }
             _tracked[party] = meta;
             IncrementCount(meta.Home, meta.Kind, meta.OwnerClan);
+            SyncMapTracker(party);   // 2026-05-29: 开关开启时，新部队立即上大地图标记（不必等下一 hourly tick）
             Logger.Info($"RegisterTrackedParty: '{PartyNameFormatter.SafeName(party)}' kind={kind} home='{home.Name}' (tracked total={_tracked.Count})");
         }
         catch (Exception ex)
@@ -415,6 +419,7 @@ public sealed class PartyLifecycleManager
     public void UntrackParty(MobileParty party)
     {
         if (party is null) return;
+        RemoveMapTracker(party);   // 2026-05-29: 无条件移除大地图标记，避免残留死标记指向已销毁/不再管理的 party
         try
         {
             // 先取出旧 meta 用于维护 _countByKey，再 Remove。
@@ -456,6 +461,10 @@ public sealed class PartyLifecycleManager
             if (party is null) return;
             if (!_tracked.TryGetValue(party, out var meta)) return;
 
+            // 2026-05-29: 每小时把该 party 的大地图追踪标记同步到 TrackPartiesOnMap 开关（开→注册，关→移除）。
+            // 放在状态机分派之前 → 开关切换后最迟一游戏小时内所有 ST 部队标记到位；幂等，开销极小。
+            SyncMapTracker(party);
+
             // B16.1：StPartyComponent 状态机分派必须在所有 early-return（idle 检测）之前，
             // 否则正常 in-flight 队伍（无 progress + idle < 24h）走不到这里，
             // OnHourlyTickCore（含到达 dest → DeliverAndDisband 分支）永远不触发。
@@ -467,20 +476,27 @@ public sealed class PartyLifecycleManager
                 if (!_tracked.TryGetValue(party, out meta)) return;
             }
 
-            // 1) 进展检测：TargetSettlement 改变 或 兵员数量改变 → 视为有进展，刷新 LastActiveAt
+            // 1) 进展检测：TargetSettlement 改变 / 兵员数量改变 / 地图位置移动 → 视为有进展，刷新 LastActiveAt
             var currentTarget = party.TargetSettlement;
             var currentMembers = PartyNameFormatter.SafeMemberCount(party);
+            var currentPos = party.GetPosition2D;
+            // 2026-05-29: 把"物理移动"补进进展信号。否则朝单个远 village 直线赶路时（目标/兵数都不变）
+            // 会被误判 idle，24h 强制遣返 / 36h 解散 —— 这正是 HG 跨图招募队（#16，目标 Khuzait 村约 12-13 游戏日单程）
+            // 连第一站都到不了就空手而归的根因。真正卡死（寻路死锁 / 原地不动）的队 delta≈0，仍会累计 idle 被抓。
+            bool moved = (currentPos - meta.LastPosition).LengthSquared > IdleMoveProgressEpsilonSq;
             var hasProgress = (currentTarget != meta.LastTargetSettlement) ||
-                              (currentMembers != meta.LastMemberCount);
+                              (currentMembers != meta.LastMemberCount) ||
+                              moved;
 
             if (hasProgress)
             {
                 meta.LastTargetSettlement = currentTarget;
                 meta.LastMemberCount = currentMembers;
+                meta.LastPosition = currentPos;
                 meta.LastActiveAt = CampaignTime.Now;
                 _tracked[party] = meta;
                 var targetName = currentTarget?.Name?.ToString() ?? "<none>";
-                Logger.Debug($"HourlyTick '{PartyNameFormatter.SafeName(party)}': progress detected (target={targetName} members={currentMembers}) — LastActiveAt refreshed");
+                Logger.Debug($"HourlyTick '{PartyNameFormatter.SafeName(party)}': progress detected (target={targetName} members={currentMembers} moved={moved}) — LastActiveAt refreshed");
                 return;
             }
 
@@ -612,6 +628,49 @@ public sealed class PartyLifecycleManager
         catch (Exception ex)
         {
             Logger.Error($"OnMobilePartyDestroyed failed for '{PartyNameFormatter.SafeName(party)}'", ex);
+        }
+    }
+
+    // ────────── 大地图追踪（vanilla VisualTrackerManager）──────────
+
+    /// <summary>
+    /// 2026-05-29：把 <paramref name="party"/> 的 vanilla 大地图追踪标记同步到
+    /// <see cref="EnabledFeatures.TrackPartiesOnMap"/> 开关 —— 开→RegisterObject，关→RemoveTrackedObject。
+    /// 用 CheckTracked 守护做幂等。全程 try-catch（绝不抛进 vanilla hourly tick）。
+    /// MobileParty 实现 ITrackableCampaignObject（apidoc 核实，1.3.15 编译核实），可直接注册产生地图标记。
+    /// </summary>
+    private static void SyncMapTracker(MobileParty? party)
+    {
+        try
+        {
+            if (party is null) return;
+            // 全限定 Campaign：本项目存在 SovereignTowns.Campaign 子命名空间，裸 Campaign 会被解析错。
+            var vtm = TaleWorlds.CampaignSystem.Campaign.Current?.VisualTrackerManager;
+            if (vtm == null) return;
+            bool want = SovereignTowns.Configuration.ConfigurationManager.Current?.EnabledFeatures?.TrackPartiesOnMap ?? false;
+            bool have = vtm.CheckTracked(party);
+            if (want && !have) vtm.RegisterObject(party);
+            else if (!want && have) vtm.RemoveTrackedObject(party);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyLifecycleManager.SyncMapTracker failed for '{PartyNameFormatter.SafeName(party)}': {ex.Message}");
+        }
+    }
+
+    /// <summary>2026-05-29：无条件移除 <paramref name="party"/> 的大地图追踪标记（销毁 / 解除跟踪时调用，防残留死标记）。</summary>
+    private static void RemoveMapTracker(MobileParty? party)
+    {
+        try
+        {
+            if (party is null) return;
+            var vtm = TaleWorlds.CampaignSystem.Campaign.Current?.VisualTrackerManager;
+            if (vtm == null) return;
+            if (vtm.CheckTracked(party)) vtm.RemoveTrackedObject(party);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"PartyLifecycleManager.RemoveMapTracker failed: {ex.Message}");
         }
     }
 
@@ -766,6 +825,10 @@ public sealed class PartyLifecycleManager
         public CampaignTime LastActiveAt;
         public Settlement? LastTargetSettlement;
         public int LastMemberCount;
+        // 2026-05-29: 上次判定"有进展"时的地图坐标。物理移动也算进展（见 OnHourlyTickParty 进展检测），
+        // 让朝单个远 village 直线赶路的长途队（HG 跨图招募）不被误判 idle 遣返。
+        // 不进构造函数 → 默认 Vec2.Zero，首个 hourly tick 必判 moved=true（Zero vs 实坐标）刷新一次，无害。
+        public TaleWorlds.Library.Vec2 LastPosition;
 
         public TrackedPartyMeta(
             Settlement home,

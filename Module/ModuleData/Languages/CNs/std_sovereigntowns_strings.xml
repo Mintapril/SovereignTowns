@@ -12,14 +12,16 @@
     <string id="ST_RecruiterPartyName" text="征兵队 - {SETTLEMENT}" />
     <string id="ST_SallyPartyName" text="出击队 - {SETTLEMENT}" />
     <string id="ST_TransferPartyName" text="调拨队 - {SOURCE} → {DESTINATION}" />
+    <string id="ST_HonorGuardPartyName" text="卫队 - {SETTLEMENT}" />
 
     <!-- GameModel 修饰描述（出现在队伍详情 tooltip）。 -->
-    <string id="ST_PartySpeedBonus" text="主权城镇 城镇拨款队伍 移速加成" />
-    <string id="ST_PartyWageZero" text="主权城镇 城镇拨款队伍（免氏族军饷）" />
+    <string id="ST_PartySpeedBonus" text="主权城镇 城镇供养的队伍 移速加成" />
+    <string id="ST_PartyWageZero" text="主权城镇 城镇供养的队伍（免氏族军饷）" />
     <string id="ST_PartySizeLimit_Recruit" text="主权城镇 征兵队容量上限" />
     <string id="ST_PartySizeLimit_Transfer" text="主权城镇 调拨队容量上限" />
     <string id="ST_PartySizeLimit_Sally" text="主权城镇 出击队容量上限" />
     <string id="ST_PartySizeLimit_Patrol" text="主权城镇 巡逻队容量上限" />
+    <string id="ST_PartySizeLimit_HonorGuard" text="主权城镇 卫队容量上限" />
     <string id="ST_ClanFinanceSettlement" text="主权城镇 金库结算" />
 
     <!-- 城镇/城堡菜单选项。 -->
@@ -39,11 +41,11 @@
     <string id="ST_Msg_Capital_ChangeFailed" text="[主权城镇] 首府切换失败 ('{SETTLEMENT}' 已是首府或不合法)。" />
 
     <!-- Campaign 会话 / 每日消息。 -->
-    <string id="ST_Msg_DailySummary" text="[主权城镇] 今日 招{RECRUITED} 调{TRANSFERRED} 巡逻{PATROLS} 出击{SALLIES} 俘虏招募{PRISONERS}。" />
+    <string id="ST_Msg_DailySummary" text="[主权城镇] 今日：招募 {RECRUITED} · 调拨 {TRANSFERRED} · 巡逻 {PATROLS} · 出击 {SALLIES} · 俘虏转化 {PRISONERS}。" />
 
     <!-- 配置 / 模块管理消息。 -->
     <string id="ST_Msg_Config_VersionMismatch" text="[主权城镇] global.json 版本不匹配 (文件 v{FILE_VERSION}，期望 v{EXPECTED_VERSION}) — 已重置为默认，请在游戏内控制面板重新配置。" />
-    <string id="ST_Msg_AiOptIn" text="[主权城镇] 已将有首府的 AI 氏族纳入 ST 首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻范围。其领主已不能通过 vanilla 从村庄 / 城镇名士招兵；唯有 ST mod 渠道（首府就地招募 / 征兵队 / 俘虏转化）作为兵源。招募兵种限同文化。" />
+    <string id="ST_Msg_AiOptIn" text="[主权城镇] 已接管拥有首府的 AI 氏族驻军（招募 / 调拨 / 出击 / 俘虏 / 巡逻）；其领主不再走原版招募，改由本 Mod 征兵供给，且只招同文化兵种。" />
     <string id="ST_Msg_IncompatibleMods" text="主权城镇：检测到互斥模块（{MODS}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。" />
 
     <!-- 战斗 / 解散 / 销毁汇报（左下角消息）。 -->

@@ -340,10 +340,17 @@ public static class UnifiedGarrisonSolver
 
             // ── 在飞兵作为到达 supply:superSource → G[dest, arrivalτ] ──
             // 2026-05-29: role/tier 都从节点 key 删除；CollectInFlightArrivals 返 role/tier 仅作描述符，solver 忽略。
+            // 2026-05-30 修 #17：在飞兵 arrivalTau **强制 ≥ 1**。在飞兵此刻并不在驻军里（还在行军队伍中，
+            //   merge 是另一条事件路径），返航/在城边的队伍 eta 会算成 0，旧实现把它们注入 G[dest,0]，
+            //   与当前真实驻军抢同一条 τ=0 hold 边（cap=settlementCapacity）→ 真实驻军被挤去遣散
+            //   （日志可见 garrison 远低于目标却 disband-plan total=7/18）。改到 τ≥1 后：τ=0 的 hold 压力
+            //   只剩当前真实驻军，只有真实驻军超 cap 才遣散；在飞兵在 τ≥1 占容量、自然抑制过量补员，
+            //   不会再为"还没到的兵"先裁真兵。
             foreach (var (dest, role, tier, heads, arrivalTau) in CollectInFlightArrivals(clan, tickHours, T))
             {
                 if (dest == null || !townSet.Contains(dest)) continue;
-                AddE(superSource, G(dest, arrivalTau), heads, new EdgeCost(timeUnits: arrivalTau), EdgeCat.Internal);
+                int safeArrivalTau = Math.Min(T, Math.Max(1, arrivalTau));
+                AddE(superSource, G(dest, safeArrivalTau), heads, new EdgeCost(timeUnits: safeArrivalTau), EdgeCat.Internal);
                 originSupply += heads;
             }
 
