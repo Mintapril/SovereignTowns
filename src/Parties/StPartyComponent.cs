@@ -657,7 +657,7 @@ public abstract class StPartyComponent : CustomPartyComponent
     private const int MidTripRefillAmount = 1000;
 
     /// <summary>
-    /// 是否沿途自动补给（"食物 &lt;1 天买 3 天"）。
+    /// 是否沿途自动补给（"食物 &lt;2 天买 5 天"）。
     /// 默认 true（Patrol/Recruiter）。Sally/Transfer override 为 false（单目的地短命任务，无沿途补给场景）。
     /// </summary>
     protected virtual bool ShouldReplenishFoodEnRoute => true;

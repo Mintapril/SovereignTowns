@@ -25,9 +25,8 @@
             <TextWidget WidthSizePolicy="Fixed" SuggestedWidth="22" HeightSizePolicy="StretchToParent"
                         Brush="SPOptions.Slider.Value.Text" Text="@TypeGlyph"
                         HorizontalAlignment="Center" VerticalAlignment="Center" MarginRight="8" />
-            <ButtonWidget DoNotPassEventsToChildren="true" Command.Click="ExecuteToggle"
-                          WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="80" SuggestedHeight="26"
-                          VerticalAlignment="Center" MarginRight="6">
+            <Widget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="80" SuggestedHeight="26"
+                    VerticalAlignment="Center" MarginRight="6">
               <Children>
                 <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent"
                         Sprite="BlankWhiteSquare_9" Color="#5a4a2aFF" />
@@ -35,7 +34,7 @@
                             Brush="SPOptions.Slider.Value.Text" Text="@AddLabel"
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
               </Children>
-            </ButtonWidget>
+            </Widget>
           </Children>
         </ListPanel>
       </Children>

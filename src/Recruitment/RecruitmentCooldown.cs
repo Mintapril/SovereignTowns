@@ -55,7 +55,11 @@ public static class RecruitmentCooldown
     /// <summary>清空全部冷却（CapitalManager 切换首府时可调用以避免跨首府误判）。</summary>
     public static void Clear()
     {
-        try { _lastRecruitAt.Clear(); }
+        try
+        {
+            _lastRecruitAt.Clear();
+            Logger.Info("RecruitmentCooldown: cleared");
+        }
         catch (Exception ex) { Logger.Warn($"RecruitmentCooldown.Clear failed: {ex.Message}"); }
     }
 }

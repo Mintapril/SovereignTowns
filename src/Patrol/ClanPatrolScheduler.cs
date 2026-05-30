@@ -55,7 +55,7 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
                 if (s == patrol.HomeSettlementOrNull) return false;
             }
         }
-        catch { /* swallow */ }
+        catch (Exception ex) { Logger.Warn($"ClanPatrolScheduler.PassesCandidateFilter home check failed: {ex.Message}"); }
         return true;
     }
 
@@ -135,6 +135,8 @@ public sealed class ClanPatrolScheduler : BaseSettlementVisitScheduler
             if (closest != null) return closest;
 
             // 无围攻 → 被劫掠村庄：选距离本 party 最近
+            closest = null;
+            closestDist = float.MaxValue;
             foreach (var s in raidedVillages)
             {
                 float d = (partyPos - s.GetPosition2D).Length;

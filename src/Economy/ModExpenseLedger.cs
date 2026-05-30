@@ -28,9 +28,11 @@ public static class ModExpenseLedger
         {
             lock (_gate)
             {
-                long nowMs;
-                try { nowMs = (long)CampaignTime.Now.ToMilliseconds; }
-                catch { nowMs = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond; }
+                if (!TryGetCampaignNowMs(out var nowMs))
+                {
+                    Logger.Warn("ModExpenseLedger.Record skipped because CampaignTime is unavailable");
+                    return;
+                }
 
                 _entries.Add(new ExpenseEntry
                 {
@@ -55,9 +57,10 @@ public static class ModExpenseLedger
         {
             lock (_gate)
             {
-                long nowMs;
-                try { nowMs = (long)CampaignTime.Now.ToMilliseconds; }
-                catch { nowMs = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond; }
+                if (!TryGetCampaignNowMs(out var nowMs))
+                {
+                    nowMs = _entries.Count > 0 ? _entries[_entries.Count - 1].TimestampMs : 0L;
+                }
 
                 long todayStartMs = nowMs - (24L * 3600L * 1000L);
                 long weekStartMs = nowMs - (7L * 24L * 3600L * 1000L);
@@ -117,9 +120,7 @@ public static class ModExpenseLedger
 
     private static void TrimAndRollOverIfNeeded()
     {
-        long nowMs;
-        try { nowMs = (long)CampaignTime.Now.ToMilliseconds; }
-        catch { return; }
+        if (!TryGetCampaignNowMs(out var nowMs)) return;
 
         long cutoff = nowMs - (MaxInMemoryDays * 24L * 3600L * 1000L);
         while (_entries.Count > 0 && _entries[0].TimestampMs < cutoff)
@@ -128,6 +129,20 @@ public static class ModExpenseLedger
             _historicalRolledOver.TryGetValue(old.Category, out var sum);
             _historicalRolledOver[old.Category] = sum + old.Amount;
             _entries.RemoveAt(0);
+        }
+    }
+
+    private static bool TryGetCampaignNowMs(out long nowMs)
+    {
+        try
+        {
+            nowMs = (long)CampaignTime.Now.ToMilliseconds;
+            return true;
+        }
+        catch
+        {
+            nowMs = 0L;
+            return false;
         }
     }
 

@@ -14,8 +14,9 @@ namespace SovereignTowns.Ui.ControlPanel;
 /// </summary>
 internal sealed class ControlPanelMapButtonView : MapView
 {
-    private GauntletLayer _layer;
-    private MapButtonVM _vm;
+    private GauntletLayer? _layer;
+    private MapButtonVM? _vm;
+    private bool _disposed;
 
     public ControlPanelMapButtonView()
     {
@@ -37,5 +38,34 @@ internal sealed class ControlPanelMapButtonView : MapView
             ((ScreenBase)MapScreen.Instance).AddLayer(_layer);
         }
         catch (System.Exception ex) { Logger.Error("ControlPanelMapButtonView.CreateLayout failed", ex); }
+    }
+
+    internal void DisposeView()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try
+        {
+            if (_layer != null && MapScreen.Instance != null)
+            {
+                ((ScreenBase)MapScreen.Instance).RemoveLayer(_layer);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Logger.Error("ControlPanelMapButtonView.DisposeView remove layer failed", ex);
+        }
+
+        try { _vm?.OnFinalize(); }
+        catch (System.Exception ex) { Logger.Error("ControlPanelMapButtonView.DisposeView VM finalize failed", ex); }
+
+        _layer = null;
+        _vm = null;
+    }
+
+    protected override void OnFinalize()
+    {
+        DisposeView();
+        base.OnFinalize();
     }
 }

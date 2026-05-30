@@ -463,7 +463,7 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             // 只有当玩家阵营是宣战的当事方之一才需处理
             if (faction1 != playerFaction && faction2 != playerFaction) return;
 
-            foreach (var party in MobileParty.AllCustomParties)
+            foreach (var party in MobileParty.AllCustomParties.ToList())
             {
                 try
                 {
@@ -649,6 +649,13 @@ public sealed class SovereignTownsCampaignBehavior : CampaignBehaviorBase
             try { _honorGuardManager?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall HonorGuardManager failed", ex); }
             try { _capitalRegistry?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall CapitalRegistry failed", ex); }
             try { _lifecycle?.Uninstall(); } catch (Exception ex) { Logger.Warn("Uninstall PartyLifecycleManager failed", ex); }
+            try { _mapButtonView?.DisposeView(); _mapButtonView = null; } catch (Exception ex) { Logger.Warn("Uninstall ControlPanelMapButtonView failed", ex); }
+            try { RecruitmentCooldown.Clear(); } catch (Exception ex) { Logger.Warn("Uninstall RecruitmentCooldown.Clear failed", ex); }
+            try { ActivityFeed.Clear(); } catch (Exception ex) { Logger.Warn("Uninstall ActivityFeed.Clear failed", ex); }
+            try { PerSettlementActivityRing.Clear(); } catch (Exception ex) { Logger.Warn("Uninstall PerSettlementActivityRing.Clear failed", ex); }
+            try { PartyEconomyHelper.ResetCaches(); } catch (Exception ex) { Logger.Warn("Uninstall PartyEconomyHelper.ResetCaches failed", ex); }
+            try { PartyMergeService.ResetForReload(); } catch (Exception ex) { Logger.Warn("Uninstall PartyMergeService.ResetForReload failed", ex); }
+            try { AsyncSimulator.Reset(); } catch (Exception ex) { Logger.Warn("Uninstall AsyncSimulator.Reset failed", ex); }
 
             _staticSallyDispatcher = null;
             _instance = null;

@@ -278,7 +278,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
         // 出发首 tick（LastVisitedSettlement=home, CurrentSettlement=null）误判。
         var visited = self.CurrentSettlement ?? self.LastVisitedSettlement;
         var arrivalHome = HomeSettlementOrNull;
-        Logger.Info($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' visited='{visited?.Name?.ToString() ?? "null"}' visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
+        Logger.Debug($"[DIAG] StPatrolParty.Core '{PartyNameFormatter.SafeName(self)}' arrival-check: cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' visited='{visited?.Name?.ToString() ?? "null"}' visitedOwner='{visited?.OwnerClan?.StringId ?? "null"}' vs mgrOwner='{capitalMgr.OwnerClan?.StringId ?? "null"}'");
         if (visited != null
             && visited != arrivalHome
             && visited.OwnerClan == capitalMgr.OwnerClan
@@ -348,6 +348,7 @@ public sealed class StPatrolPartyComponent : StPartyComponent
                         self.Position = home.GatePosition;
                         Logger.Warn($"StPatrolParty: '{PartyNameFormatter.SafeName(self)}' stuck {elapsedHours:F1}h ≥ {teleportHours}h — teleport to '{home.Name}' GatePosition (二段救济)");
                         _stuckActive = false;
+                        ReturnToHome(self);
                         return;
                     }
                 }

@@ -110,6 +110,10 @@ public static class HostilePartyScanner
             if (roster == null) return 0f;
             return Math.Max(0, roster.TotalManCount - roster.TotalWounded);
         }
-        catch { return 0f; }
+        catch (Exception ex)
+        {
+            Logger.Warn($"HostilePartyScanner.HealthyStrength failed for '{p?.StringId}'", ex);
+            return 0f;
+        }
     }
 }

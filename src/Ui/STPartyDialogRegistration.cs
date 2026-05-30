@@ -88,14 +88,18 @@ internal static class STPartyDialogRegistration
                     homeNameObj = (TextObject?)(comp as StPartyComponent)?.HomeSettlementOrNull?.Name
                         ?? new TextObject("{=ST_Common_Unknown}unknown");
                 }
-                catch { homeNameObj = new TextObject("{=ST_Common_Unknown}unknown"); }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"STPartyDialogRegistration: failed to resolve home name for '{mp.StringId}'", ex);
+                    homeNameObj = new TextObject("{=ST_Common_Unknown}unknown");
+                }
 
                 var greeting = new TextObject(
                     "{=ST_Dialog_Greeting_Generic}We are the {PARTY_KIND} dispatched from {SETTLEMENT}, our regards.");
                 greeting.SetTextVariable("PARTY_KIND", partyKind);
                 greeting.SetTextVariable("SETTLEMENT", homeNameObj);
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
-                catch { /* SetTextVariable 偶尔抛 */ }
+                catch (Exception ex) { Logger.Warn("STPartyDialogRegistration: SetTextVariable failed for ST party greeting", ex); }
                 return true;
             }
             // B16.4：ST 自家巡逻队（玩家自家城的）— vanilla auto-spawn 的 PatrolPartyComponent 不再纳入对话拦截
@@ -108,12 +112,16 @@ internal static class STPartyDialogRegistration
                     homeNameObj = (TextObject?)pp.HomeSettlementOrNull?.Name
                         ?? new TextObject("{=ST_Common_Unknown}unknown");
                 }
-                catch { homeNameObj = new TextObject("{=ST_Common_Unknown}unknown"); }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"STPartyDialogRegistration: failed to resolve patrol home name for '{mp.StringId}'", ex);
+                    homeNameObj = new TextObject("{=ST_Common_Unknown}unknown");
+                }
                 var greeting = new TextObject(
                     "{=ST_Dialog_Greeting_Patrol}We are the patrol from {SETTLEMENT}, our regards.");
                 greeting.SetTextVariable("SETTLEMENT", homeNameObj);
                 try { TaleWorlds.Localization.MBTextManager.SetTextVariable("ST_PARTY_GREETING", greeting, false); }
-                catch { }
+                catch (Exception ex) { Logger.Warn("STPartyDialogRegistration: SetTextVariable failed for patrol greeting", ex); }
                 return true;
             }
             return false;

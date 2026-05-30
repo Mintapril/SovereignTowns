@@ -133,7 +133,13 @@ public sealed class StTransferPartyComponent : StPartyComponent
             return;
         }
 
-        var partyClan = self.ActualClan ?? _source?.OwnerClan ?? dest.OwnerClan;
+        var partyClan = self.ActualClan ?? _source?.OwnerClan;
+        if (partyClan == null)
+        {
+            Logger.Warn($"StTransferParty '{self.Name}': cannot determine owning clan; disbanding instead of comparing against destination owner");
+            PartyMergeService.Instance.DisbandAndUntrack(self, "StTransferPartyComponent missing owner clan");
+            return;
+        }
 
         // 2) destination owner 变更 → 改返安全 fallback
         if (partyClan != null && dest.OwnerClan != partyClan)

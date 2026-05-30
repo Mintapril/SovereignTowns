@@ -75,9 +75,10 @@ public sealed class VanillaPatrolSuppressor
             {
                 try
                 {
-                    var home = mp?.HomeSettlement;
+                    if (mp == null) continue;
+                    var home = mp.HomeSettlement;
                     if (home == null || !IsManagedSettlement(home)) continue;
-                    DissolveParty(mp);
+                    DissolveParty(mp!);
                     dissolved++;
                 }
                 catch (Exception inner)
@@ -152,9 +153,14 @@ public sealed class VanillaPatrolSuppressor
     private static void DissolveParty(MobileParty mp)
     {
         if (mp == null) return;
+        if (!mp.IsActive) return;
+        if (mp.MapEvent != null)
+        {
+            Logger.Warn($"VanillaPatrolSuppressor: skip dissolving '{mp.StringId}' during map event");
+            return;
+        }
         mp.MapEventSide = null;
-        if (mp.IsActive)
-            DestroyPartyAction.Apply(null, mp);
+        DestroyPartyAction.Apply(null, mp);
     }
 
     private static bool IsManagedSettlement(Settlement settlement)
@@ -172,11 +178,24 @@ public sealed class VanillaPatrolSuppressor
             var registry = CapitalRegistry.Instance;
             if (registry != null)
                 return registry.IsManagedClanWithCapital(ownerClan);
-            return ownerClan == Clan.PlayerClan;
+            return ownerClan == Clan.PlayerClan && ClanOwnsAnyTown(ownerClan);
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool ClanOwnsAnyTown(Clan clan)
+    {
+        try
+        {
+            foreach (var town in Town.AllTowns)
+            {
+                if (town != null && town.IsTown && town.OwnerClan == clan) return true;
+            }
+        }
+        catch { }
+        return false;
     }
 }

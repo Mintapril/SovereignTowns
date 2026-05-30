@@ -49,12 +49,17 @@ public static class ActivityFeed
     {
         lock (_lock)
         {
-            int count = Math.Min(maxCount, _entries.Count);
+            int count = Math.Min(Math.Max(0, maxCount), _entries.Count);
             var snap = new List<Entry>(count);
             var node = _entries.First;
             for (int i = 0; i < count && node != null; i++, node = node.Next)
                 snap.Add(node.Value);
             return snap;
         }
+    }
+
+    public static void Clear()
+    {
+        lock (_lock) _entries.Clear();
     }
 }

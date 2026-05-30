@@ -133,7 +133,7 @@ public sealed class PartyLifecycleManager
                 CampaignTime.Now,
                 party.TargetSettlement,
                 initialMembers,
-                SafeActualClan(party, home));
+                SafeOwnerClanKey(party, home));
             // 覆盖更新场景：先按旧 meta 减计数，再按新 meta 加计数（防止重复注册同一 party 时计数错位）。
             if (_tracked.TryGetValue(party, out var oldMeta))
             {
@@ -251,7 +251,7 @@ public sealed class PartyLifecycleManager
                                     _ => null!,
                                 };
                                 if (kind == null!) continue;
-                                var rebuiltMeta = new TrackedPartyMeta(home, kind, now, party.TargetSettlement, mc, SafeActualClan(party, home));
+                                var rebuiltMeta = new TrackedPartyMeta(home, kind, now, party.TargetSettlement, mc, SafeOwnerClanKey(party, home));
                                 _tracked[party] = rebuiltMeta;
                                 IncrementCount(rebuiltMeta.Home, rebuiltMeta.Kind, rebuiltMeta.OwnerClan);
                                 switch (kind)
@@ -739,15 +739,15 @@ public sealed class PartyLifecycleManager
         }
     }
 
-    private static Clan? SafeActualClan(MobileParty? party, Settlement? home)
+    private static Clan? SafeOwnerClanKey(MobileParty? party, Settlement? home)
     {
         try
         {
-            return party?.ActualClan ?? home?.OwnerClan;
+            return home?.OwnerClan ?? party?.ActualClan;
         }
         catch
         {
-            try { return home?.OwnerClan; }
+            try { return party?.ActualClan; }
             catch { return null; }
         }
     }

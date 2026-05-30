@@ -47,8 +47,7 @@ public static class ModTreasury
             if (amount <= 0) return true;
             if (clan == null) return false;
 
-            var feat = ConfigurationManager.Current?.EnabledFeatures;
-            if (feat?.PauseSpendingWhenBroke == false) return true;
+            if (!PauseWhenBroke()) return true;
             return clan.Gold >= amount;
         }
         catch
@@ -75,8 +74,7 @@ public static class ModTreasury
                 return false;
             }
 
-            var feat = ConfigurationManager.Current?.EnabledFeatures;
-            if (feat?.PauseSpendingWhenBroke == true && clan.Gold < amount)
+            if (PauseWhenBroke() && clan.Gold < amount)
             {
                 Logger.Info($"ModTreasury: 拒绝 {category} -{amount}d clan={clan.StringId} 因 Clan.Gold {clan.Gold} 不足 (PauseSpendingWhenBroke=true)");
                 return false;
@@ -156,7 +154,7 @@ public static class ModTreasury
             if (!string.IsNullOrEmpty(id))
                 FinancialSnapshot.PatchTreasuryBalance(id!, clan!.Gold);
         }
-        catch { /* swallow — snapshot 刷新失败不影响扣款本身 */ }
+        catch (Exception ex) { Logger.Warn($"ModTreasury.TryPatchSnapshotBalance failed for '{clan?.StringId}'", ex); }
     }
 
     private static string EscapeJson(string s)
@@ -164,6 +162,9 @@ public static class ModTreasury
         if (string.IsNullOrEmpty(s)) return "";
         return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ");
     }
+
+    private static bool PauseWhenBroke()
+        => ConfigurationManager.Current?.EnabledFeatures?.PauseSpendingWhenBroke ?? true;
 }
 
 /// <summary>mod 支出分类。</summary>

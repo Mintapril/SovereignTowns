@@ -38,18 +38,20 @@ internal static class ControlPanelData
     }
 
     /// <summary>从磁盘重读配置，成功后返回新的工作副本。</summary>
-    public static GlobalConfig Reload(out string reason)
+    public static GlobalConfig? Reload(out string reason)
     {
         try
         {
-            ConfigurationManager.TryReload(out reason);
+            if (!ConfigurationManager.TryReload(out reason))
+                return null;
+            return CloneCurrentConfig();
         }
         catch (Exception ex)
         {
             Logger.Error("ControlPanelData.Reload failed", ex);
             reason = ex.Message;
+            return null;
         }
-        return CloneCurrentConfig();
     }
 
     /// <summary>取可招募兵种列表（进程内枚举，含 RBM 等 mod 兵种）。</summary>

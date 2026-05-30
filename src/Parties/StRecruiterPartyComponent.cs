@@ -73,6 +73,7 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
     [SaveableField(29)] private string? _preciseTemplateJson;
     [CachedData] private TextObject? _cachedName;
     [CachedData] private Dictionary<string, int>? _preciseTemplateCache;
+    [CachedData] private bool _preciseTemplateParsed;
 
     private List<Settlement> Itin
     {
@@ -111,7 +112,9 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
         {
             if (_mode != RecruiterMode.HonorGuardPrecise) return null;
             if (_preciseTemplateCache != null) return _preciseTemplateCache;
+            if (_preciseTemplateParsed) return null;
             _preciseTemplateCache = ParsePreciseTemplateJson(_preciseTemplateJson);
+            _preciseTemplateParsed = true;
             return _preciseTemplateCache;
         }
     }
@@ -156,11 +159,13 @@ public sealed class StRecruiterPartyComponent : StPartyComponent
                 if (!string.IsNullOrEmpty(kv.Key)) copy[kv.Key] = kv.Value;
             }
             _preciseTemplateCache = copy;
+            _preciseTemplateParsed = true;
         }
         else
         {
             _preciseTemplateJson = null;
             _preciseTemplateCache = null;
+            _preciseTemplateParsed = true;
         }
     }
 

@@ -47,7 +47,7 @@ public static class FoodGuard
         }
         catch (Exception ex)
         {
-            Logger.Warn($"FoodGuard.IsRecruitmentPausedForFood threw for town '{town?.Name}': {ex.Message}");
+            Logger.Warn($"FoodGuard.IsRecruitmentPausedForFood threw for town '{town?.Name}'", ex);
             return false; // 失败时不阻塞业务路径
         }
     }

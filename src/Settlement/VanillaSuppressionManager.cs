@@ -47,6 +47,7 @@ namespace SovereignTowns.SettlementManagement;
 public sealed class VanillaSuppressionManager
 {
     private bool _initialized;
+    private bool _aiOptInMessageShown;
 
     /// <summary>
     /// 全局单例引用，让 ConfigurationManager.OnConfigChanged 订阅方在配置 reload 后能调到
@@ -100,8 +101,9 @@ public sealed class VanillaSuppressionManager
             }
 
             // AI 接管范围与玩家一致：首府 / 驻军 / 招募 / 调拨 / 出击 / 俘虏 / 巡逻。
-            if (feat.ApplyToAiSettlementsToo)
+            if (feat.ApplyToAiSettlementsToo && !_aiOptInMessageShown)
             {
+                _aiOptInMessageShown = true;
                 string msg = new TextObject(
                     "{=ST_Msg_AiOptIn}[Sovereign Towns] AI clans that own a capital are now managed by Sovereign Towns for capital / garrison / recruitment / transfer / sally / prisoner / patrol; AI recruitment is restricted to same-culture troops.").ToString();
                 Logger.Info(msg);
@@ -189,6 +191,7 @@ public sealed class VanillaSuppressionManager
             catch (Exception innerEx) { Logger.Warn("VanillaSuppressionManager.Uninstall: ClearListeners failed", innerEx); }
             Instance = null;
             _initialized = false;
+            _aiOptInMessageShown = false;
             Logger.Info("VanillaSuppressionManager: uninstalled (listeners cleared, Instance null)");
         }
         catch (Exception ex)

@@ -1042,7 +1042,7 @@ public static class UnifiedGarrisonSolver
             if (!needResample)
             {
                 float ageHours = (float)(CampaignTime.Now - _sampledAt).ToHours;
-                if (ageHours >= ReferenceSpeedTtlHours) needResample = true;
+                if (ageHours < 0f || ageHours >= ReferenceSpeedTtlHours) needResample = true;
             }
             if (!needResample) return _sampledSpeedPerHour;
 

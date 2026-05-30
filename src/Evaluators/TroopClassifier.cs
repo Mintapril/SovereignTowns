@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Logger = SovereignTowns.Logging.Logger;
 using TaleWorlds.CampaignSystem;
 
 namespace SovereignTowns.Evaluators;
@@ -43,8 +44,9 @@ public static class TroopClassifier
             if (nobleRoot is null) return false;
             return NobleLineReaches(nobleRoot, character, new HashSet<string>(System.StringComparer.OrdinalIgnoreCase));
         }
-        catch
+        catch (System.Exception ex)
         {
+            Logger.Warn($"TroopClassifier.IsNobleCore failed for '{character?.StringId}'", ex);
             return false;
         }
     }
@@ -64,8 +66,9 @@ public static class TroopClassifier
                 if (next != null && NobleLineReaches(next, target, visited)) return true;
             }
         }
-        catch
+        catch (System.Exception ex)
         {
+            Logger.Warn($"TroopClassifier.NobleLineReaches failed for '{source?.StringId}' -> '{target?.StringId}'", ex);
             return false;
         }
         return false;

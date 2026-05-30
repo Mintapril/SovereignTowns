@@ -165,13 +165,21 @@ public sealed class StrategyTabVM : ViewModel
     // ── 反射读写助手（被 SettingsGroupVM 的逐 spec 委托复用）──
 
     private static object RootObj(GlobalConfig cfg, string root)
-        => string.IsNullOrEmpty(root) ? (object)cfg : cfg.GetType().GetProperty(root).GetValue(cfg);
+    {
+        if (cfg == null) throw new ArgumentNullException(nameof(cfg));
+        if (string.IsNullOrEmpty(root)) return cfg;
+        var prop = cfg.GetType().GetProperty(root)
+            ?? throw new InvalidOperationException($"Strategy config root '{root}' not found");
+        return prop.GetValue(cfg)
+            ?? throw new InvalidOperationException($"Strategy config root '{root}' is null");
+    }
 
     /// <summary>按 SpecEntry 从工作配置读出 double 值。</summary>
     public static double GetD(GlobalConfig cfg, SpecEntry s)
     {
         var o = RootObj(cfg, s.Root);
-        var p = o.GetType().GetProperty(s.Key);
+        var p = o.GetType().GetProperty(s.Key)
+            ?? throw new InvalidOperationException($"Strategy config key '{s.Root}.{s.Key}' not found");
         return System.Convert.ToDouble(p.GetValue(o));
     }
 
@@ -179,7 +187,8 @@ public sealed class StrategyTabVM : ViewModel
     public static void SetD(GlobalConfig cfg, SpecEntry s, double v)
     {
         var o = RootObj(cfg, s.Root);
-        var p = o.GetType().GetProperty(s.Key);
+        var p = o.GetType().GetProperty(s.Key)
+            ?? throw new InvalidOperationException($"Strategy config key '{s.Root}.{s.Key}' not found");
         object boxed = p.PropertyType == typeof(int) ? (object)(int)System.Math.Round(v)
                      : p.PropertyType == typeof(bool) ? (object)(v != 0.0)
                      : p.PropertyType == typeof(float) ? (object)(float)v

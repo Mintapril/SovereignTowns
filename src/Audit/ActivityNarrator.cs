@@ -107,10 +107,10 @@ internal static class ActivityNarrator
                 case "capital_lost":
                 {
                     string lost = Place((string?)j["lost"]);
-                    string newCap = Place((string?)j["newCapital"]);
+                    string? newCapId = (string?)j["newCapital"];
                     string text = Tr($"首府 {lost} 已失守", $"Capital {lost} has fallen");
-                    if (!string.IsNullOrEmpty((string?)j["newCapital"]))
-                        text += Tr($",首府迁至 {newCap}", $", capital moved to {newCap}");
+                    if (!string.IsNullOrEmpty(newCapId))
+                        text += Tr($",首府迁至 {Place(newCapId)}", $", capital moved to {Place(newCapId)}");
                     return ("err", text);
                 }
                 case "capital_restored":

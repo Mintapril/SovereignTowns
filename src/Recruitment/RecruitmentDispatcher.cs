@@ -197,6 +197,7 @@ public sealed class RecruitmentDispatcher
 
             // 出发首站 + 装载 MCMF 行程 + 模式 + 精确模板（HG 模式）：
             // 后续状态机由 StRecruiterPartyComponent.OnHourlyTickCore 接管。
+            bool initialDispatchOk = false;
             try
             {
                 if (party.PartyComponent is StRecruiterPartyComponent rp)
@@ -207,9 +208,21 @@ public sealed class RecruitmentDispatcher
                     rp.SetAssignedTarget(firstStop);
                     party.SetMoveGoToSettlement(firstStop, MobileParty.NavigationType.Default, false);
                     rp.TransitionTo(StRecruiterPartyComponent.RecruiterPhase.Travelling);
+                    initialDispatchOk = true;
+                }
+                else
+                {
+                    Logger.Error($"  RecruitmentDispatcher: created party '{party.StringId}' has unexpected component '{party.PartyComponent?.GetType().Name ?? "<null>"}'");
                 }
             }
             catch (Exception ex) { Logger.Error("initial dispatch SetMove failed", ex); }
+            if (!initialDispatchOk)
+            {
+                if (escortRoster != null && escortActual > 0 && homeTown.GarrisonParty?.MemberRoster != null)
+                    TroopTransferHelper.TransferBackToGarrison(party.MemberRoster, homeTown.GarrisonParty.MemberRoster);
+                PartyMergeService.Instance.DestroyAndUntrack(party, "RecruitmentDispatcher initial dispatch failed", deferIfInMapEvent: false);
+                return false;
+            }
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchRecruiter",

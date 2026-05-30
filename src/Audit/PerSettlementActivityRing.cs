@@ -48,7 +48,7 @@ public static class PerSettlementActivityRing
         if (!_bySettlement.TryGetValue(settlementStringId, out var list)) return Array.Empty<Entry>();
         lock (list)
         {
-            int count = Math.Min(maxCount, list.Count);
+            int count = Math.Min(Math.Max(0, maxCount), list.Count);
             var snap = new List<Entry>(count);
             var node = list.First;
             for (int i = 0; i < count && node != null; i++, node = node.Next)
@@ -56,4 +56,6 @@ public static class PerSettlementActivityRing
             return snap;
         }
     }
+
+    public static void Clear() => _bySettlement.Clear();
 }

@@ -31,6 +31,8 @@ public sealed class TroopTemplateRowVM : ViewModel
             int cur = _getCount(Id);
             if (cur == value) return;
             _setCount(Id, value);
+            OnPropertyChanged(nameof(Count));
+            OnPropertyChanged(nameof(RatioPercent));
         }
     }
 

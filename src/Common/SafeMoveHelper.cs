@@ -54,8 +54,9 @@ public static class SafeMoveHelper
             {
                 try
                 {
+                    var from = party.CurrentSettlement;
                     LeaveSettlementAction.ApplyForParty(party);
-                    Logger.Info($"SafeMoveHelper.GoToWithLeave: '{party.Name}' left '{party.CurrentSettlement?.Name?.ToString() ?? "<null after leave>"}' before heading to '{target.Name}' [{context}]");
+                    Logger.Info($"SafeMoveHelper.GoToWithLeave: '{party.Name}' left '{from?.Name?.ToString() ?? "<unknown>"}' before heading to '{target.Name}' [{context}]");
                 }
                 catch (Exception leaveEx)
                 {

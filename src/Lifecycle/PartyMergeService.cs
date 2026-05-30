@@ -174,6 +174,11 @@ public sealed class PartyMergeService
             catch (Exception fallbackEx)
             {
                 Logger.Error($"{context}: fallback disband failed for '{party.Name}'", fallbackEx);
+                try { _lifecycle.UntrackParty(party); }
+                catch (Exception untrackEx)
+                {
+                    Logger.Error($"{context}: UntrackParty also failed after destroy/disband failures for '{party.Name}'", untrackEx);
+                }
                 return false;
             }
         }

@@ -83,7 +83,6 @@ public static class GarrisonXpInjector
                 return;
             }
 
-            var rule = ConfigurationManager.GetRuleFor(town);
             // 每日 XP = GarrisonXpBasePerDay + 军营(Barracks)等级 × GarrisonXpPerBarracksLevel。
             int perTroopBase = ComputeXpFromBarracks(settlement);
 

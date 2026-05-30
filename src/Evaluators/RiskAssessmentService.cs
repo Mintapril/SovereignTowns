@@ -1,3 +1,4 @@
+using System;
 using TaleWorlds.CampaignSystem.Settlements;
 
 namespace SovereignTowns.Evaluators;
@@ -77,9 +78,10 @@ public static class RiskAssessmentService
             return new RiskAssessment(RiskLevel.Critical, 10f, "under siege");
         }
 
-        float threat = settlement.NearbyLandThreatIntensity;
-        float ally = settlement.NearbyLandAllyIntensity;
-        float ratio = threat / (ally + 1f);
+        float threat = SanitizeIntensity(settlement.NearbyLandThreatIntensity);
+        float ally = SanitizeIntensity(settlement.NearbyLandAllyIntensity);
+        float ratio = threat / Math.Max(1f, ally + 1f);
+        if (float.IsNaN(ratio) || float.IsInfinity(ratio)) ratio = 0f;
 
         string reason = $"threat/ally ratio {ratio:F2}";
 
@@ -99,5 +101,11 @@ public static class RiskAssessmentService
         }
 
         return new RiskAssessment(RiskLevel.Safe, ratio, reason);
+    }
+
+    private static float SanitizeIntensity(float value)
+    {
+        if (float.IsNaN(value) || float.IsInfinity(value) || value < 0f) return 0f;
+        return value;
     }
 }

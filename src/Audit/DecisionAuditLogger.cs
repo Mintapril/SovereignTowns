@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using TaleWorlds.CampaignSystem;
 using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Audit;
@@ -158,9 +159,6 @@ public static class DecisionAuditLogger
                 case "RecruitFromVillage":
                     DailyActivityCounters.AddRecruited(ExtractInt(decisionJson, "recruited"));
                     break;
-                case "DispatchRecruiter":
-                    DailyActivityCounters.AddRecruited(0);  // dispatch ≠ recruited; counter 由 RecruitFromVillage 增
-                    break;
                 case "DispatchTransfer":
                     DailyActivityCounters.AddTransferred(ExtractInt(decisionJson, "extracted"));
                     break;
@@ -178,9 +176,15 @@ public static class DecisionAuditLogger
             // B17.5：翻译为玩家可读动态 → 全局 ActivityFeed（游戏内控制面板展示）。
             var narrated = ActivityNarrator.Narrate(decisionType, decisionJson);
             if (narrated != null)
-                ActivityFeed.Add(narrated.Value.tone, narrated.Value.text, DateTime.Now.ToString("HH:mm:ss"));
+                ActivityFeed.Add(narrated.Value.tone, narrated.Value.text, CurrentGameTimeLabel());
         }
         catch { /* swallow */ }
+    }
+
+    private static string CurrentGameTimeLabel()
+    {
+        try { return CampaignTime.Now.ToString(); }
+        catch { return ""; }
     }
 
     /// <summary>从 "key1=val1 key2=val2" 串里取 prefix 后的 token。失败返 null。</summary>
@@ -250,7 +254,7 @@ public static class DecisionAuditLogger
             lock (_fileLock)
             {
                 File.AppendAllText(_logFilePath, line);
-                _currentFileSize += line.Length;
+                _currentFileSize += Encoding.UTF8.GetByteCount(line);
                 if (_currentFileSize >= MaxFileSizeBytes) RotateFile();
             }
         }
@@ -295,7 +299,7 @@ public static class DecisionAuditLogger
     private static void RotateFile()
     {
         if (_logDir is null) return;
-        _logFilePath = Path.Combine(_logDir, $"Audit_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.log");
+        _logFilePath = Path.Combine(_logDir, $"Audit_{DateTime.Now:yyyy-MM-dd_HH-mm-ss-fff}.log");
         _currentFileSize = 0;
     }
 }

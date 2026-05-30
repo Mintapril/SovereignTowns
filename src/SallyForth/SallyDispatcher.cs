@@ -70,9 +70,9 @@ public sealed class SallyDispatcher
     public void EvaluateAllFiefs(Clan clan)
     {
         if (clan == null) return;
-        if (!ConfigurationManager.Current.EnabledFeatures.SallyForth) return;
         try
         {
+            if (ConfigurationManager.Current?.EnabledFeatures?.SallyForth != true) return;
             foreach (var t in clan.Fiefs)
             {
                 if (t?.Settlement == null) continue;
@@ -164,7 +164,7 @@ public sealed class SallyDispatcher
         {
             _lastSallyEndedAt[home] = CampaignTime.Now;
         }
-        catch { /* swallow */ }
+        catch (Exception ex) { Logger.Error("NotifySallyEnded failed", ex); }
     }
 
     // ────────── 内部辅助：找目标 ──────────
@@ -237,19 +237,22 @@ public sealed class SallyDispatcher
                 // 评分：优先选力量小的（避免冒险打硬目标）
                 // E15 (DeepSeek audit 2026-05-18)：TotalManCount 含伤兵 + 俘虏 → 高估敌方力量。
                 // 用 TotalHealthyCount，再退化到 TotalManCount-TotalWounded，最后兜底 TotalManCount。
-                var strength = 0f;
+                float strength;
                 try
                 {
                     var roster = candidate.MemberRoster;
-                    if (roster != null)
-                    {
-                        // 健康兵员 = 全员 - 伤兵；vanilla TotalHealthyCount 在某些版本不存在，用算术。
-                        int total = roster.TotalManCount;
-                        int wounded = roster.TotalWounded;
-                        strength = (float)Math.Max(0, total - wounded);
-                    }
+                    if (roster == null) continue;
+                    // 健康兵员 = 全员 - 伤兵；vanilla TotalHealthyCount 在某些版本不存在，用算术。
+                    int total = roster.TotalManCount;
+                    int wounded = roster.TotalWounded;
+                    strength = (float)Math.Max(0, total - wounded);
                 }
-                catch { strength = 0f; }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"FindBestEnemyTarget: roster read failed for '{PartyNameFormatter.SafeName(candidate)}': {ex.Message}");
+                    continue;
+                }
+                if (strength <= 0f) continue;
                 if (strength < bestStrength)
                 {
                     bestStrength = strength;
@@ -390,6 +393,13 @@ public sealed class SallyDispatcher
                     return;
                 }
             }
+            else
+            {
+                Logger.Error($"SallyDispatcher: created party '{sallyParty.StringId}' has unexpected component '{sallyParty.PartyComponent?.GetType().Name ?? "<null>"}'");
+                TroopTransferHelper.TransferBackToGarrison(sallyParty.MemberRoster, garrison.MemberRoster);
+                PartyMergeService.Instance.DestroyAndUntrack(sallyParty, "SallyDispatcher invalid component rollback", deferIfInMapEvent: false);
+                return;
+            }
 
             // AI 编排：交给 vanilla 战斗系统
             try
@@ -402,6 +412,9 @@ public sealed class SallyDispatcher
             catch (Exception aiEx)
             {
                 Logger.Error($"SallyDispatcher: AI directive failed for '{PartyNameFormatter.SafeName(sallyParty)}'", aiEx);
+                TroopTransferHelper.TransferBackToGarrison(sallyParty.MemberRoster, garrison.MemberRoster);
+                PartyMergeService.Instance.DestroyAndUntrack(sallyParty, "SallyDispatcher AI directive failed rollback", deferIfInMapEvent: false);
+                return;
             }
 
             _lifecycle.RegisterTrackedParty(sallyParty, settlement, PartyLifecycleManager.KindSallyForth);

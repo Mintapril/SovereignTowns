@@ -25,6 +25,7 @@ internal sealed class ControlPanelScreen : ScreenBase
     // VM 构造已 PauseGame()，但 AddLayer / 输入层尚未建立 —— 此时屏幕既无 UI 又无法
     // 关闭、且游戏处于暂停，表现为「卡死」。置位后由 OnFrameTick 兜底 PopScreen。
     private bool _initFailed;
+    private bool _closeRequested;
 
     protected override void OnInitialize()
     {
@@ -63,6 +64,8 @@ internal sealed class ControlPanelScreen : ScreenBase
         {
             if (_initFailed)
             {
+                if (_closeRequested) return;
+                _closeRequested = true;
                 ScreenManager.PopScreen();
                 return;
             }
@@ -80,6 +83,8 @@ internal sealed class ControlPanelScreen : ScreenBase
 
     private void Close()
     {
+        if (_closeRequested) return;
+        _closeRequested = true;
         try
         {
             // 恢复游戏必须在 PopScreen 之前，由暂停时的同一个 VM 实例完成（镜像 IG OnFrameTick）。

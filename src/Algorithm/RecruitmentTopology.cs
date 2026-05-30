@@ -119,6 +119,13 @@ public static class RecruitmentTopology
             {
                 if (s == null) continue;
                 if (s.IsUnderSiege) continue;
+                var f = s.MapFaction;
+                if (f == null) continue;
+                if (f != capitalFaction)
+                {
+                    if (capitalFaction == null) continue;
+                    if (capitalFaction.IsAtWarWith(f)) continue;
+                }
                 if (excludeVillages.Contains(s)) continue;
                 if (RecruitmentCooldown.IsOnCooldown(s)) continue;
                 var v = s.Village;

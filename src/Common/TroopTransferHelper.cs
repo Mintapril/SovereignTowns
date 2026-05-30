@@ -140,7 +140,7 @@ public static class TroopTransferHelper
                     Logger.Error($"[TroopTransferHelper.TransferBackToGarrison] per-element rollback failed (char='{elem.Character?.StringId}')", oneEx);
                     if (targetAdded)
                     {
-                        try { target.AddToCounts(elem.Character, -elem.Number, false, elem.WoundedNumber, 0); }
+                        try { target.AddToCounts(elem.Character, -elem.Number, false, -elem.WoundedNumber, 0); }
                         catch (Exception undoEx)
                         {
                             Logger.Error($"[TroopTransferHelper.TransferBackToGarrison] target rollback failed for '{elem.Character?.StringId}' — DUPLICATE TROOPS may exist", undoEx);

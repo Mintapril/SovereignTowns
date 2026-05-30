@@ -36,10 +36,6 @@ public sealed class CapitalLogisticsManager
     /// <summary>每 clan 在飞的派发求解协程任务 —— 重入防护(自愈式:已完成 / 取消即可覆盖,绝不长期占位)。</summary>
     private readonly Dictionary<Clan, AsyncSimulator.SimulatedTask> _mergedDispatchTask = new();
 
-    /// <summary>每 clan 最近一次调度器 solver 完成的每城驻军实际 flow(= MCMF Target,
-    /// 受当前 supply / 初始 garrison 影响)。仅在指令派发 / 诊断日志使用,不显示给玩家。</summary>
-    private readonly Dictionary<Clan, Dictionary<Settlement, int>> _lastMergedTargets = new();
-
     /// <summary>每 clan 最近一次调度器算出的每城 capacity(= 预算+威胁+战略约束下算法判断应养的兵数,
     /// 独立于实际 garrison)。控制面板「目标驻军」读此缓存; 求解跨帧 → 首个求解完成前 fallback hardCap。</summary>
     private readonly Dictionary<Clan, Dictionary<Settlement, int>> _lastMergedCapacity = new();
@@ -226,8 +222,7 @@ public sealed class CapitalLogisticsManager
         }
     }
 
-    /// <summary>缓存 MCMF flow (_lastMergedTargets) + 算法判断 capacity (_lastMergedCapacity)。
-    /// 后者供控制面板「目标驻军」读取(<see cref="ResolveTargetGarrison"/>)。</summary>
+    /// <summary>缓存算法判断 capacity (_lastMergedCapacity)，供控制面板「目标驻军」读取(<see cref="ResolveTargetGarrison"/>)。</summary>
     private void StashMergedTargets(Clan clan, UnifiedSolverResult unified)
     {
         if (clan == null || unified == null) return;
@@ -235,10 +230,6 @@ public sealed class CapitalLogisticsManager
         foreach (var kv in unified.Capacity)
             if (kv.Key != null) capMap[kv.Key] = Math.Max(0, kv.Value);
         _lastMergedCapacity[clan] = capMap;
-        var map = new Dictionary<Settlement, int>();
-        foreach (var kv in unified.Target)
-            if (kv.Key != null) map[kv.Key] = Math.Max(0, kv.Value);
-        _lastMergedTargets[clan] = map;
     }
 
     /// <summary>
@@ -467,19 +458,21 @@ public sealed class CapitalLogisticsManager
         }
         else
         {
-            // 2026-05-28: targetPower 是给 BranchInPlaceRecruiter 的粗略 power 信号(用于"还需多少兵"
-            // 估算),不需要精确到 capacity 级别。用 hardCap 作 upper bound 即可 —— recruiter 内部
-            // 会按实际驻军/candidates 自动钳制,不会过招。
-            var _cfg = ConfigurationManager.Current?.FiscalAutonomy ?? new FiscalAutonomyConfig();
-            int _hardCap = GarrisonAllocationSolver.HardCapFor(settlement.Town, _cfg);
-            int _targetPower = _hardCap * 2; // rough power proxy: avg tier-3 troop ≈ 2 power units
+            // Branch in-place recruitment is bounded by the MCMF flow count. desiredPower is only a
+            // coarse stopping signal so higher-tier volunteers can satisfy the same small flow early.
+            var garrisonRoster = settlement.Town?.GarrisonParty?.MemberRoster;
+            float currentPower = garrisonRoster != null
+                ? GarrisonPowerEvaluator.ComputeRosterPower(garrisonRoster)
+                : 0f;
+            int targetPower = (int)Math.Ceiling(currentPower + instruction.Count * 2f); // avg tier-3 troop ≈ 2 power units
             int recruited = BranchInPlaceRecruiter.RecruitFromBranchNotables(
                 settlement,
-                _targetPower,
-                $"mcmf branch in-place flow={instruction.Count}");
+                targetPower,
+                instruction.Count,
+                $"mcmf branch in-place count={instruction.Count}");
             if (recruited > 0)
             {
-                Logger.Info($"CapitalLogistics MCMF: branch in-place recruited {recruited} troop(s) settlement='{settlement.Name}' targetPower={_targetPower}");
+                Logger.Info($"CapitalLogistics MCMF: branch in-place recruited {recruited} troop(s) settlement='{settlement.Name}' requested={instruction.Count} targetPower={targetPower}");
                 return true;
             }
             return false;
@@ -672,7 +665,7 @@ public sealed class CapitalLogisticsManager
             instruction.Source,
             instruction.Destination,
             instruction.Count,
-            instruction.Count,
+            0,
             reason,
             instruction.Role);
         bool ok = _transferDispatcher.TryDispatchTransfer(task);

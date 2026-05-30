@@ -36,6 +36,11 @@ public static class PartyEconomyHelper
 {
     private static ItemObject? _cheapestFoodCache;
 
+    public static void ResetCaches()
+    {
+        _cheapestFoodCache = null;
+    }
+
     /// <summary>遍历 MBObjectManager 内所有 ItemObject，挑最便宜的 IsFood item；缓存结果。</summary>
     public static ItemObject? GetCheapestFood()
     {
@@ -415,6 +420,12 @@ public static class PartyEconomyHelper
             Logger.Info($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
+        var settlementRoster = settlement.Party?.ItemRoster;
+        if (settlementRoster == null)
+        {
+            Logger.Warn($"PartyEconomyHelper.SellLootToSettlement skip (settlement roster missing): settlement='{settlement.Name}'");
+            return 0;
+        }
         int gained = 0;
         try
         {
@@ -432,7 +443,7 @@ public static class PartyEconomyHelper
                 try
                 {
                     party.ItemRoster.AddToCounts(slot.EquipmentElement, -count);
-                    settlement.Party?.ItemRoster.AddToCounts(slot.EquipmentElement, count);
+                    settlementRoster.AddToCounts(slot.EquipmentElement, count);
                     GiveGoldAction.ApplyForSettlementToParty(settlement, party.Party, totalPrice, disableNotification: true);
                     gained += totalPrice;
                     string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
@@ -463,6 +474,12 @@ public static class PartyEconomyHelper
             Logger.Info($"[ECON-DIAG] SellAllItemsToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
+        var settlementRoster = settlement.Party?.ItemRoster;
+        if (settlementRoster == null)
+        {
+            Logger.Warn($"PartyEconomyHelper.SellAllItemsToSettlement skip (settlement roster missing): settlement='{settlement.Name}'");
+            return 0;
+        }
         int gained = 0;
         try
         {
@@ -480,7 +497,7 @@ public static class PartyEconomyHelper
                 try
                 {
                     party.ItemRoster.AddToCounts(slot.EquipmentElement, -count);
-                    settlement.Party?.ItemRoster.AddToCounts(slot.EquipmentElement, count);
+                    settlementRoster.AddToCounts(slot.EquipmentElement, count);
                     GiveGoldAction.ApplyForSettlementToParty(settlement, party.Party, totalPrice, disableNotification: true);
                     gained += totalPrice;
                     Logger.Info($"PartyEconomyHelper.SellAllItemsToSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}': sold {count} '{item.StringId}'{(item.IsFood ? " (food)" : "")} @ {price}d (+{totalPrice}d, partyTradeGold={party.PartyTradeGold})");
@@ -504,20 +521,20 @@ public static class PartyEconomyHelper
     {
         try
         {
-            if (party == null) return 0f;
+            if (party == null) return float.MaxValue;
             float food = 0f;
             try { food = party.Food; } catch { food = 0f; }
             float change = 0f;
             try { change = party.FoodChange; } catch { change = 0f; }
             // I3: vanilla FoodChange 在 buff 链异常时可能返回 NaN / ±Infinity → 视为安全（0 风险）
-            if (float.IsNaN(food) || float.IsInfinity(food)) return 0f;
-            if (float.IsNaN(change) || float.IsInfinity(change)) return 0f;
+            if (float.IsNaN(food) || float.IsInfinity(food)) return float.MaxValue;
+            if (float.IsNaN(change) || float.IsInfinity(change)) return float.MaxValue;
             if (change >= 0f) return float.MaxValue;
             return food / -change;
         }
         catch
         {
-            return 0f;
+            return float.MaxValue;
         }
     }
 

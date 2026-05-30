@@ -132,16 +132,23 @@ public sealed class TransferDispatcher
                     return false;
                 }
             }
+            else
+            {
+                Logger.Warn($"  TransferDispatcher: created party '{party.StringId}' has unexpected component '{party.PartyComponent?.GetType().Name ?? "<null>"}'");
+                TroopTransferHelper.TransferBackToGarrison(party.MemberRoster, sourceRoster);
+                PartyMergeService.Instance.DestroyAndUntrack(party, "TransferDispatcher unexpected component rollback", deferIfInMapEvent: false);
+                return false;
+            }
 
             _lifecycle.RegisterTrackedParty(party, source, PartyKind);
             SafeMoveHelper.GoTo(party, destination, "TransferDispatcher initial dispatch");
 
             DecisionAuditLogger.LogRule(
                 decisionType: "DispatchTransfer",
-                inputSummary: $"source={source.StringId} dest={destination.StringId} requested={requested} extracted={extracted} role={role?.ToString() ?? "Any"} priority={task.Priority:F2} reason={task.Reason}",
-                decisionJson: $"{{\"source\":\"{source.StringId}\",\"dest\":\"{destination.StringId}\",\"requested\":{requested},\"extracted\":{extracted},\"role\":\"{role?.ToString() ?? "Any"}\",\"priority\":{task.Priority:F2}}}",
+                inputSummary: $"source={source.StringId} dest={destination.StringId} requested={requested} extracted={extracted} role={role?.ToString() ?? "Any"} priority={task.Priority} reason={task.Reason}",
+                decisionJson: $"{{\"source\":\"{source.StringId}\",\"dest\":\"{destination.StringId}\",\"requested\":{requested},\"extracted\":{extracted},\"role\":\"{role?.ToString() ?? "Any"}\",\"priority\":{task.Priority}}}",
                 accepted: true);
-            Logger.Info($"  TransferDispatcher: 派出调拨队 '{source.Name}' -> '{destination.Name}' (兵员={extracted}, role={role?.ToString() ?? "Any"}, priority={task.Priority:F1})");
+            Logger.Info($"  TransferDispatcher: 派出调拨队 '{source.Name}' -> '{destination.Name}' (兵员={extracted}, role={role?.ToString() ?? "Any"}, priority={task.Priority})");
             return true;
         }
         catch (Exception ex)

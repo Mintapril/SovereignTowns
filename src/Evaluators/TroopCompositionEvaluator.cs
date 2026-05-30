@@ -151,8 +151,17 @@ public static class TroopCompositionEvaluator
                 int n = element.Number;
                 if (n <= 0) continue;
 
-                if (!ch.IsHero && TroopClassifier.IsNoble(ch))
+                if (ch.IsHero)
+                {
+                    heroes += n;
+                    continue;
+                }
+
+                if (TroopClassifier.IsNoble(ch))
+                {
                     nobles += n;
+                    continue;
+                }
 
                 switch (GenericTroopMatcher.GetRole(ch))
                 {

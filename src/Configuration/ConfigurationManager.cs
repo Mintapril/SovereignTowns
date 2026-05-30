@@ -54,8 +54,14 @@ public static class ConfigurationManager
         try { ApplyVerboseLoggingFromConfig(); }
         catch (Exception ex) { Logger.Warn($"ApplyVerboseLoggingFromConfig failed: {ex.Message}"); }
 
-        try { OnConfigChanged?.Invoke(settlementId); }
-        catch (Exception ex) { Logger.Warn($"OnConfigChanged invocation failed: {ex.Message}"); }
+        var handlers = OnConfigChanged;
+        if (handlers == null) return;
+
+        foreach (Action<string?> handler in handlers.GetInvocationList())
+        {
+            try { handler(settlementId); }
+            catch (Exception ex) { Logger.Warn($"OnConfigChanged handler '{handler.Method.DeclaringType?.FullName}.{handler.Method.Name}' failed: {ex.Message}"); }
+        }
     }
 
     /// <summary>
@@ -259,6 +265,7 @@ public static class ConfigurationManager
 
                 string configPath = GetConfigFilePath();
                 EnsureConfigDirectoryExists(configPath);
+                string previousLastModified = _current.LastModified;
                 _current.LastModified = DateTime.UtcNow.ToString("O");
                 try
                 {
@@ -266,6 +273,7 @@ public static class ConfigurationManager
                 }
                 catch (Exception writeEx)
                 {
+                    _current.LastModified = previousLastModified;
                     Logger.Error("ConfigurationManager.Save: write failed", writeEx);
                     return false;
                 }

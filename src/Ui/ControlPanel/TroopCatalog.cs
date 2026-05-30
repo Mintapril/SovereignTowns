@@ -125,7 +125,8 @@ public static class TroopCatalog
             if (!result.Add(co)) continue;
 
             CharacterObject[]? targets = null;
-            try { targets = co.UpgradeTargets; } catch { }
+            try { targets = co.UpgradeTargets; }
+            catch (Exception ex) { Logger.Error($"TroopCatalog: upgrade target enumeration failed for '{co.StringId}'", ex); }
             if (targets is null) continue;
 
             foreach (var next in targets)

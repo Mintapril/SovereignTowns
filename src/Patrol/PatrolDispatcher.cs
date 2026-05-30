@@ -123,6 +123,7 @@ public sealed class PatrolDispatcher
         // 2026-05-18 产品语义：巡逻队不允许把 home 当巡逻站（ClanPatrolScheduler 已 filter 排除）。
         // 若 PickNextStop 返 null（clan 只有 home 一个 settlement，或所有非-home settlement 全被
         // 过滤）→ 巡逻队无处可去 → 把刚抽出的兵员还回 garrison 并销毁实例，避免在 home 旁傻站浪费。
+        bool firstHopAssigned = false;
         try
         {
             var schedulerCapitalMgr = _capitalRegistry?.GetForSettlement(settlement);
@@ -132,9 +133,18 @@ public sealed class PatrolDispatcher
                 var nextStop = schedulerCapitalMgr.PatrolScheduler.PickNextStop(created);
                 if (nextStop != null)
                 {
-                    try { created.SetMoveGoToSettlement(nextStop, MobileParty.NavigationType.Default, false); }
+                    bool navOk = false;
+                    try
+                    {
+                        created.SetMoveGoToSettlement(nextStop, MobileParty.NavigationType.Default, false);
+                        navOk = true;
+                    }
                     catch (Exception navEx) { Logger.Error($"first-hop SetMoveGoToSettlement failed for '{created.Name}' -> '{nextStop.Name}'", navEx); }
-                    Logger.Info($"PatrolDispatcher: '{created.Name}' first hop -> '{nextStop.Name}'");
+                    if (navOk)
+                    {
+                        Logger.Info($"PatrolDispatcher: '{created.Name}' first hop -> '{nextStop.Name}'");
+                        firstHopAssigned = true;
+                    }
                 }
                 else
                 {
@@ -144,10 +154,21 @@ public sealed class PatrolDispatcher
                     return false;
                 }
             }
+            else
+            {
+                Logger.Warn($"PatrolDispatcher: no capital manager for '{settlement.Name}' — rolling back patrol");
+            }
         }
         catch (Exception schedEx)
         {
-            Logger.Error("PatrolDispatcher: scheduler first-hop assignment failed (party will idle until next tick)", schedEx);
+            Logger.Error("PatrolDispatcher: scheduler first-hop assignment failed", schedEx);
+        }
+        if (!firstHopAssigned)
+        {
+            Logger.Warn($"PatrolDispatcher: '{created.Name}' has no first hop — returning {moved} troops and destroying patrol");
+            PartyMergeService.Instance.MergeNonHeroTroopsIntoGarrison(created, settlement, "PatrolDispatcher first-hop failed rollback");
+            PartyMergeService.Instance.DisbandAndUntrack(created, "PatrolDispatcher first-hop failed");
+            return false;
         }
 
         DecisionAuditLogger.LogRule(
@@ -304,9 +325,9 @@ public sealed class PatrolDispatcher
                     return t;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 单个候选失败：忽略，继续下一个
+                Logger.Warn($"TryFindPatrolTemplate: GetObject('{id}') threw: {ex.Message}");
             }
         }
 

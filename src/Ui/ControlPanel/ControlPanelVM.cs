@@ -16,6 +16,7 @@ namespace SovereignTowns.Ui.ControlPanel;
 public sealed class ControlPanelVM : ViewModel
 {
     private bool _isClosing;
+    private bool _pauseReleased;
 
     // ── 工作副本 ──
     private GlobalConfig _config;
@@ -208,7 +209,12 @@ public sealed class ControlPanelVM : ViewModel
 
     private void RefreshTabVisibility()
     {
-        for (int i = 0; i < 7; i++) OnPropertyChanged($"IsTab{i}Active");
+        OnPropertyChanged(nameof(IsTab0Active));
+        OnPropertyChanged(nameof(IsTab1Active));
+        OnPropertyChanged(nameof(IsTab2Active));
+        OnPropertyChanged(nameof(IsTab3Active));
+        OnPropertyChanged(nameof(IsTab5Active));
+        OnPropertyChanged(nameof(IsTab6Active));
     }
 
     [DataSourceProperty]
@@ -295,6 +301,7 @@ public sealed class ControlPanelVM : ViewModel
     /// <summary>关闭按钮 / ESC 调用。</summary>
     public void ExecuteClose()
     {
+        UnpauseGame();
         _isClosing = true;
     }
 
@@ -359,7 +366,16 @@ public sealed class ControlPanelVM : ViewModel
 
     private void DoReload()
     {
-        _config = ControlPanelData.Reload(out string reason);
+        var reloaded = ControlPanelData.Reload(out string reason);
+        if (reloaded == null)
+        {
+            Success = "";
+            Warning = ControlPanelLoc.Tr("重读失败：", "Reload failed: ") + reason;
+            AddLog(Warning, LogKind.Err);
+            return;
+        }
+
+        _config = reloaded;
         IsDirty = false;
         Warning = "";
         Success = ControlPanelLoc.Tr("已从磁盘重读配置。", "Configuration reloaded from disk.");
@@ -390,6 +406,7 @@ public sealed class ControlPanelVM : ViewModel
             if (Game.Current != null)
             {
                 Game.Current.GameStateManager.RegisterActiveStateDisableRequest((object)this);
+                _pauseReleased = false;
             }
         }
         catch (Exception ex)
@@ -403,10 +420,12 @@ public sealed class ControlPanelVM : ViewModel
     {
         try
         {
+            if (_pauseReleased) return;
             if (Game.Current != null)
             {
                 Game.Current.GameStateManager.UnregisterActiveStateDisableRequest((object)this);
             }
+            _pauseReleased = true;
         }
         catch (Exception ex)
         {

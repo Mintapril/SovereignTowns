@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,7 +17,7 @@ public enum LogLevel
 
 /// <summary>
 /// 分级异步日志。所有 Tick 回调通过此 Logger 落盘；写入由独立后台 Task 完成，主线程零阻塞。
-/// 文件路径：%USERPROFILE%\Documents\Mount and Blade II Bannerlord\Configs\ModLogs\SovereignTowns\SovereignTowns_yyyy-MM-dd_HH-mm-ss.log
+/// 文件路径：%USERPROFILE%\Documents\Mount and Blade II Bannerlord\Configs\ModLogs\SovereignTowns\SovereignTowns_yyyy-MM-dd_HH-mm-ss-fff.log
 /// 单文件 5 MB 自动轮转。
 /// </summary>
 public static class Logger
@@ -123,7 +124,7 @@ public static class Logger
             lock (_fileLock)
             {
                 File.AppendAllText(_logFilePath, line);
-                _currentFileSize += line.Length;
+                _currentFileSize += Encoding.UTF8.GetByteCount(line);
                 if (_currentFileSize >= MaxFileSizeBytes) RotateFile();
             }
         }
@@ -137,7 +138,7 @@ public static class Logger
     private static void RotateFile()
     {
         if (_logDir is null) return;
-        _logFilePath = Path.Combine(_logDir, $"SovereignTowns_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.log");
+        _logFilePath = Path.Combine(_logDir, $"SovereignTowns_{DateTime.Now:yyyy-MM-dd_HH-mm-ss-fff}.log");
         _currentFileSize = 0;
     }
 

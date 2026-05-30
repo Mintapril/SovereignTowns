@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TaleWorlds.Library;
 using SovereignTowns.Configuration;
+using Logger = SovereignTowns.Logging.Logger;
 
 namespace SovereignTowns.Ui.ControlPanel;
 
@@ -67,7 +68,7 @@ public sealed class SettingsGroupVM : ViewModel
         {
             if (!showAdvanced && spec.Advanced) continue;
 
-            var s = spec; // 闭包捕获副本
+            var s = spec;
             if (s.IsBool)
             {
                 _visibleBoolSpecs.Add(s);
@@ -103,6 +104,8 @@ public sealed class SettingsGroupVM : ViewModel
         foreach (var slider in Sliders) slider.ExecuteReset();
 
         // 开关：ToggleRowVM 不携带 SpecEntry，按本组的 bool spec 直接写默认值。
+        if (_visibleBoolSpecs.Count != Toggles.Count)
+            Logger.Warn($"SettingsGroupVM.ExecuteResetGroup: bool spec/toggle count mismatch in '{Key}' ({_visibleBoolSpecs.Count} vs {Toggles.Count})");
         for (int i = 0; i < _visibleBoolSpecs.Count && i < Toggles.Count; i++)
         {
             var s = _visibleBoolSpecs[i];

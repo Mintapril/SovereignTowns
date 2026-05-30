@@ -21,12 +21,13 @@ namespace SovereignTowns.Recruitment;
 /// </summary>
 public static class BranchInPlaceRecruiter
 {
-    public static int RecruitFromBranchNotables(Settlement? branch, int desiredPower, string reason = "")
+    public static int RecruitFromBranchNotables(Settlement? branch, int desiredPower, int maxRecruitCount = int.MaxValue, string reason = "")
     {
         int recruited = 0;
         try
         {
             if (branch == null || (!branch.IsTown && !branch.IsCastle)) return 0;
+            if (desiredPower <= 0 || maxRecruitCount <= 0) return 0;
             var registry = SovereignTowns.Capital.CapitalRegistry.Instance;
             if (registry != null)
             {
@@ -96,7 +97,11 @@ public static class BranchInPlaceRecruiter
                 {
                     maxIdx = volunteerModel.MaximumIndexHeroCanRecruitFromHero(ownerHero, notable, -101);
                 }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    Logger.Warn($"BranchInPlace '{branch.Name}': MaximumIndexHeroCanRecruitFromHero threw for notable '{notable.Name}': {ex.Message}");
+                    continue;
+                }
                 if (maxIdx < 0) continue;
 
                 int upper = Math.Min(slots.Length - 1, maxIdx);
@@ -116,15 +121,33 @@ public static class BranchInPlaceRecruiter
 
             foreach (var (troop, notable, idx) in candidates)
             {
+                if (recruited >= maxRecruitCount) break;
                 if (memberRoster.TotalManCount + 1 > partySizeLimit) break;
                 if (GarrisonPowerEvaluator.ComputeRosterPower(memberRoster) >= desiredPower) break;
 
                 if (shouldCharge && !ModTreasury.CanAfford(branch.OwnerClan, 5)) break;
-                if (shouldCharge && !ModTreasury.Charge(branch.OwnerClan, ExpenseCategory.RecruiterWage, 5, $"branch_in_place branch={branch.StringId} troop={troop.StringId}")) break;
+                bool charged = false;
+                if (shouldCharge)
+                {
+                    if (!ModTreasury.Charge(branch.OwnerClan, ExpenseCategory.RecruiterWage, 5, $"branch_in_place branch={branch.StringId} troop={troop.StringId}")) break;
+                    charged = true;
+                }
 
                 try { memberRoster.AddToCounts(troop, 1, false, 0, 0); }
                 catch (Exception ex)
                 {
+                    if (charged)
+                    {
+                        try
+                        {
+                            ModTreasury.Refund(branch.OwnerClan, ExpenseCategory.RecruiterWage, 5,
+                                $"rollback branch_in_place add failed branch={branch.StringId} troop={troop.StringId}");
+                        }
+                        catch (Exception refundEx)
+                        {
+                            Logger.Warn($"BranchInPlace '{branch.Name}': refund failed after AddToCounts failure for '{troop.StringId}': {refundEx.Message}");
+                        }
+                    }
                     Logger.Warn($"BranchInPlace '{branch.Name}': AddToCounts threw for '{troop.StringId}': {ex.Message}");
                     continue;
                 }
@@ -133,7 +156,7 @@ public static class BranchInPlaceRecruiter
                 recruited++;
             }
 
-            Logger.Info($"BranchInPlace '{branch.Name}': recruited={recruited} desiredPower={desiredPower} currentPower={currentPower:F1} → {GarrisonPowerEvaluator.ComputeRosterPower(memberRoster):F1} priorityLowTier={prioritizeLowTier} reason='{reason}'");
+            Logger.Info($"BranchInPlace '{branch.Name}': recruited={recruited} maxRecruitCount={maxRecruitCount} desiredPower={desiredPower} currentPower={currentPower:F1} → {GarrisonPowerEvaluator.ComputeRosterPower(memberRoster):F1} priorityLowTier={prioritizeLowTier} reason='{reason}'");
         }
         catch (Exception ex)
         {

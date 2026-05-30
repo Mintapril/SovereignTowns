@@ -81,7 +81,7 @@ public sealed class TownGarrisonRule
     /// </summary>
     public TownGarrisonRule Clone() => new TownGarrisonRule
     {
-        GenericCultureFilter = this.GenericCultureFilter,
+        GenericCultureFilter = string.IsNullOrEmpty(this.GenericCultureFilter) ? "PlayerCulture" : this.GenericCultureFilter,
         AllowedCultureIds = new List<string>(this.AllowedCultureIds ?? new List<string>()),
         PriorityTroopIds = new List<string>(this.PriorityTroopIds ?? new List<string>()),
         BannedTroopIds = new List<string>(this.BannedTroopIds ?? new List<string>()),

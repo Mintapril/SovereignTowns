@@ -52,7 +52,7 @@ public sealed class STPartyWageModel : DefaultPartyWageModel
         }
         catch (Exception ex)
         {
-            Logger.Error("STPartyWageModel.GetTotalWage base call failed", ex);
+            Logger.Error($"STPartyWageModel.GetTotalWage base call failed for '{mobileParty?.StringId ?? "<null>"}'", ex);
             return new ExplainedNumber(0f, includeDescriptions, null);
         }
     }

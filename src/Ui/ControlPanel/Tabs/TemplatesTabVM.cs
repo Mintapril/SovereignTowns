@@ -384,7 +384,9 @@ public sealed class TemplatesTabVM : ViewModel
         foreach (var t in _allTroops)
         {
             if (t == null) continue;
-            if (_hideSelected && tmpl.ContainsKey(t.id)) continue;
+            var troopId = t.id ?? string.Empty;
+            if (troopId.Length == 0) continue;
+            if (_hideSelected && tmpl.ContainsKey(troopId)) continue;
             if (!string.IsNullOrEmpty(_cultureFilter) && t.culture != _cultureFilter) continue;
             if (!string.IsNullOrEmpty(_typeFilter) && t.type != _typeFilter) continue;
             if (_tierFilter > 0 && t.tier != _tierFilter) continue;
@@ -394,7 +396,7 @@ public sealed class TemplatesTabVM : ViewModel
 
             _matchCount++;
             if (FilteredTroops.Count < DisplayCap)
-                FilteredTroops.Add(new TroopRowVM(t, tmpl.ContainsKey(t.id), AddOrRemoveToggle));
+                FilteredTroops.Add(new TroopRowVM(t, tmpl.ContainsKey(troopId), AddOrRemoveToggle));
         }
 
         ShowCapHint = _matchCount > DisplayCap;
@@ -405,6 +407,7 @@ public sealed class TemplatesTabVM : ViewModel
     /// <summary>名录行点 ＋／✓ 的 toggle：未加入则加入，已加入则移除。</summary>
     private void AddOrRemoveToggle(string id)
     {
+        if (string.IsNullOrEmpty(id)) return;
         if (Template.ContainsKey(id)) RemoveTroop(id);
         else AddTroop(id);
     }

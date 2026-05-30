@@ -119,6 +119,8 @@ public sealed class PrisonerRecruitmentManager
                     if (troopCount <= 0) continue;
 
                     int recruitable;
+                    bool dailyConformityApplied = false;
+                    bool xpDeducted = false;
                     try
                     {
                         recruitable = model.CalculateRecruitableNumber(settlementParty, character);
@@ -135,6 +137,7 @@ public sealed class PrisonerRecruitmentManager
                         try
                         {
                             prisonRoster.AddXpToTroop(character, dailyConformity * troopCount);
+                            dailyConformityApplied = true;
                             recruitable = model.CalculateRecruitableNumber(settlementParty, character);
                         }
                         catch (Exception ex)
@@ -208,8 +211,11 @@ public sealed class PrisonerRecruitmentManager
 
                     try
                     {
-                        // 先扣 XP（标记招走部分已结算）再 RemoveTroop
-                        prisonRoster.AddXpToTroop(character, -1 * conformityNeeded * recruitable);
+                        // 先扣 XP（标记招走部分已结算）再 RemoveTroop。
+                        // 若本轮给整组加过 daily conformity，转化掉的 N 人不把这份 XP 留给剩余俘虏。
+                        int xpToDeduct = (conformityNeeded + (dailyConformityApplied ? dailyConformity : 0)) * recruitable;
+                        prisonRoster.AddXpToTroop(character, -xpToDeduct);
+                        xpDeducted = true;
                         prisonRoster.RemoveTroop(character, recruitable, default(UniqueTroopDescriptor), 0);
                     }
                     catch (Exception ex)
@@ -220,6 +226,13 @@ public sealed class PrisonerRecruitmentManager
                             try { garrisonMembers.AddToCounts(character, -recruitable, false, 0, 0); }
                             catch (Exception undoEx) { Logger.Error("  PrisonerRecruitment: garrison rollback failed — DUPLICATE TROOPS may exist", undoEx); }
                         }
+                        if (xpDeducted)
+                        {
+                            int xpToRestore = (conformityNeeded + (dailyConformityApplied ? dailyConformity : 0)) * recruitable;
+                            try { prisonRoster.AddXpToTroop(character, xpToRestore); }
+                            catch (Exception undoEx) { Logger.Error("  PrisonerRecruitment: prisoner XP rollback failed after RemoveTroop failure", undoEx); }
+                        }
+                        continue;
                     }
 
                     totalRecruited += recruitable;

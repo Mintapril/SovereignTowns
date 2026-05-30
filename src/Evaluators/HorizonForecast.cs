@@ -31,10 +31,13 @@ public sealed class ThreatForecast : IHorizonForecast
 
     public RiskLevel ThreatAt(Settlement s, int tick)
     {
-        var baseline = RiskAssessmentService.Assess(s).Level;
-        if (s == null || tick <= 0) return baseline;
+        if (s == null) return RiskLevel.Safe;
+        var baseline = RiskLevel.Low;
         try
         {
+            baseline = RiskAssessmentService.Assess(s).Level;
+            if (tick <= 0) return baseline;
+
             float arrived = 0f;
             foreach (var h in HostilePartyScanner.EnumerateConvergingHostiles(s, _radius, _tickHours))
                 if (h.EtaTicks <= tick) arrived += h.Strength;
