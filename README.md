@@ -14,7 +14,7 @@ Your clan picks one settlement as a **capital**. From there the mod runs everyth
 
 ### Capital-led automation
 
-- **Garrison composition** — every owned town and castle held to your per-branch template (tier range, culture filter, troop-type ratios).
+- **Garrison composition** — every owned town and castle is kept on-template: a culture filter plus optional priority / banned troop lists. How many troops and which tiers is the solver's call, sized to your budget — you set the policy, not the numbers.
 - **Recruitment** — in-place at the capital, Recruiter parties out to villages, prisoners converted on the spot.
 - **Logistics** — Transfer parties shuttle troops across the clan's settlement network, planned by a min-cost-flow solver against a capital-level snapshot.
 - **Defence** — Patrol parties orbit each holding to keep bandits off the road; Sally parties go out when a real threat shows up.
@@ -26,20 +26,21 @@ Vanilla has no separate "clan treasury" — `Clan.Gold` is a computed property `
 
 - Vanilla pours all `clan.Fiefs` income into `Clan.Gold` (no mod interception).
 - Mod outflows — party seed funds, recruit-per-head wages, equipment upgrades — debit `Clan.Gold` (= `Hero.MainHero.Gold`) directly via `Hero.ChangeHeroGold`.
-- Each dispatched party (Recruiter / Patrol / Sally / Transfer) carries vanilla `MobileParty.PartyTradeGold` as its operating budget: buys food and stock mounts en route, sells loot back into it, returns whatever's left to the clan leader on disband. The economy stays closed against vanilla `Settlement.Gold` — same path vanilla caravans use.
+- Each dispatched party (Recruiter / Patrol / Sally / Transfer) carries vanilla `MobileParty.PartyTradeGold` as its operating budget: it is provisioned with enough food for the first leg before it leaves, tops up again at settlements along the way, sells loot back into the purse, and returns whatever's left to the clan leader on disband. The economy stays closed against vanilla `Settlement.Gold` — same path vanilla caravans use.
 - "Pause when broke" guard rail (default on) holds mod spending when the clan would go negative.
 - Workshops and caravans keep flowing to your `Hero.Gold` per vanilla — same account, no separate ledger.
 - Each food purchase posts a bottom-left log: `[Sovereign Towns] {Party} bought {N} {item} at {Where} (-{N}d)` (player-clan parties only).
 
 ### Honor Guard (capital-resident elite)
 
-The capital can keep an **Honor Guard** — a private party permanently stationed inside it, recruited from a per-troop template and automatically engaged by the vanilla siege-defender enumeration when the city is besieged. The MCMF dispatcher fills the guard from village recruits as a strictly secondary priority, only after the regular garrison's adequate target is met (so it never drains line troops). Edit the template in the in-game **Honor guard composition** tab; capacity is set via `HonorGuardCap`.
+Every managed capital keeps an **Honor Guard** — a private party permanently stationed inside it (capacity 300), recruited from a per-troop template and automatically engaged by the vanilla siege-defender enumeration when the city is besieged. The MCMF dispatcher fills the guard from village recruits as a strictly secondary priority, only after the regular garrison's adequate target is met (so it never drains line troops), and the mod provisions it each day so its wounded heal in garrison like any vanilla defender. Edit its roster in the **Honor guard composition** tab; watch its live status in the **Honor Guard** tab or via the town menu's *manage honor guard* option.
 
 ### Knobs and observability
 
 - **Configurable cadence** — logistics tick anywhere from 1 hour to 24 hours (default 6h).
-- **In-game Control Panel** — persistent button on the left edge of the campaign map plus an entry on every owned town/castle menu. All configuration lives here (Features / Strategy / Composition / Honor guard composition / Other holdings / Overview / Honor Guard).
+- **In-game Control Panel** — a persistent button on the left edge of the campaign map, plus an entry on every owned town/castle menu. All configuration lives here across six tabs: Features, Strategy, Composition, Honor guard composition, Overview and Honor Guard.
 - **Activity feed** — every dispatch, recruit, transfer and sally logged, browsable from the Overview tab.
+- **Map tracking** — optionally render this mod's active parties as campaign-map markers, just like tracking a caravan; toggle it in Features.
 - **Localisation** — English and Simplified Chinese.
 
 ---
@@ -54,8 +55,9 @@ Currently **player clan only**. AI-clan management is implemented end-to-end (sy
 
 1. Install [Bannerlord.Harmony](https://www.nexusmods.com/mountandblade2bannerlord/mods/2006) (and any other usual prerequisites).
 2. Drop this module's `SovereignTowns/` folder next to `Native/` under `Modules/`.
-3. Enable **Sovereign Towns** in the launcher.
-4. Start a campaign and open the map button.
+3. Enable **Sovereign Towns** in the launcher (load order is auto-handled — the module loads after the vanilla story modules).
+4. Start a campaign, open a town or castle you own, and choose **Sovereign Towns: set as capital** from its menu — that seat is where the mod runs everything from.
+5. Open the Control Panel from the map-edge button to set policy; the mod takes over from there.
 
 Logs are written to
 
