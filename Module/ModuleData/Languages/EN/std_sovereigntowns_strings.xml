@@ -14,6 +14,7 @@
     <string id="ST_SallyPartyName" text="Sally — {SETTLEMENT}" />
     <string id="ST_TransferPartyName" text="Transfer — {SOURCE} → {DESTINATION}" />
     <string id="ST_HonorGuardPartyName" text="Honor Guard — {SETTLEMENT}" />
+    <string id="ST_HonorGuardRecruiterName" text="Honor Guard Recruiter — {SETTLEMENT}" />
 
     <!-- GameModel modifier descriptions (shown in the party tooltip breakdown). -->
     <string id="ST_PartySpeedBonus" text="Sovereign Towns town-funded party speed bonus" />
@@ -36,6 +37,7 @@
     <string id="ST_Common_Unknown" text="unknown" />
     <string id="ST_Common_UnknownEntity" text="(unknown)" />
     <string id="ST_Common_CapitalOwner" text="the capital owner" />
+    <string id="ST_Common_Food" text="food" />
 
     <!-- Player-facing messages from the diagnostic menu. -->
     <string id="ST_Msg_Capital_Changed" text="[Sovereign Towns] Capital switched to '{SETTLEMENT}'." />
@@ -43,6 +45,7 @@
 
     <!-- Campaign-behavior session/daily messages. -->
     <string id="ST_Msg_DailySummary" text="[Sovereign Towns] Today: recruited {RECRUITED}, transferred {TRANSFERRED}, patrols {PATROLS}, sallies {SALLIES}, prisoner-recruits {PRISONERS}." />
+    <string id="ST_Msg_PartyBoughtFood" text="[Sovereign Towns] {PARTY} bought {UNITS} {ITEM} at {WHERE} (-{COST}d)." />
 
     <!-- Configuration / module-management messages. -->
     <string id="ST_Msg_Config_VersionMismatch" text="[Sovereign Towns] global.json version mismatch (file v{FILE_VERSION}, expected v{EXPECTED_VERSION}) — reset to defaults; please reconfigure via the in-game control panel." />

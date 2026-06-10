@@ -13,6 +13,7 @@
     <string id="ST_SallyPartyName" text="出击队 - {SETTLEMENT}" />
     <string id="ST_TransferPartyName" text="调拨队 - {SOURCE} → {DESTINATION}" />
     <string id="ST_HonorGuardPartyName" text="卫队 - {SETTLEMENT}" />
+    <string id="ST_HonorGuardRecruiterName" text="卫队征兵队 - {SETTLEMENT}" />
 
     <!-- GameModel 修饰描述（出现在队伍详情 tooltip）。 -->
     <string id="ST_PartySpeedBonus" text="主权城镇 城镇供养的队伍 移速加成" />
@@ -35,6 +36,7 @@
     <string id="ST_Common_Unknown" text="未知" />
     <string id="ST_Common_UnknownEntity" text="&lt;未知&gt;" />
     <string id="ST_Common_CapitalOwner" text="首府所有者" />
+    <string id="ST_Common_Food" text="食物" />
 
     <!-- 诊断菜单玩家可见消息。 -->
     <string id="ST_Msg_Capital_Changed" text="[主权城镇] 首府已切换至 '{SETTLEMENT}'。" />
@@ -42,6 +44,7 @@
 
     <!-- Campaign 会话 / 每日消息。 -->
     <string id="ST_Msg_DailySummary" text="[主权城镇] 今日：招募 {RECRUITED} · 调拨 {TRANSFERRED} · 巡逻 {PATROLS} · 出击 {SALLIES} · 俘虏转化 {PRISONERS}。" />
+    <string id="ST_Msg_PartyBoughtFood" text="[主权城镇] {PARTY} 在 {WHERE} 采购 {UNITS} 份{ITEM}（-{COST}d）。" />
 
     <!-- 配置 / 模块管理消息。 -->
     <string id="ST_Msg_Config_VersionMismatch" text="[主权城镇] global.json 版本不匹配 (文件 v{FILE_VERSION}，期望 v{EXPECTED_VERSION}) — 已重置为默认，请在游戏内控制面板重新配置。" />
@@ -49,13 +52,13 @@
     <string id="ST_Msg_IncompatibleMods" text="主权城镇：检测到互斥模块（{MODS}）已启用。本 Mod 不工作。请在启动器禁用互斥模块后重启。" />
 
     <!-- 战斗 / 解散 / 销毁汇报（左下角消息）。 -->
-    <string id="ST_Battle_Verdict_Heavy" text="重创" />
-    <string id="ST_Battle_Verdict_Damaged" text="受损" />
-    <string id="ST_Battle_Verdict_Won" text="完成战斗" />
-    <string id="ST_Msg_Battle_Report" text="[主权城镇] {PARTY_NAME} 战斗{VERDICT}：兵员 {CURRENT}/{INITIAL}，受伤 {WOUNDED}。" />
+    <string id="ST_Battle_Verdict_Heavy" text="损失惨重" />
+    <string id="ST_Battle_Verdict_Damaged" text="受创" />
+    <string id="ST_Battle_Verdict_Won" text="战斗结束" />
+    <string id="ST_Msg_Battle_Report" text="[主权城镇] {PARTY_NAME} {VERDICT}：兵员 {CURRENT}/{INITIAL}，受伤 {WOUNDED}。" />
     <string id="ST_Msg_Disband_Report" text="[主权城镇] {PARTY_NAME} 回 {HOME} 解散：合并 {TROOPS} 兵入驻军，变卖物资 +{SOLD}d，退还 {REFUND}d 给 {OWNER}。" />
-    <string id="ST_Msg_Destroyed_WithRefund" text="[主权城镇] {PARTY_NAME} 销毁（被 {DESTROYER}）：退还 {REFUND}d 给首府所有者。" />
-    <string id="ST_Msg_Destroyed_NoRefund" text="[主权城镇] {PARTY_NAME} 销毁（被 {DESTROYER}）。" />
+    <string id="ST_Msg_Destroyed_WithRefund" text="[主权城镇] {PARTY_NAME} 被 {DESTROYER} 歼灭：退还 {REFUND}d 给首府所有者。" />
+    <string id="ST_Msg_Destroyed_NoRefund" text="[主权城镇] {PARTY_NAME} 被 {DESTROYER} 歼灭。" />
 
     <!-- 对话（玩家与本 mod 自家队伍相遇）。 -->
     <string id="ST_Dialog_PartyKind_Recruiter" text="征兵队" />

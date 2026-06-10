@@ -192,13 +192,13 @@ public static class PartyEconomyHelper
     {
         if (party?.ItemRoster == null || settlement == null)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (basic): party='{PartyNameFormatter.SafeName(party)}' settlement='{settlement?.Name?.ToString() ?? "<null>"}' days={days:F1}");
+            Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement skip (basic): party='{PartyNameFormatter.SafeName(party)}' settlement='{settlement?.Name?.ToString() ?? "<null>"}' days={days:F1}");
             return 0;
         }
         int budget = party.PartyTradeGold;
         if (budget <= 0)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no funds): party='{PartyNameFormatter.SafeName(party)}' PartyTradeGold={budget} days={days:F1}");
+            Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement skip (no funds): party='{PartyNameFormatter.SafeName(party)}' PartyTradeGold={budget} days={days:F1}");
             return 0;
         }
 
@@ -216,31 +216,32 @@ public static class PartyEconomyHelper
             settlementInv = settlement.Party?.ItemRoster;
             if (pricingTown == null)
             {
-                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (village Bound.Town null): settlement='{settlement.Name}'");
+                Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement skip (village Bound.Town null): settlement='{settlement.Name}'");
                 return 0;
             }
         }
         else
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (not town/village): settlement='{settlement.Name}'");
+            Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement skip (not town/village): settlement='{settlement.Name}'");
             return 0;
         }
         if (settlementInv == null)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement skip (no inv): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
+            Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement skip (no inv): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
 
         int wantUnits = EstimateFoodForDays(party, days);
         if (wantUnits <= 0)
         {
-            Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement wantUnits=0: party='{PartyNameFormatter.SafeName(party)}' members={party.MemberRoster?.TotalManCount ?? -1} foodChange={party.FoodChange:F2} days={days:F1}");
+            Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement wantUnits=0: party='{PartyNameFormatter.SafeName(party)}' members={party.MemberRoster?.TotalManCount ?? -1} foodChange={party.FoodChange:F2} days={days:F1}");
             return 0;
         }
 
         int totalSpent = 0;
         int totalUnits = 0;
-        string? firstItemId = null;
+        ItemObject? firstItem = null;
+        bool multiTypes = false;
         int foodItemsScanned = 0;
         try
         {
@@ -276,8 +277,10 @@ public static class PartyEconomyHelper
                     totalSpent += chunkCost;
                     totalUnits += actual;
                     wantUnits -= actual;
-                    firstItemId ??= bestElem.EquipmentElement.Item?.StringId;
-                    var itemName = bestElem.EquipmentElement.Item?.StringId ?? "?";
+                    var boughtItem = bestElem.EquipmentElement.Item;
+                    if (firstItem == null) firstItem = boughtItem;
+                    else if (boughtItem != firstItem) multiTypes = true;
+                    var itemName = boughtItem?.StringId ?? "?";
                     string tag = settlement.IsVillage ? $" (village←Bound={pricingTown.Settlement?.StringId ?? "?"})" : "";
                     Logger.Info($"PartyEconomyHelper.BuyFoodFromSettlement '{PartyNameFormatter.SafeName(party)}' @ '{settlement.Name}'{tag}: bought {actual} '{itemName}' @ {bestPricePerUnit}d (chunk {chunkCost}d, partyTradeGold={party.PartyTradeGold})");
                 }
@@ -289,11 +292,11 @@ public static class PartyEconomyHelper
             }
             if (totalSpent == 0)
             {
-                Logger.Info($"[ECON-DIAG] BuyFoodFromSettlement no-food: settlement='{settlement.Name}' isVillage={settlement.IsVillage} invCount={settlementInv.Count} foodItemsScanned={foodItemsScanned} villageType='{settlement.Village?.VillageType?.StringId ?? "<n/a>"}'");
+                Logger.Debug($"[ECON-DIAG] BuyFoodFromSettlement no-food: settlement='{settlement.Name}' isVillage={settlement.IsVillage} invCount={settlementInv.Count} foodItemsScanned={foodItemsScanned} villageType='{settlement.Village?.VillageType?.StringId ?? "<n/a>"}'");
             }
             try { party.ItemRoster.UpdateVersion(); } catch { }
             // 玩家可见提示（仅玩家氏族部队）
-            if (totalSpent > 0) TryShowBuyMessage(party, settlement, totalUnits, firstItemId, totalSpent);
+            if (totalSpent > 0) TryShowBuyMessage(party, settlement, totalUnits, firstItem, multiTypes, totalSpent);
         }
         catch (Exception ex)
         {
@@ -302,7 +305,7 @@ public static class PartyEconomyHelper
         return totalSpent;
     }
 
-    private static void TryShowBuyMessage(MobileParty party, Settlement settlement, int units, string? itemId, int totalCost)
+    private static void TryShowBuyMessage(MobileParty party, Settlement settlement, int units, ItemObject? item, bool multiTypes, int totalCost)
     {
         try
         {
@@ -311,7 +314,10 @@ public static class PartyEconomyHelper
                 "{=ST_Msg_PartyBoughtFood}[Sovereign Towns] {PARTY} bought {UNITS} {ITEM} at {WHERE} (-{COST}d).");
             template.SetTextVariable("PARTY", (TextObject?)party.Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)"));
             template.SetTextVariable("UNITS", units);
-            template.SetTextVariable("ITEM", itemId ?? "food");
+            if (!multiTypes && item != null)
+                template.SetTextVariable("ITEM", item.Name);
+            else
+                template.SetTextVariable("ITEM", new TextObject("{=ST_Common_Food}food"));
             template.SetTextVariable("WHERE", (TextObject?)settlement?.Name ?? new TextObject("{=ST_Common_Unknown}unknown"));
             template.SetTextVariable("COST", totalCost);
             InformationManager.DisplayMessage(new InformationMessage(template.ToString()));
@@ -398,7 +404,7 @@ public static class PartyEconomyHelper
                 }
             }
             if (totalSpent == 0)
-                Logger.Info($"[ECON-DIAG] BuyHorsesFromSettlement no-mount: settlement='{settlement.Name}' isVillage={settlement.IsVillage} wantUnits={wantUnits}");
+                Logger.Debug($"[ECON-DIAG] BuyHorsesFromSettlement no-mount: settlement='{settlement.Name}' isVillage={settlement.IsVillage} wantUnits={wantUnits}");
             try { party.ItemRoster.UpdateVersion(); } catch { }
         }
         catch (Exception ex)
@@ -417,7 +423,7 @@ public static class PartyEconomyHelper
         var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
         if (pricingTown == null)
         {
-            Logger.Info($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
+            Logger.Debug($"[ECON-DIAG] SellLootToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
         var settlementRoster = settlement.Party?.ItemRoster;
@@ -471,7 +477,7 @@ public static class PartyEconomyHelper
         var pricingTown = settlement.Town ?? settlement.Village?.Bound?.Town;
         if (pricingTown == null)
         {
-            Logger.Info($"[ECON-DIAG] SellAllItemsToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
+            Logger.Debug($"[ECON-DIAG] SellAllItemsToSettlement skip (no pricingTown): settlement='{settlement.Name}' isVillage={settlement.IsVillage}");
             return 0;
         }
         var settlementRoster = settlement.Party?.ItemRoster;

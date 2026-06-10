@@ -227,12 +227,16 @@ public abstract class StPartyComponent : CustomPartyComponent
             if (!ValidateAliveAndManaged(self, out var capital)) return;
 
             // 2026-05-18 诊断日志：印 hourly tick 入口状态，便于定位"出门即返回"等行为。
-            try
+            // 2026-06-10：IsDebugEnabled 守卫 —— 此行每小时每 ST 队都会构造，verbose 关闭时跳过插值。
+            if (Logger.IsDebugEnabled)
             {
-                var homeDbg = HomeSettlementOrNull;
-                Logger.Debug($"[DIAG] {GetType().Name}.OnHourlyTick '{PartyNameFormatter.SafeName(self)}' home='{homeDbg?.Name?.ToString() ?? "null"}' cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' target='{self.TargetSettlement?.Name?.ToString() ?? "null"}' members={self.MemberRoster?.TotalManCount ?? -1}");
+                try
+                {
+                    var homeDbg = HomeSettlementOrNull;
+                    Logger.Debug($"[DIAG] {GetType().Name}.OnHourlyTick '{PartyNameFormatter.SafeName(self)}' home='{homeDbg?.Name?.ToString() ?? "null"}' cur='{self.CurrentSettlement?.Name?.ToString() ?? "null"}' lastVisited='{self.LastVisitedSettlement?.Name?.ToString() ?? "null"}' target='{self.TargetSettlement?.Name?.ToString() ?? "null"}' members={self.MemberRoster?.TotalManCount ?? -1}");
+                }
+                catch { /* swallow diagnostic */ }
             }
-            catch { /* swallow diagnostic */ }
 
             // 2026-05-18 fix: ST party (patrol/recruiter/transfer) 必须全程 SetDoNotMakeNewDecisions(true)，
             // 否则 vanilla AI 在两次 hourly tick 之间会接管 ST party 把 target 改回 home（CustomPartyComponent
@@ -308,7 +312,7 @@ public abstract class StPartyComponent : CustomPartyComponent
 
     /// <summary>
     /// 2026-05-18 v4：战斗结束后在左下角显示一行简洁的战况报告（仅玩家氏族部队）。
-    /// 颜色按损失程度：&lt;20% 黄、20-50% 橙、&gt;50% 红。
+    /// 颜色按损失程度：&lt;20% 白、20-50% 橙、&gt;50% 红。
     /// </summary>
     private void TryDisplayBattleResultMessage(MapEvent ev, MobileParty self)
     {
@@ -324,7 +328,7 @@ public abstract class StPartyComponent : CustomPartyComponent
             TextObject verdict;
             if (lossRatio >= 0.5f) { color = Colors.Red; verdict = new TextObject("{=ST_Battle_Verdict_Heavy}took heavy losses"); }
             else if (lossRatio >= 0.2f) { color = new Color(1.0f, 0.6f, 0.2f); verdict = new TextObject("{=ST_Battle_Verdict_Damaged}suffered damage"); }
-            else { color = Colors.Yellow; verdict = new TextObject("{=ST_Battle_Verdict_Won}completed the battle"); }
+            else { color = Colors.White; verdict = new TextObject("{=ST_Battle_Verdict_Won}completed the battle"); }
             var partyName = (TextObject?)Name ?? new TextObject("{=ST_Common_UnknownEntity}(unknown)");
             var template = new TextObject(
                 "{=ST_Msg_Battle_Report}[Sovereign Towns] {PARTY_NAME} {VERDICT}: troops {CURRENT}/{INITIAL}, wounded {WOUNDED}.");
@@ -477,12 +481,17 @@ public abstract class StPartyComponent : CustomPartyComponent
     protected void DefaultMergeAndDisband(MobileParty self)
     {
         // 2026-05-18 诊断日志：印出调用栈到 home，帮诊断"出门即解散"。
-        try
+        // 2026-06-10：StackTrace(true) 构造成本高（含文件行号符号解析），加 IsDebugEnabled 守卫，
+        // verbose 关闭时零成本。
+        if (Logger.IsDebugEnabled)
         {
-            var stack = new System.Diagnostics.StackTrace(true);
-            Logger.Debug($"[DIAG] {GetType().Name}.DefaultMergeAndDisband ENTRY '{PartyNameFormatter.SafeName(self)}' members={self?.MemberRoster?.TotalManCount ?? -1} caller=\n{stack}");
+            try
+            {
+                var stack = new System.Diagnostics.StackTrace(true);
+                Logger.Debug($"[DIAG] {GetType().Name}.DefaultMergeAndDisband ENTRY '{PartyNameFormatter.SafeName(self)}' members={self?.MemberRoster?.TotalManCount ?? -1} caller=\n{stack}");
+            }
+            catch { }
         }
-        catch { }
 
         if (self == null) return;
 
@@ -570,19 +579,22 @@ public abstract class StPartyComponent : CustomPartyComponent
     protected void TryEconomicMaintenance(MobileParty self, Settlement? overrideSettlement = null)
     {
         var atSettlement = overrideSettlement ?? self.CurrentSettlement;
-        // 2026-05-18：诊断 — 入口印一行 Info 帮助定位"部队不买食物 / 不卖战利品"问题。
-        // 是 Info 级（不依赖 VerboseLogging）因为食物 bug 现在是头号 blocker，需要在缺省日志里就看到。
-        // 主要诊断维度：本 tick 有没有"在某 settlement 内"、是 town 还是 village、食物剩余、队伍资金。
-        try
+        // 诊断维度：本 tick 有没有"在某 settlement 内"、是 town 还是 village、食物剩余、队伍资金。
+        // 2026-06-10：食物 bug 攻坚期已过，从 Info 降为 Debug（VerboseLogging 可随时打开），
+        // 并加 IsDebugEnabled 守卫避免 verbose 关闭时白构造插值字符串。
+        if (Logger.IsDebugEnabled)
         {
-            float foodDays = PartyEconomyHelper.FoodDaysRemaining(self);
-            bool isTown = atSettlement?.IsTown == true;
-            bool isVillage = atSettlement?.IsVillage == true;
-            bool hasTownComponent = atSettlement?.Town != null;
-            string srcTag = overrideSettlement != null ? "arrival-override" : "currentSettlement";
-            Logger.Info($"[ECON-DIAG] {GetType().Name}.TryEconomicMaintenance '{PartyNameFormatter.SafeName(self)}' src={srcTag} atSettlement='{atSettlement?.Name?.ToString() ?? "<null>"}' isTown={isTown} isVillage={isVillage} hasTownComponent={hasTownComponent} foodDays={foodDays:F1} teamFunds={TeamFunds} replenishEnRoute={ShouldReplenishFoodEnRoute}");
+            try
+            {
+                float foodDays = PartyEconomyHelper.FoodDaysRemaining(self);
+                bool isTown = atSettlement?.IsTown == true;
+                bool isVillage = atSettlement?.IsVillage == true;
+                bool hasTownComponent = atSettlement?.Town != null;
+                string srcTag = overrideSettlement != null ? "arrival-override" : "currentSettlement";
+                Logger.Debug($"[ECON-DIAG] {GetType().Name}.TryEconomicMaintenance '{PartyNameFormatter.SafeName(self)}' src={srcTag} atSettlement='{atSettlement?.Name?.ToString() ?? "<null>"}' isTown={isTown} isVillage={isVillage} hasTownComponent={hasTownComponent} foodDays={foodDays:F1} teamFunds={TeamFunds} replenishEnRoute={ShouldReplenishFoodEnRoute}");
+            }
+            catch { /* swallow diagnostic */ }
         }
-        catch { /* swallow diagnostic */ }
         // 2026-05-18 v4：放开 Town 检查 — village 也允许走维护（BuyFood / SellLoot 内部用 Village.Bound.Town 定价）。
         // 仅当 atSettlement 完全空（en route 状态）或 既非 Town 又非 Village（hideout 等）才跳过。
         if (atSettlement == null || (!atSettlement.IsTown && !atSettlement.IsVillage))
